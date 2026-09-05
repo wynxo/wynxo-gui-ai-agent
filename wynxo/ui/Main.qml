@@ -325,6 +325,18 @@ ApplicationWindow {
                                         delegate: ItemDelegate { required property var modelData; width: modelPicker.popup.width-10; height: 38; text: modelData; highlighted: modelPicker.highlightedIndex === index; contentItem: Text { text: modelData; color: "#d6e2da"; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter; elide: Text.ElideMiddle } background: Rectangle { radius: 5; color: parent.highlighted ? "#3b5041" : "transparent" } }
                                         onActivated: bridge && bridge.setModel(currentText)
                                     }
+                                    Rectangle {
+                                        visible: bridge && bridge.online && composer.width > 650
+                                        Layout.preferredWidth: Math.min(178, capabilityLabel.implicitWidth + 18)
+                                        Layout.preferredHeight: 27
+                                        radius: 14
+                                        color: bridge && bridge.modelCapabilitiesLoading ? "#2a302c" : bridge && bridge.modelSupportsTools ? "#22382a" : "#302e25"
+                                        border.color: bridge && bridge.modelCapabilitiesLoading ? "#424b45" : bridge && bridge.modelSupportsTools ? "#3d6147" : "#57513c"
+                                        Text { id: capabilityLabel; anchors.centerIn: parent; text: bridge && bridge.modelCapabilitySummary; color: bridge && bridge.modelSupportsTools ? "#a9cdb4" : "#b5ad8c"; font.pixelSize: 9; elide: Text.ElideRight; width: Math.min(160, implicitWidth); horizontalAlignment: Text.AlignHCenter }
+                                        MouseArea { id: capabilityMouse; anchors.fill: parent; hoverEnabled: true }
+                                        ToolTip.visible: capabilityMouse.containsMouse
+                                        ToolTip.text: bridge && bridge.modelCapabilityHint
+                                    }
                                     Item { Layout.fillWidth: true }
                                     ActionButton { objectName: "sendButton"; iconName: bridge && bridge.busy ? "stop" : "arrow"; primary: true; width: 36; height: 34; enabled: (bridge && bridge.busy) || (composer.text.trim().length > 0 && bridge && bridge.online && !bridge.connecting); onClicked: bridge && bridge.busy ? bridge.stop() : window.sendPrompt(); ToolTip.visible: hovered; ToolTip.text: bridge && bridge.busy ? "Stop task · Esc" : "Send · Enter" }
                                 }
@@ -365,6 +377,22 @@ ApplicationWindow {
                         Text { Layout.fillWidth: true; text: bridge && bridge.desktopEnabled ? "Wynxo can see your screen and use your mouse and keyboard for your tasks." : "Let Wynxo see your screen, open apps, and use your mouse and keyboard."; color: "#819b89"; font.pixelSize: 11; wrapMode: Text.WordWrap; lineHeight: 1.4 }
                         ActionButton { Layout.fillWidth: true; iconName: bridge && bridge.desktopEnabled ? "shield" : "cursor"; text: bridge && bridge.connecting ? "Waiting for permission…" : bridge && bridge.desktopEnabled ? "Disable desktop control" : "Enable desktop control"; enabled: bridge && !bridge.connecting; onClicked: bridge && bridge.toggleDesktop(); height: 37; foreground: "#c4d9cb" }
                         Text { Layout.fillWidth: true; text: bridge && bridge.desktopDetail; color: "#687f70"; font.pixelSize: 10; wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight; lineHeight: 1.3 }
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: capabilityDetail.implicitHeight + 44
+                            radius: 9
+                            color: "#19231c"
+                            border.color: bridge && bridge.modelSupportsTools ? "#34513d" : "#403f32"
+                            ColumnLayout {
+                                anchors.fill: parent; anchors.margins: 11; spacing: 6
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    Text { text: "SELECTED MODEL"; color: "#78917f"; font.pixelSize: 8; font.letterSpacing: 1.3; Layout.fillWidth: true }
+                                    Text { text: bridge && bridge.modelCapabilitySummary; color: bridge && bridge.modelSupportsTools ? "#9fc4a9" : "#afa883"; font.pixelSize: 9; elide: Text.ElideRight; Layout.maximumWidth: 145 }
+                                }
+                                Text { id: capabilityDetail; Layout.fillWidth: true; text: bridge && bridge.modelCapabilityHint; color: "#7f9787"; font.pixelSize: 10; wrapMode: Text.WordWrap; lineHeight: 1.3; maximumLineCount: 4; elide: Text.ElideRight }
+                            }
+                        }
                         Rectangle { Layout.fillWidth: true; height: 1; color: "#2b382e" }
                         RowLayout { Text { text: "ACTIVITY"; color: "#8da693"; font.pixelSize: 9; font.letterSpacing: 1.8 } Item { Layout.fillWidth: true } Text { text: bridge && bridge.activity.length.toString().padStart(2, "0"); color: "#6f8a78"; font.pixelSize: 10 } }
                         ListView {
