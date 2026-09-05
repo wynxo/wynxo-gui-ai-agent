@@ -92,6 +92,7 @@ Use your desktop's corresponding portal backend on other environments. `libglib2
 - Switch between installed models and download a model from Settings.
 - Use command suggestions for common desktop tasks, plus Obsidian, Violet, Ice, Amber, and Rose themes or a custom accent color.
 - Enable reduced motion or a solid dark canvas in Settings.
+- Open the command palette for fast actions, reconnecting Ollama, desktop control, and workspace navigation.
 - Keep using chat while desktop access is off or unavailable.
 
 | Shortcut | Action |
@@ -99,6 +100,7 @@ Use your desktop's corresponding portal backend on other environments. `libglib2
 | Enter / Shift+Enter | Send / insert a new line |
 | Ctrl+N | New task |
 | Ctrl+K | Search saved tasks |
+| Ctrl+Shift+P | Open the command palette |
 | Ctrl+, | Settings |
 | Escape / Ctrl+Shift+S | Stop the current task **while Wynxo has keyboard focus** |
 

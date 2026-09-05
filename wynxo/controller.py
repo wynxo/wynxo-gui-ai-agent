@@ -236,18 +236,21 @@ class Controller(QObject):
             return None
         return color.name(QColor.HexRgb)
 
-    @Slot(str, bool, bool, str, str, bool)
+    @Slot(str, bool, bool, str, str, bool, result=bool)
     def saveSettings(self, endpoint, thinking, reduced_motion, theme, accent, solid_background):
         if self._busy or self._pulling or self._probe_active:
             self.toast.emit("Wait for the current connection or task to finish.")
-            return
+            return False
         try:
             OllamaClient(endpoint.strip())
         except Exception as exc:
             self._show_error(str(exc))
-            return
+            return False
         theme = theme if theme in self.THEMES else "Obsidian"
-        accent = self._normalise_accent(accent) or self.THEMES[theme]
+        accent = self._normalise_accent(accent)
+        if accent is None:
+            self._show_error("Accent color must be an opaque hex color, such as #b9dfc6.")
+            return False
         self._endpoint = endpoint.strip().rstrip("/")
         self._think = thinking
         self._reduced_motion = reduced_motion
@@ -260,6 +263,7 @@ class Controller(QObject):
         self.changed.emit()
         self.refreshModels()
         self.toast.emit("Settings saved")
+        return True
 
     @Slot()
     def newTask(self):
@@ -481,7 +485,10 @@ class Controller(QObject):
         if not target: return
         text = f"# {self._task_title}\n\n"
         for message in self.messages.items:
-            text += f"## {'You' if message['speaker'] == 'user' else 'Wynxo'}\n\n{message['body']}\n\n"
+            text += f"## {'You' if message['speaker'] == 'user' else 'Wynxo'}\n\n"
+            if message.get("thought"):
+                text += f"<details>\n<summary>Reasoning</summary>\n\n{message['thought']}\n\n</details>\n\n"
+            text += f"{message['body']}\n\n"
         try:
             Path(target).write_text(text, encoding="utf-8")
             self.toast.emit("Conversation exported")
@@ -506,5 +513,9 @@ class Controller(QObject):
         return True
 
     def shutdown(self):
+        for job in list(self._jobs):
+            job.cancel.set()
+        for job in list(self._jobs):
+            job.wait(2000)
         self.desktop.disconnect()
         self.store.close()

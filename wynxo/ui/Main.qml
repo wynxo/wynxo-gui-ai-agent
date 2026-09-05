@@ -28,6 +28,7 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+N"; onActivated: bridge && bridge.newTask() }
     Shortcut { sequence: "Ctrl+,"; onActivated: settings.open() }
     Shortcut { sequence: "Ctrl+K"; onActivated: taskSearch.forceActiveFocus() }
+    Shortcut { sequence: "Ctrl+Shift+P"; onActivated: commandPalette.open() }
     Shortcut { sequence: "Ctrl+Shift+S"; onActivated: bridge && bridge.stop() }
     Shortcut { sequence: "Escape"; onActivated: { if(bridge && bridge.busy) bridge && bridge.stop(); } }
     Connections {
@@ -54,7 +55,7 @@ ApplicationWindow {
                     Layout.fillWidth: true; Layout.preferredHeight: 55
                     Row {
                         anchors.verticalCenter: parent.verticalCenter; spacing: 10
-                        Rectangle {
+                    Rectangle {
                             width: 31; height: 31; radius: 10; color: accent
                             Text { anchors.centerIn: parent; text: "w"; font.family: "Lato"; font.pixelSize: 27; font.weight: Font.Black; color: "#172c20"; anchors.verticalCenterOffset: -2 }
                         }
@@ -123,16 +124,17 @@ ApplicationWindow {
                     Icon { name: "folder"; width: 17; height: 17; ink: "#839188" }
                     Text { text: "Workspace"; color: "#8d9991"; font.pixelSize: 12; visible: window.width > 1050 }
                     Text { text: "/"; color: "#4d5b51"; visible: window.width > 1050 }
-                    Text { text: bridge && bridge.taskTitle; color: "#dce4df"; font.pixelSize: 12; Layout.fillWidth: true; elide: Text.ElideRight }
-                    Rectangle {
+                    Text { text: bridge && bridge.taskTitle; color: "#dce4df"; font.pixelSize: 12; Layout.fillWidth: true; elide: Text.ElideRight; MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onDoubleClicked: renameDialog.open(); ToolTip.visible: containsMouse; ToolTip.text: "Rename task" } }
+                        Rectangle {
                         Layout.preferredWidth: ollamaLabel.implicitWidth+31; height: 29; radius: 15; color: bridge && bridge.online ? "#1c2b21" : "#30281f"; border.color: bridge && bridge.online ? "#304836" : "#584732"
                         Row { anchors.centerIn: parent; spacing: 6
-                            Rectangle { width: 5; height: 5; radius: 3; color: bridge && bridge.online ? "#a4d6b2" : "#d9b679"; anchors.verticalCenter: parent.verticalCenter }
-                            Text { id: ollamaLabel; text: bridge && bridge.online ? "Ollama connected" : "Ollama offline"; font.pixelSize: 10; color: bridge && bridge.online ? "#b7d1be" : "#d3b787" }
+                            Rectangle { width: 5; height: 5; radius: 3; color: bridge && bridge.online ? accent : bridge && (bridge.connecting || bridge.pulling) ? "#d9b679" : "#b78963"; anchors.verticalCenter: parent.verticalCenter }
+                            Text { id: ollamaLabel; text: bridge && bridge.connecting ? "Connecting…" : bridge && bridge.pulling ? "Downloading…" : bridge && bridge.online ? "Ollama connected" : "Ollama offline"; font.pixelSize: 10; color: bridge && bridge.online ? "#b7d1be" : "#d3b787" }
                         }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: bridge && bridge.refreshModels() }
                     }
                     ActionButton { iconName: "download"; quiet: true; width: 33; height: 33; visible: bridge && bridge.hasMessages; onClicked: bridge && bridge.exportTask(); ToolTip.visible: hovered; ToolTip.text: "Export conversation" }
+                    ActionButton { iconName: "bolt"; quiet: true; width: 33; height: 33; onClicked: commandPalette.open(); ToolTip.visible: hovered; ToolTip.text: "Command palette · Ctrl+Shift+P" }
                     ActionButton { iconName: "panel"; quiet: true; width: 33; height: 33; onClicked: window.inspectorOpen = !window.inspectorOpen; ToolTip.visible: hovered; ToolTip.text: "Toggle workspace panel" }
                 }
             }
@@ -456,14 +458,104 @@ ApplicationWindow {
                 // Desktop access remains available on smaller windows.
                 ActionButton { Layout.fillWidth: true; text: bridge && bridge.desktopEnabled ? "Disable desktop control" : "Enable desktop control"; iconName: "desktop"; enabled: bridge && !bridge.connecting; onClicked: bridge && bridge.toggleDesktop() }
                 Text { Layout.fillWidth: true; text: "Desktop mode can click, type, and change things in your apps. Enable it for a task you want done. Esc stops the agent while this window is focused."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap; lineHeight: 1.4 }
-                ActionButton { Layout.fillWidth: true; text: "Save settings"; primary: true; onClicked: { bridge && bridge.saveSettings(endpointField.text, thinkCheck.checked, motionCheck.checked, themePicker.currentText, accentField.text, solidCheck.checked); settings.close(); } }
-                Text { text: "WYNXO  0.1.0   ·   LOCAL DESKTOP COPILOT"; font.pixelSize: 8; font.letterSpacing: 1.5; color: "#718e7c"; Layout.alignment: Qt.AlignHCenter }
+                ActionButton { Layout.fillWidth: true; text: "Save settings"; primary: true; onClicked: { if (bridge && bridge.saveSettings(endpointField.text, thinkCheck.checked, motionCheck.checked, themePicker.currentText, accentField.text, solidCheck.checked)) settings.close(); } }
+                Text { text: "WYNXO  0.2.0   ·   LOCAL DESKTOP COPILOT"; font.pixelSize: 8; font.letterSpacing: 1.5; color: "#718e7c"; Layout.alignment: Qt.AlignHCenter }
             }
         }
+    }
+
+    Dialog {
+        id: commandPalette
+        anchors.centerIn: parent
+        width: Math.min(540, window.width - 40); height: 440
+        modal: true; title: "Command palette"; padding: 18
+        property int matchingCount: 7
+        function updateMatchCount() {
+            var query = commandSearch.text.toLowerCase();
+            var count = 0;
+            for (var i = 0; i < commandList.model.length; i++) {
+                var item = commandList.model[i];
+                if (!query || (item.label + " " + item.detail).toLowerCase().indexOf(query) !== -1) count++;
+            }
+            matchingCount = count;
+        }
+        background: Rectangle { radius: 15; color: "#18201b"; border.color: "#455b4b" }
+        header: Item { height: 43
+            Text { x: 2; y: 10; text: "Command palette"; color: bright; font.pixelSize: 17; font.weight: Font.DemiBold }
+            Text { anchors.right: parent.right; y: 13; text: "Esc to close"; color: "#718579"; font.pixelSize: 10 }
+        }
+        onOpened: { commandSearch.text = ""; commandPalette.updateMatchCount(); commandSearch.forceActiveFocus(); }
+        contentItem: ColumnLayout {
+            spacing: 10
+            TextField {
+                id: commandSearch
+                Layout.fillWidth: true; Layout.preferredHeight: 40
+                placeholderText: "Search actions…"; placeholderTextColor: "#7f9586"; color: bright; font.pixelSize: 12; padding: 11
+                leftPadding: 34
+                background: Rectangle { radius: 8; color: "#111713"; border.color: commandSearch.activeFocus ? accent : "#3a4d40" }
+                Icon { x: 9; anchors.verticalCenter: parent.verticalCenter; name: "search"; width: 15; height: 15; ink: "#7f9586" }
+                Keys.onEscapePressed: commandPalette.close()
+                onTextChanged: commandPalette.updateMatchCount()
+            }
+            ListView {
+                id: commandList
+                Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 4
+                model: [
+                    {label: "New task", detail: "Start a fresh conversation", shortcut: "Ctrl+N", icon: "plus", action: "new"},
+                    {label: "Focus composer", detail: "Jump to the prompt box", shortcut: "", icon: "chat", action: "focus"},
+                    {label: "Toggle workspace panel", detail: "Show or hide desktop activity", shortcut: "", icon: "panel", action: "panel"},
+                    {label: "Enable desktop control", detail: "Grant or revoke Wayland/X11 input access", shortcut: "", icon: "cursor", action: "desktop"},
+                    {label: "Reconnect Ollama", detail: "Refresh local models", shortcut: "", icon: "bolt", action: "refresh"},
+                    {label: "Open settings", detail: "Models, thinking, themes, and appearance", shortcut: "Ctrl+,", icon: "sliders", action: "settings"},
+                    {label: "Stop current task", detail: "Cancel generation and desktop actions", shortcut: "Esc", icon: "stop", action: "stop"}
+                ]
+                delegate: ItemDelegate {
+                    id: commandDelegate
+                    required property var modelData
+                    property bool matches: !commandSearch.text || (modelData.label + " " + modelData.detail).toLowerCase().indexOf(commandSearch.text.toLowerCase()) !== -1
+                    width: commandList.width; height: matches ? 49 : 0; visible: matches; hoverEnabled: true
+                    contentItem: RowLayout { spacing: 11
+                        Icon { name: commandDelegate.modelData.icon; ink: commandDelegate.hovered ? accent : "#9ab6a1"; width: 17; height: 17 }
+                        ColumnLayout { Layout.fillWidth: true; spacing: 2
+                            Text { text: commandDelegate.modelData.label; color: "#d6e2da"; font.pixelSize: 12; font.weight: Font.DemiBold }
+                            Text { text: commandDelegate.modelData.detail; color: "#7f9586"; font.pixelSize: 10; elide: Text.ElideRight }
+                        }
+                        Text { text: commandDelegate.modelData.shortcut; color: "#718579"; font.pixelSize: 10 }
+                    }
+                    background: Rectangle { radius: 8; color: commandDelegate.hovered ? "#2b3c31" : "transparent" }
+                    onClicked: { window.runCommand(commandDelegate.modelData.action); commandPalette.close(); }
+                }
+                Text { visible: commandPalette.matchingCount === 0; text: "No matching command"; color: "#7f9586"; anchors.centerIn: parent; font.pixelSize: 12 }
+            }
+        }
+    }
+
+    Dialog {
+        id: renameDialog
+        anchors.centerIn: parent
+        width: 430; modal: true; title: "Rename task"; padding: 20
+        background: Rectangle { radius: 14; color: "#1c2520"; border.color: "#455b4b" }
+        onOpened: { renameField.text = bridge && bridge.taskTitle; renameField.selectAll(); renameField.forceActiveFocus(); }
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text { text: "Give this task a name you will recognize later."; color: "#9caf9f"; font.pixelSize: 11; wrapMode: Text.WordWrap; Layout.fillWidth: true }
+            TextField { id: renameField; Layout.fillWidth: true; height: 42; color: bright; font.pixelSize: 13; padding: 11; onAccepted: { bridge && bridge.renameTask(text); renameDialog.close(); } background: Rectangle { radius: 8; color: "#141d17"; border.color: renameField.activeFocus ? accent : "#415647" } }
+        }
+        footer: RowLayout { spacing: 8; Item { Layout.fillWidth: true } ActionButton { text: "Cancel"; quiet: true; onClicked: renameDialog.close() } ActionButton { text: "Save name"; primary: true; enabled: renameField.text.trim().length > 0; onClicked: { bridge && bridge.renameTask(renameField.text); renameDialog.close(); } } }
     }
 
     Dialog { id: deleteDialog; property string taskToDelete: ""; anchors.centerIn: parent; modal: true; title: "Delete this task?"; standardButtons: Dialog.Yes | Dialog.Cancel; onAccepted: bridge && bridge.deleteTask(taskToDelete); Label { text: "This removes its saved conversation from this computer."; color: "#c6d5ca" } background: Rectangle { radius: 12; color: "#28352c"; border.color: "#526d59" } }
     Dialog { id: linkDialog; property string link: ""; anchors.centerIn: parent; modal: true; width: 480; title: "Open link in your browser?"; standardButtons: Dialog.Open | Dialog.Cancel; onAccepted: Qt.openUrlExternally(link); Label { width: 430; text: linkDialog.link; wrapMode: Text.WrapAnywhere; color: "#c6d5ca" } background: Rectangle { radius: 12; color: "#28352c"; border.color: "#526d59" } }
     Rectangle { id: toastBox; visible: false; z: 200; anchors.bottom: parent.bottom; anchors.bottomMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; width: toastLabel.implicitWidth+38; height: 42; radius: 10; color: "#c4e2cd"; Text { id: toastLabel; anchors.centerIn: parent; color: "#1d3827"; font.pixelSize: 12 } }
     Timer { id: toastTimer; interval: 2600; onTriggered: toastBox.visible = false }
+
+    function runCommand(action) {
+        if (action === "new") bridge && bridge.newTask();
+        else if (action === "focus") composer.forceActiveFocus();
+        else if (action === "panel") window.inspectorOpen = !window.inspectorOpen;
+        else if (action === "desktop") bridge && bridge.toggleDesktop();
+        else if (action === "refresh") bridge && bridge.refreshModels();
+        else if (action === "settings") settings.open();
+        else if (action === "stop") bridge && bridge.stop();
+    }
 }
