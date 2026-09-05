@@ -1,8 +1,8 @@
 """Explicitly enabled desktop control; no shell commands are accepted from models.
 
 X11 uses XTEST and Pillow. Wayland uses a long-lived XDG RemoteDesktop portal
-session, with Screenshot portal captures. Wayland v1 supports one monitor;
-mixed-monitor screenshot coordinates cannot be inferred reliably from this API.
+session, with Screenshot portal captures. ScreenCast stream metadata maps
+multi-monitor screenshots back to the selected input stream.
 Portal interfaces: https://flatpak.github.io/xdg-desktop-portal/docs/
 """
 from __future__ import annotations
@@ -463,7 +463,9 @@ class _PortalBackend:
         self._bus = None
         self._session = None
         self._stream = None
+        self._streams = []
         self._logical_size = None
+        self._origin = (0, 0)
         self._pixel_size = None
         self._requests = {}
         self._early = {}
@@ -521,6 +523,7 @@ class _PortalBackend:
         if message.interface == self._SESSION and message.member == "Closed" and message.path == self._session:
             self.connected = False
             self._session = None
+            self._streams = []
             self._pixel_size = None
         if message.interface == self._REQUEST and message.member == "Response":
             future = self._requests.get(message.path)
@@ -575,8 +578,8 @@ class _PortalBackend:
             self._early.pop(actual, None)
 
     def connect(self):
-        if len(self.layout) != 1:
-            raise DesktopError("Wayland desktop control currently requires one monitor. Disconnect extra displays, restart Wynxo, or use an X11 session.")
+        if not self.layout:
+            raise DesktopError("Wayland did not report any monitors. Restart Wynxo inside the graphical session.")
         self._run(self._connect(), timeout=135)
 
     async def _connect(self):
@@ -588,21 +591,23 @@ class _PortalBackend:
             self._session = created["session_handle"]
             await self._request(self._REMOTE, "SelectDevices", "oa{sv}", [self._session], {"types": Variant("u", 3)})
             await self._request(self._CAST, "SelectSources", "oa{sv}", [self._session],
-                                {"types": Variant("u", 1), "multiple": Variant("b", False)})
+                                {"types": Variant("u", 1), "multiple": Variant("b", len(self.layout) > 1)})
             result = await self._request(self._REMOTE, "Start", "osa{sv}", [self._session, ""], {})
             if result.get("devices", 0) & 3 != 3:
                 raise DesktopError("Allow both keyboard and pointer access in the desktop permission dialog.")
             streams = result.get("streams", [])
-            if len(streams) != 1:
+            if len(streams) != len(self.layout):
+                if len(self.layout) > 1:
+                    raise DesktopError("Select every monitor in the desktop sharing dialog so Wynxo can map screen coordinates safely.")
                 raise DesktopError("Select exactly one monitor in the desktop sharing dialog.")
-            self._stream, properties = streams[0]
-            logical = properties.get("logical_size", properties.get("size"))
-            expected = self.layout[0]
-            if logical is None:
-                logical = [expected["width"], expected["height"]]
-            if len(logical) != 2 or any(not isinstance(v, (int, float)) or v <= 0 for v in logical):
-                raise DesktopError("The desktop portal returned invalid monitor dimensions.")
-            self._logical_size = tuple(logical)
+            self._streams = self._map_streams(streams)
+            self._stream = self._streams[0]["stream"]
+            min_x = min(m["x"] for m in self.layout)
+            min_y = min(m["y"] for m in self.layout)
+            max_x = max(m["x"] + m["width"] for m in self.layout)
+            max_y = max(m["y"] + m["height"] for m in self.layout)
+            self._origin = (min_x, min_y)
+            self._logical_size = (max_x - min_x, max_y - min_y)
             self._pixel_size = None
             self.connected = True
         except BaseException:
@@ -618,6 +623,7 @@ class _PortalBackend:
         session, self._session = self._session, None
         self.connected = False
         self._pixel_size = None
+        self._streams = []
         if session and self._bus:
             try:
                 await self._call(self._SESSION, "Close", path=session)
@@ -632,7 +638,8 @@ class _PortalBackend:
         from PIL import Image
         self._pixel_size = None  # A failed capture must invalidate old coordinates.
         result = await self._request(self._SHOT, "Screenshot", "sa{sv}", [""],
-                                     {"interactive": Variant("b", False), "modal": Variant("b", False)})
+                                     {"interactive": Variant("b", False), "modal": Variant("b", False),
+                                      "target": Variant("u", 1)})
         uri = urlparse(result.get("uri", ""))
         if uri.scheme != "file" or uri.netloc not in ("", "localhost"):
             raise DesktopError("The portal did not return a local screenshot file.")
@@ -649,6 +656,33 @@ class _PortalBackend:
         self._pixel_size = picture.size
         return picture
 
+    def _map_streams(self, streams):
+        """Match portal monitor streams to Qt's logical monitor rectangles."""
+        mapped = []
+        unused = list(self.layout)
+        for stream, properties in streams:
+            properties = properties or {}
+            position = properties.get("position")
+            size = properties.get("size") or properties.get("logical_size")
+            if position is not None and len(position) == 2:
+                candidates = [m for m in unused if m["x"] == position[0] and m["y"] == position[1]]
+            else:
+                candidates = unused if len(self.layout) == 1 else []
+            if len(candidates) != 1:
+                raise DesktopError("The desktop portal did not provide an unambiguous position for every monitor.")
+            monitor = candidates[0]
+            unused.remove(monitor)
+            if size is None:
+                size = [monitor["width"], monitor["height"]]
+            if len(size) != 2 or any(not isinstance(v, (int, float)) or v <= 0 for v in size):
+                raise DesktopError("The desktop portal returned invalid monitor dimensions.")
+            mapped.append({"stream": stream, "x": monitor["x"], "y": monitor["y"],
+                           "width": monitor["width"], "height": monitor["height"],
+                           "stream_width": float(size[0]), "stream_height": float(size[1])})
+        if unused:
+            raise DesktopError("The desktop portal did not return all selected monitors.")
+        return mapped
+
     def _notify(self, member, signature, values, cancel):
         _check(cancel)
         if not self.connected or not self._session:
@@ -659,9 +693,23 @@ class _PortalBackend:
     def move(self, x, y, cancel):
         if not self._pixel_size or not self._logical_size:
             raise DesktopError("Take a screenshot before moving the pointer.")
-        lx = x * self._logical_size[0] / self._pixel_size[0]
-        ly = y * self._logical_size[1] / self._pixel_size[1]
-        self._notify("NotifyPointerMotionAbsolute", "udd", [self._stream, lx, ly], cancel)
+        px, py = self._pixel_size
+        logical_x = self._origin[0] + x * self._logical_size[0] / px
+        logical_y = self._origin[1] + y * self._logical_size[1] / py
+        if not self._streams:
+            lx = x * self._logical_size[0] / px
+            ly = y * self._logical_size[1] / py
+            stream = self._stream
+        else:
+            selected = next((m for m in self._streams
+                             if m["x"] <= logical_x < m["x"] + m["width"] and
+                                m["y"] <= logical_y < m["y"] + m["height"]), None)
+            if selected is None:
+                raise DesktopError("The pointer coordinate is outside the shared monitors.")
+            stream = selected["stream"]
+            lx = (logical_x - selected["x"]) * selected["stream_width"] / selected["width"]
+            ly = (logical_y - selected["y"]) * selected["stream_height"] / selected["height"]
+        self._notify("NotifyPointerMotionAbsolute", "udd", [stream, lx, ly], cancel)
 
     def button(self, button, down, cancel):
         code = {"left": 0x110, "right": 0x111, "middle": 0x112}[button]

@@ -70,11 +70,11 @@ Desktop control starts off each time you open Wynxo. Runs have a 20-action limit
 
 | Session | Backend | Current limits |
 | --- | --- | --- |
-| KDE/GNOME Wayland | XDG RemoteDesktop, ScreenCast and Screenshot portals | One monitor; compositor permission required; screenshot prompts depend on the portal implementation |
+| KDE/GNOME Wayland | XDG RemoteDesktop, ScreenCast and Screenshot portals | Select every monitor; compositor permission required; screenshot prompts depend on the portal implementation |
 | X11 | XTEST input + Pillow screenshots | Requires XTEST; keyboard characters must be available in the active keymap |
 | No graphical session | Chat only | Desktop input and capture are unavailable |
 
-On Wayland, connect exactly one display and restart Wynxo before enabling desktop control. A compositor must implement the required portals. If permission is denied or a portal is unavailable, Wynxo reports the error; it cannot bypass the desktop's permission system. Wayland support needs testing on your specific compositor/version.
+On Wayland, select every monitor in the permission dialog so Wynxo can map screenshot pixels to the correct input stream. A compositor must implement the required portals and expose monitor positions. If permission is denied or a portal is unavailable, Wynxo reports the error; it cannot bypass the desktop's permission system. Wayland support needs testing on your specific compositor/version.
 
 On Debian KDE, these packages supply the usual desktop integration pieces:
 
@@ -162,7 +162,7 @@ Run the launcher from a terminal to see missing library diagnostics. Package nam
 
 **The `wynxo` command is missing:** Use `~/.local/bin/wynxo` or the application menu. Add `~/.local/bin` to your shell's `PATH` if desired; the installer does not edit shell configuration.
 
-**Desktop control is unavailable:** Check the session/backend explanation in Wynxo, grant the desktop's permission prompt, and confirm portal support. A Wayland session with multiple displays is intentionally rejected by this version. X11 is an alternative when available from your login screen.
+**Desktop control is unavailable:** Check the session/backend explanation in Wynxo, grant the desktop's permission prompt, select every monitor, and confirm portal support. If a compositor does not report monitor positions, update its portal backend or use a single display for this version. X11 is an alternative when available from your login screen.
 
 ## Development
 

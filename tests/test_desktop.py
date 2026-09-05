@@ -318,11 +318,26 @@ class PortalTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(DesktopError, "local screenshot"):
             await self.portal._screenshot()
 
-    async def test_multimonitor_guard_does_not_contact_portal(self):
-        self.portal.layout *= 2
-        with patch.object(self.portal, "_run") as run, self.assertRaisesRegex(DesktopError, "one monitor"):
-            self.portal.connect()
-        run.assert_not_called()
+    async def test_multimonitor_streams_map_absolute_coordinates(self):
+        portal = _PortalBackend([
+            {"x": 0, "y": 0, "width": 1920, "height": 1080},
+            {"x": 1920, "y": 0, "width": 1920, "height": 1080},
+        ])
+        portal._init_bus = AsyncMock()
+        portal._request = AsyncMock(side_effect=[
+            {"session_handle": "/session/test"}, {}, {},
+            {"devices": 3, "streams": [
+                [91, {"position": [0, 0], "size": [1920, 1080]}],
+                [92, {"position": [1920, 0], "size": [1920, 1080]}],
+            ]},
+        ])
+        await portal._connect()
+        select = portal._request.call_args_list[2]
+        self.assertTrue(select.args[4]["multiple"].value)
+        portal._pixel_size = (3840, 1080)
+        portal._notify = Mock()
+        portal.move(2500, 500, None)
+        portal._notify.assert_called_once_with("NotifyPointerMotionAbsolute", "udd", [92, 580.0, 500.0], None)
 
 
 if __name__ == "__main__":
