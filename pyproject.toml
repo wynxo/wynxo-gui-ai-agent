@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wynxo"
+version = "0.1.0"
+description = "A local Ollama copilot for the Linux desktop"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Wynxo contributors"}]
+dependencies = [
+  "PySide6>=6.8,<7",
+  "httpx>=0.27,<1",
+  "dbus-next>=0.2.3,<0.3",
+  "Pillow>=10,<13",
+  "python-xlib>=0.33,<0.34",
+]
+
+[project.scripts]
+wynxo = "wynxo.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/wynxo/wynxo-gui-ai-agent"
+
+[tool.setuptools.packages.find]
+include = ["wynxo*"]
+
+[tool.setuptools.package-data]
+wynxo = ["ui/*.qml", "ui/**/*.qml", "ui/*.svg", "ui/*.ttf", "qml/*.qml", "qml/**/*.qml", "assets/*", "assets/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

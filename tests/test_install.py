@@ -1,0 +1,224 @@
+"""Exercise actual filesystem transactions; replace only expensive venv/pip work."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import install as installer
+import uninstall as remover
+
+
+class InstallerTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="wynxo installer ")
+        self.addCleanup(self.temporary.cleanup)
+        self.base = Path(self.temporary.name)
+        self.source = self.base / "checkout with spaces"
+        self.source.mkdir()
+        (self.source / "wynxo").mkdir()
+        (self.source / "wynxo/__main__.py").write_text("VERSION = 'original'\n")
+        (self.source / "assets").mkdir()
+        (self.source / "assets/wynxo.svg").write_text("<svg/>")
+        for name in ("pyproject.toml", "README.md", "LICENSE", "install.py", "uninstall.py"):
+            (self.source / name).write_text("fixture\n")
+        shutil.copy2(installer.__file__, self.source / "install.py")
+        shutil.copy2(remover.__file__, self.source / "uninstall.py")
+        self.data = self.base / "user data"
+        self.root = self.data / "wynxo-app"
+        self.bin = self.base / "bin with spaces"
+        self.desktop = self.data / "applications" / f"{installer.APP_ID}.desktop"
+        self.icon = self.data / "icons/hicolor/scalable/apps" / f"{installer.APP_ID}.svg"
+        self.env = patch.dict(os.environ, {
+            "XDG_DATA_HOME": str(self.data),
+            "XDG_CONFIG_HOME": str(self.base / "config"),
+            "XDG_CACHE_HOME": str(self.base / "cache"),
+        })
+        self.env.start()
+        self.addCleanup(self.env.stop)
+        self.builder = patch.object(installer, "_build_environment", side_effect=self.fake_build)
+        self.build = self.builder.start()
+        self.addCleanup(self.builder.stop)
+
+    @staticmethod
+    def fake_build(release):
+        (release / "venv/bin").mkdir(parents=True)
+        (release / "venv/bin/python").symlink_to("/usr/bin/python3")
+
+    def install(self):
+        return installer.install(self.source, self.root, self.bin)
+
+    def test_install_is_copy_and_handles_spaces(self):
+        launcher = self.install()
+        self.assertTrue(launcher.is_symlink())
+        self.assertEqual(launcher.resolve(), self.root / "wynxo")
+        self.assertTrue(os.access(launcher, os.X_OK))
+        self.assertIn('Exec="', self.desktop.read_text())
+        self.assertIn("--uninstall", launcher.read_text())
+        shutil.rmtree(self.source)
+        self.assertEqual((self.root / "current/source/wynxo/__main__.py").read_text(), "VERSION = 'original'\n")
+
+    def test_installed_uninstall_command_works_after_checkout_removed(self):
+        launcher = self.install()
+        shutil.rmtree(self.source)
+        result = subprocess.run([str(launcher), "--uninstall"], capture_output=True, text=True, cwd=self.base)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Wynxo removed", result.stdout)
+        self.assertFalse(self.root.exists())
+        self.assertFalse(installer.exists(launcher))
+
+    def test_launcher_directory_must_be_outside_install_root(self):
+        with self.assertRaisesRegex(ValueError, "Launcher directory"):
+            installer.install(self.source, self.root, self.root)
+        self.assertFalse(self.root.exists())
+
+    def test_failed_first_install_leaves_no_app_or_launcher(self):
+        self.build.side_effect = RuntimeError("pip failed")
+        with self.assertRaisesRegex(RuntimeError, "pip failed"):
+            self.install()
+        self.assertFalse(self.root.exists())
+        self.assertFalse(installer.exists(self.bin / "wynxo"))
+        self.assertFalse(self.desktop.exists())
+
+    def test_failed_upgrade_preserves_existing_install(self):
+        self.install()
+        current = os.readlink(self.root / "current")
+        manifest = (self.root / installer.MANIFEST).read_bytes()
+        self.build.side_effect = RuntimeError("pip failed")
+        with self.assertRaises(RuntimeError):
+            self.install()
+        self.assertEqual(os.readlink(self.root / "current"), current)
+        self.assertEqual((self.root / installer.MANIFEST).read_bytes(), manifest)
+        self.assertEqual(len(list((self.root / "releases").iterdir())), 1)
+        self.assertTrue(self.desktop.exists())
+
+    def test_publication_failure_rolls_back_current_and_files(self):
+        self.install()
+        original_manifest = (self.root / installer.MANIFEST).read_bytes()
+        original_current = os.readlink(self.root / "current")
+        original_icon = self.icon.read_bytes()
+        real_write = installer.atomic_write
+        raised = False
+
+        def fail_once(path, data, mode=0o644):
+            nonlocal raised
+            if path == self.desktop and not raised:
+                raised = True
+                raise OSError("disk full")
+            return real_write(path, data, mode)
+
+        (self.source / "assets/wynxo.svg").write_text("<svg>changed</svg>")
+        with patch.object(installer, "atomic_write", side_effect=fail_once):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                self.install()
+        self.assertEqual((self.root / installer.MANIFEST).read_bytes(), original_manifest)
+        self.assertEqual(os.readlink(self.root / "current"), original_current)
+        self.assertEqual(self.icon.read_bytes(), original_icon)
+        self.assertEqual(len(list((self.root / "releases").iterdir())), 1)
+
+    def test_upgrade_reuses_owned_paths_and_keeps_running_release(self):
+        self.install()
+        first = (self.root / "current").resolve()
+        self.install()
+        self.assertNotEqual((self.root / "current").resolve(), first)
+        self.assertTrue(first.exists())
+        self.assertEqual(len(installer.read_manifest(self.root)["releases"]), 2)
+
+    def test_refuses_unowned_install_directory(self):
+        self.root.mkdir(parents=True)
+        precious = self.root / "precious.txt"
+        precious.write_text("keep me")
+        with self.assertRaisesRegex(ValueError, "unowned"):
+            self.install()
+        self.assertEqual(precious.read_text(), "keep me")
+        self.build.assert_not_called()
+
+    def test_refuses_symlink_install_directory(self):
+        victim = self.base / "important"
+        victim.mkdir()
+        self.root.parent.mkdir()
+        self.root.symlink_to(victim, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "unowned"):
+            self.install()
+        self.assertTrue(victim.is_dir())
+        self.assertTrue(self.root.is_symlink())
+
+    def test_refuses_existing_launcher_without_overwriting(self):
+        self.bin.mkdir()
+        launcher = self.bin / "wynxo"
+        launcher.write_text("some other program")
+        with self.assertRaisesRegex(ValueError, "unowned or modified"):
+            self.install()
+        self.assertEqual(launcher.read_text(), "some other program")
+        self.assertFalse(self.root.exists())
+
+    def test_refuses_modified_desktop_entry_on_upgrade(self):
+        self.install()
+        self.desktop.write_text("my custom desktop entry")
+        current = os.readlink(self.root / "current")
+        with self.assertRaisesRegex(ValueError, "modified"):
+            self.install()
+        self.assertEqual(self.desktop.read_text(), "my custom desktop entry")
+        self.assertEqual(os.readlink(self.root / "current"), current)
+
+    def test_uninstall_keeps_data_and_modified_external_file(self):
+        self.install()
+        (self.data / "wynxo").mkdir()
+        history = self.data / "wynxo/history.db"
+        history.write_text("my conversations")
+        self.desktop.write_text("my modified entry")
+        messages = remover.uninstall(self.root)
+        self.assertFalse(self.root.exists())
+        self.assertFalse(installer.exists(self.bin / "wynxo"))
+        self.assertEqual(history.read_text(), "my conversations")
+        self.assertEqual(self.desktop.read_text(), "my modified entry")
+        self.assertTrue(any("Kept modified" in item for item in messages))
+
+    def test_purge_removes_only_app_data_and_never_follows_data_symlink(self):
+        self.install()
+        (self.data / "wynxo").mkdir()
+        (self.data / "wynxo/history.db").write_text("history")
+        models = self.data / "ollama"
+        models.mkdir()
+        (models / "model.gguf").write_text("model")
+        config = self.base / "config"
+        config.mkdir()
+        (config / "wynxo").symlink_to(models, target_is_directory=True)
+        messages = remover.uninstall(self.root, purge=True)
+        self.assertFalse((self.data / "wynxo").exists())
+        self.assertEqual((models / "model.gguf").read_text(), "model")
+        self.assertTrue(any("symlink" in message for message in messages))
+
+    def test_uninstall_preserves_unknown_install_files(self):
+        self.install()
+        unknown = self.root / "personal.txt"
+        unknown.write_text("keep")
+        messages = remover.uninstall(self.root)
+        self.assertEqual(unknown.read_text(), "keep")
+        self.assertTrue(any("unknown files" in message for message in messages))
+
+    def test_uninstall_refuses_symlink_releases(self):
+        self.install()
+        shutil.rmtree(self.root / "releases")
+        victim = self.base / "important"
+        victim.mkdir()
+        (victim / "file").write_text("keep")
+        (self.root / "releases").symlink_to(victim, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "symlink"):
+            remover.uninstall(self.root)
+        self.assertEqual((victim / "file").read_text(), "keep")
+
+    def test_relative_xdg_variable_uses_home_fallback(self):
+        with patch.dict(os.environ, {"XDG_DATA_HOME": "relative"}):
+            self.assertEqual(installer.default_root(), Path.home() / ".local/share/wynxo-app")
+
+    def test_control_characters_in_paths_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "control characters"):
+            installer.absolute("/tmp/wynxo\nmalformed")
+
+
+if __name__ == "__main__":
+    unittest.main()

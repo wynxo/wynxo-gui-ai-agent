@@ -1,0 +1,83 @@
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
+from wynxo.storage import Store
+
+
+def test_persistence_isolation_and_conversation_crud(tmp_path):
+    path = tmp_path / "one" / "history.sqlite3"
+    store = Store(path)
+    first = store.create_conversation("First", "model:1")
+    second = store.create_conversation("Second")
+    messages = [{"role": "user", "content": "Hey"}, {"role": "assistant", "content": "Hi"}]
+    store.set_messages(first["id"], messages, model="model:2")
+    store.set_messages(second["id"], [{"role": "user", "content": "Other"}])
+    assert store.get_messages(first["id"]) == messages
+    assert store.get_conversation(first["id"])["model"] == "model:2"
+    assert store.list_conversations()[0]["id"] == second["id"]
+    store.rename_conversation(first["id"], "Renamed")
+    assert store.list_conversations()[0]["title"] == "Renamed"
+    store.set_setting("ui", {"think": True, "endpoint": "http://127.0.0.1:11434"})
+    store.close()
+    reopened = Store(path)
+    assert reopened.get_messages(first["id"]) == messages
+    assert reopened.get_setting("ui")["think"] is True
+    assert reopened.get_setting("missing", "default") == "default"
+    reopened.delete_conversation(first["id"])
+    assert reopened.get_conversation(first["id"]) is None
+    assert reopened.get_messages(first["id"]) == []
+    assert reopened.get_messages(second["id"])[0]["content"] == "Other"
+    reopened.close()
+    isolated = Store(tmp_path / "two.sqlite3")
+    assert isolated.list_conversations() == []
+    assert isolated.get_setting("ui") is None
+    isolated.close()
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_screenshots_not_saved_and_input_not_mutated(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    conversation = store.create_conversation()
+    messages = [{"role": "user", "content": "Current desktop screenshot (800 × 600 pixels).", "images": ["sensitive-image"]},
+                {"role": "user", "content": "Explain this", "images": ["upload"]},
+                {"role": "tool", "tool_name": "screenshot", "content": '{"ok":true,"width":800,"height":600}'}]
+    store.set_messages(conversation["id"], messages)
+    saved = store.get_messages(conversation["id"])
+    assert len(saved) == 2
+    assert not any("images" in message for message in saved)
+    assert messages[0]["images"] == ["sensitive-image"]
+    store.close()
+
+
+def test_missing_conversation_cannot_be_silently_created(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    with pytest.raises(KeyError):
+        store.set_messages("missing", [{"role": "user", "content": "oops"}])
+    assert store.list_conversations() == []
+    store.close()
+
+
+def test_store_supports_worker_threads(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    def save(i):
+        conversation = store.create_conversation(f"Task {i}")
+        store.set_messages(conversation["id"], [{"role": "user", "content": str(i)}])
+        store.set_setting(f"key{i}", i)
+        return conversation["id"], i
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        records = list(pool.map(save, range(20)))
+    for ident, number in records:
+        assert store.get_messages(ident)[0]["content"] == str(number)
+        assert store.get_setting(f"key{number}") == number
+    assert len(store.list_conversations()) == 20
+    store.close()
+
+
+def test_default_store_respects_xdg_data_directory(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    store = Store()
+    assert store.path == tmp_path / "wynxo" / "history.sqlite3"
+    assert os.stat(store.path.parent).st_mode & 0o777 == 0o700
+    store.close()
