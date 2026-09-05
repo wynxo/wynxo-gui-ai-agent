@@ -40,6 +40,9 @@ Canvas {
         case "cursor": line([[5,3],[20,13],[13,14],[10,21],[5,3]]);break;
         case "panel": rect(3,4,18,16);line([[15,4],[15,20]]);break;
         case "sun": circle(12,12,4);for(let i=0;i<8;i++){let a=i*Math.PI/4;line([[12+7*Math.cos(a),12+7*Math.sin(a)],[12+10*Math.cos(a),12+10*Math.sin(a)]]);}break;
+        case "pin": line([[8,4],[16,4],[15,9],[19,13],[13,13],[12,21],[11,13],[5,13],[9,9],[8,4]]);break;
+        case "retry": line([[5,8],[5,3],[10,3]]);c.beginPath();c.arc(12,12,8,-2.5,2.2);c.stroke();break;
+        case "duplicate": rect(7,7,13,14);rect(3,3,13,14);break;
         default: circle(12,12,7);
         }
     }

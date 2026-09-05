@@ -316,12 +316,16 @@ class AgentEngine:
         self.client, self.desktop = client, desktop
 
     def run(self, messages: list[dict], model: str, desktop_enabled: bool, cancel,
-            emit: Callable[[dict], None], think: bool = False, max_steps: int = 20) -> list[dict]:
+            emit: Callable[[dict], None], think: bool = False, max_steps: int = 20,
+            num_ctx: int = 16384, temperature: float = 0.7, keep_alive: str = "5m") -> list[dict]:
         # Capture fresh screen context for each request. A later chat-only/nonvisual
         # model must not inherit screenshots from an earlier desktop task.
         history = copy.deepcopy([m for m in messages if not (m.get("images") and
                                  m.get("content", "").startswith("Current desktop screenshot ("))])
         max_steps = max(1, min(int(max_steps), 100))
+        num_ctx = max(2048, min(int(num_ctx), 131072))
+        temperature = max(0.0, min(float(temperature), 2.0))
+        keep_alive = str(keep_alive).strip()[:32] or "5m"
         active_message: dict | None = None
 
         def event(kind: str, **fields):
@@ -395,7 +399,8 @@ class AgentEngine:
                     raise Cancelled("Stopped")
                 event("status", text="Thinking…" if think and "thinking" in capabilities else "Working…")
                 payload = {"model": model, "messages": [{"role": "system", "content": system}] + history,
-                           "options": {"num_ctx": 16384}, "keep_alive": "5m"}
+                           "options": {"num_ctx": num_ctx, "temperature": temperature},
+                           "keep_alive": keep_alive}
                 if "thinking" in capabilities:
                     payload["think"] = bool(think)
                 if allowed:
@@ -425,7 +430,12 @@ class AgentEngine:
                         complete = True
                         duration = chunk.get("eval_duration") or 0
                         tokens = chunk.get("eval_count") or 0
-                        event("metrics", tokens=tokens, tokens_per_second=round(tokens * 1e9 / duration, 1) if duration else 0)
+                        event("metrics", tokens=tokens,
+                              prompt_tokens=chunk.get("prompt_eval_count") or 0,
+                              cached_prompt_tokens=chunk.get("prompt_eval_cached_count") or 0,
+                              load_ms=round((chunk.get("load_duration") or 0) / 1e6, 1),
+                              total_ms=round((chunk.get("total_duration") or 0) / 1e6, 1),
+                              tokens_per_second=round(tokens * 1e9 / duration, 1) if duration else 0)
                 if not complete:
                     raise OllamaError("Ollama's response ended before completion. Please retry.")
                 if calls:

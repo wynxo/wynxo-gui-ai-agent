@@ -30,6 +30,8 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+K"; onActivated: taskSearch.forceActiveFocus() }
     Shortcut { sequence: "Ctrl+Shift+P"; onActivated: commandPalette.open() }
     Shortcut { sequence: "Ctrl+Shift+S"; onActivated: bridge && bridge.stop() }
+    Shortcut { sequence: "Ctrl+R"; onActivated: bridge && bridge.regenerate() }
+    Shortcut { sequence: "Ctrl+D"; onActivated: bridge && bridge.duplicateTask() }
     Shortcut { sequence: "Escape"; onActivated: { if(bridge && bridge.busy) bridge && bridge.stop(); } }
     Connections {
         target: bridge
@@ -88,10 +90,11 @@ ApplicationWindow {
                         height: matches ? 43 : 0; visible: matches
                         radius: 8
                         color: modelData.id === (bridge && bridge.taskId) ? "#252e27" : taskMouse.containsMouse ? "#1a201c" : "transparent"
-                        Icon { x: 9; anchors.verticalCenter: parent.verticalCenter; name: "chat"; width: 16; height: 16; ink: modelData.id === (bridge && bridge.taskId) ? accent : "#727f76" }
-                        Text { x: 35; anchors.verticalCenter: parent.verticalCenter; width: parent.width-62; text: modelData.title; elide: Text.ElideRight; color: modelData.id === (bridge && bridge.taskId) ? "#dce8de" : "#9ea9a1"; font.pixelSize: 12 }
+                        Icon { x: 9; anchors.verticalCenter: parent.verticalCenter; name: modelData.pinned ? "pin" : "chat"; width: 16; height: 16; ink: modelData.pinned ? accent : modelData.id === (bridge && bridge.taskId) ? accent : "#727f76" }
+                        Text { x: 35; anchors.verticalCenter: parent.verticalCenter; width: parent.width-88; text: modelData.title; elide: Text.ElideRight; color: modelData.id === (bridge && bridge.taskId) ? "#dce8de" : "#9ea9a1"; font.pixelSize: 12 }
                         MouseArea { id: taskMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: bridge && bridge.openTask(taskDelegate.modelData.id) }
-                        ActionButton { visible: taskMouse.containsMouse || hovered; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 30; iconName: "trash"; quiet: true; onClicked: { deleteDialog.taskToDelete = taskDelegate.modelData.id; deleteDialog.open(); } }
+                        ActionButton { z: 2; visible: modelData.pinned || taskMouse.containsMouse || hovered; anchors.right: parent.right; anchors.rightMargin: 28; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 30; iconName: "pin"; quiet: true; foreground: modelData.pinned ? accent : "#839188"; onClicked: bridge && bridge.togglePin(taskDelegate.modelData.id); ToolTip.visible: hovered; ToolTip.text: modelData.pinned ? "Unpin task" : "Pin task" }
+                        ActionButton { z: 2; visible: taskMouse.containsMouse || hovered; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; width: 28; height: 30; iconName: "trash"; quiet: true; onClicked: { deleteDialog.taskToDelete = taskDelegate.modelData.id; deleteDialog.open(); } }
                     }
                     Text { visible: taskList.count === 0; width: parent.width-14; x: 7; y: 8; text: "A fresh start.\nYour tasks will live here."; color: "#69756d"; font.pixelSize: 12; lineHeight: 1.5 }
                     ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -134,6 +137,9 @@ ApplicationWindow {
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: bridge && bridge.refreshModels() }
                     }
                     ActionButton { iconName: "download"; quiet: true; width: 33; height: 33; visible: bridge && bridge.hasMessages; onClicked: bridge && bridge.exportTask(); ToolTip.visible: hovered; ToolTip.text: "Export conversation" }
+                    ActionButton { iconName: "retry"; quiet: true; width: 33; height: 33; visible: bridge && bridge.hasMessages; enabled: bridge && bridge.canRegenerate; onClicked: bridge && bridge.regenerate(); ToolTip.visible: hovered; ToolTip.text: bridge && bridge.desktopEnabled ? "Disable desktop control to regenerate safely" : "Regenerate · Ctrl+R" }
+                    ActionButton { iconName: "duplicate"; quiet: true; width: 33; height: 33; visible: bridge && bridge.hasMessages; enabled: bridge && !bridge.busy; onClicked: bridge && bridge.duplicateTask(); ToolTip.visible: hovered; ToolTip.text: "Duplicate task · Ctrl+D" }
+                    ActionButton { iconName: "pin"; quiet: true; width: 33; height: 33; visible: bridge && bridge.taskId.length > 0; foreground: bridge && bridge.taskPinned ? accent : "#839188"; onClicked: bridge && bridge.togglePin(bridge.taskId); ToolTip.visible: hovered; ToolTip.text: bridge && bridge.taskPinned ? "Unpin task" : "Pin task" }
                     ActionButton { iconName: "bolt"; quiet: true; width: 33; height: 33; onClicked: commandPalette.open(); ToolTip.visible: hovered; ToolTip.text: "Command palette · Ctrl+Shift+P" }
                     ActionButton { iconName: "panel"; quiet: true; width: 33; height: 33; onClicked: window.inspectorOpen = !window.inspectorOpen; ToolTip.visible: hovered; ToolTip.text: "Toggle workspace panel" }
                 }
@@ -311,9 +317,22 @@ ApplicationWindow {
                                     ActionButton { iconName: bridge && bridge.desktopEnabled ? "cursor" : "chat"; text: bridge && bridge.desktopEnabled ? "Desktop" : "Chat"; height: 29; quiet: true; foreground: "#bad0c0"; onClicked: window.inspectorOpen = true; ToolTip.visible: hovered; ToolTip.text: "Enable desktop control in the workspace panel" }
                                     Rectangle { width: 1; height: 14; color: "#425448" }
                                     ComboBox {
+                                        id: runtimePreset
+                                        Layout.preferredWidth: 104; Layout.preferredHeight: 30
+                                        model: ["Fast", "Balanced", "Deep", "Custom"]
+                                        currentIndex: Math.max(0, model.indexOf(bridge && bridge.runtimePreset))
+                                        enabled: bridge && !bridge.busy
+                                        font.pixelSize: 10
+                                        contentItem: Text { text: runtimePreset.displayText; color: "#a9bfb0"; verticalAlignment: Text.AlignVCenter; leftPadding: 7; rightPadding: 19; elide: Text.ElideRight; font: runtimePreset.font }
+                                        indicator: Icon { name: "down"; width: 13; height: 13; x: runtimePreset.width-17; y: 8; ink: "#8da996" }
+                                        background: Rectangle { color: runtimePreset.hovered ? "#2b3930" : "transparent"; radius: 6 }
+                                        onActivated: { if(currentText !== "Custom") bridge && bridge.applyRuntimePreset(currentText); }
+                                        ToolTip.visible: hovered; ToolTip.text: bridge && bridge.runtimeSummary
+                                    }
+                                    ComboBox {
                                         id: modelPicker
                                         objectName: "modelPicker"
-                                        Layout.preferredWidth: Math.min(230, composer.width * .44); Layout.preferredHeight: 30
+                                        Layout.preferredWidth: Math.min(205, composer.width * .34); Layout.preferredHeight: 30
                                         model: bridge && bridge.models.length ? bridge && bridge.models : [bridge && bridge.model]
                                         currentIndex: Math.max(0, model.indexOf(bridge && bridge.model))
                                         enabled: bridge && !bridge.busy && !bridge.pulling
@@ -393,6 +412,18 @@ ApplicationWindow {
                                 Text { id: capabilityDetail; Layout.fillWidth: true; text: bridge && bridge.modelCapabilityHint; color: "#7f9787"; font.pixelSize: 10; wrapMode: Text.WordWrap; lineHeight: 1.3; maximumLineCount: 4; elide: Text.ElideRight }
                             }
                         }
+                        Rectangle {
+                            Layout.fillWidth: true; Layout.preferredHeight: 78
+                            radius: 9; color: "#18231b"; border.color: "#304437"
+                            ColumnLayout { anchors.fill: parent; anchors.margins: 11; spacing: 6
+                                RowLayout { Layout.fillWidth: true
+                                    Text { text: "RUNTIME"; color: "#78917f"; font.pixelSize: 8; font.letterSpacing: 1.3; Layout.fillWidth: true }
+                                    Text { text: bridge && bridge.runtimePreset; color: accent; font.pixelSize: 9 }
+                                }
+                                Text { Layout.fillWidth: true; text: bridge && bridge.runtimeSummary; color: "#9cb0a2"; font.pixelSize: 10; elide: Text.ElideRight }
+                                Text { Layout.fillWidth: true; text: bridge && bridge.runMetricSummary; color: "#70897a"; font.pixelSize: 9; elide: Text.ElideRight }
+                            }
+                        }
                         Rectangle { Layout.fillWidth: true; height: 1; color: "#2b382e" }
                         RowLayout { Text { text: "ACTIVITY"; color: "#8da693"; font.pixelSize: 9; font.letterSpacing: 1.8 } Item { Layout.fillWidth: true } Text { text: bridge && bridge.activity.length.toString().padStart(2, "0"); color: "#6f8a78"; font.pixelSize: 10 } }
                         ListView {
@@ -429,7 +460,7 @@ ApplicationWindow {
     Dialog {
         id: settings
         anchors.centerIn: parent
-        width: 560; height: Math.min(window.height-60, 675)
+        width: 590; height: Math.min(window.height-50, 760)
         modal: true; title: "Settings"
         padding: 26
         background: Rectangle { radius: 16; color: "#1c2520"; border.color: "#455b4b" }
@@ -441,6 +472,11 @@ ApplicationWindow {
             themePicker.currentIndex = Math.max(0, window.themeNames.indexOf(bridge && bridge.theme));
             accentField.text = bridge && bridge.accentColor;
             solidCheck.checked = bridge && bridge.solidBackground;
+            ctxField.text = bridge && bridge.numCtx;
+            tempField.text = bridge && bridge.temperature;
+            keepAliveField.text = bridge && bridge.keepAlive;
+            stepsField.text = bridge && bridge.maxSteps;
+            runtimeSettingsPreset.currentIndex = Math.max(0, runtimeSettingsPreset.model.indexOf(bridge && bridge.runtimePreset));
         }
         contentItem: ScrollView {
             clip: true
@@ -458,6 +494,32 @@ ApplicationWindow {
                     ActionButton { text: bridge && bridge.pulling ? "Stop" : "Download"; iconName: bridge && bridge.pulling ? "stop" : "download"; enabled: bridge && bridge.online && !bridge.busy; onClicked: bridge && bridge.pulling ? bridge.cancelPull() : bridge.pullModel(pullField.text) }
                 }
                 Text { Layout.fillWidth: true; text: bridge && bridge.pullProgress || "Downloads from Ollama’s registry. Large models need substantial memory and disk space."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap }
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#34473a" }
+                Text { text: "RUNTIME"; color: "#8fae99"; font.pixelSize: 10; font.letterSpacing: 2 }
+                Text { text: "How the local model runs"; color: "#cbdacf"; font.pixelSize: 12 }
+                ComboBox {
+                    id: runtimeSettingsPreset
+                    Layout.fillWidth: true; Layout.preferredHeight: 40
+                    model: ["Fast", "Balanced", "Deep", "Custom"]
+                    contentItem: Text { text: runtimeSettingsPreset.displayText; color: bright; verticalAlignment: Text.AlignVCenter; leftPadding: 11; font.pixelSize: 12 }
+                    indicator: Icon { name: "down"; width: 15; height: 15; x: runtimeSettingsPreset.width-22; y: 12; ink: "#8da996" }
+                    background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" }
+                    onActivated: {
+                        if(currentText !== "Custom") {
+                            bridge && bridge.applyRuntimePreset(currentText);
+                            ctxField.text = bridge && bridge.numCtx; tempField.text = bridge && bridge.temperature;
+                            keepAliveField.text = bridge && bridge.keepAlive; stepsField.text = bridge && bridge.maxSteps;
+                        }
+                    }
+                }
+                GridLayout { Layout.fillWidth: true; columns: 2; columnSpacing: 10; rowSpacing: 10
+                    TextField { id: ctxField; Layout.fillWidth: true; placeholderText: "Context tokens"; color: bright; inputMethodHints: Qt.ImhDigitsOnly; padding: 10; background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" } }
+                    TextField { id: tempField; Layout.fillWidth: true; placeholderText: "Temperature"; color: bright; padding: 10; background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" } }
+                    TextField { id: keepAliveField; Layout.fillWidth: true; placeholderText: "Keep alive (5m)"; color: bright; padding: 10; background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" } }
+                    TextField { id: stepsField; Layout.fillWidth: true; placeholderText: "Action budget"; color: bright; inputMethodHints: Qt.ImhDigitsOnly; padding: 10; background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" } }
+                }
+                Text { Layout.fillWidth: true; text: "Context controls memory window, temperature controls variation, keep-alive controls how long Ollama keeps the model loaded, and action budget caps one desktop run."; color: "#849e8d"; font.pixelSize: 10; wrapMode: Text.WordWrap; lineHeight: 1.35 }
+                ActionButton { Layout.fillWidth: true; text: "Apply runtime settings"; iconName: "sliders"; enabled: bridge && !bridge.busy; onClicked: bridge && bridge.saveRuntimeSettings(ctxField.text, tempField.text, keepAliveField.text, stepsField.text) }
                 Rectangle { Layout.fillWidth: true; height: 1; color: "#34473a" }
                 Text { text: "APPEARANCE"; color: "#8fae99"; font.pixelSize: 10; font.letterSpacing: 2 }
                 Text { text: "Make Wynxo yours"; color: "#cbdacf"; font.pixelSize: 12 }
@@ -487,7 +549,7 @@ ApplicationWindow {
                 ActionButton { Layout.fillWidth: true; text: bridge && bridge.desktopEnabled ? "Disable desktop control" : "Enable desktop control"; iconName: "desktop"; enabled: bridge && !bridge.connecting; onClicked: bridge && bridge.toggleDesktop() }
                 Text { Layout.fillWidth: true; text: "Desktop mode can click, type, and change things in your apps. Enable it for a task you want done. Esc stops the agent while this window is focused."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap; lineHeight: 1.4 }
                 ActionButton { Layout.fillWidth: true; text: "Save settings"; primary: true; onClicked: { if (bridge && bridge.saveSettings(endpointField.text, thinkCheck.checked, motionCheck.checked, themePicker.currentText, accentField.text, solidCheck.checked)) settings.close(); } }
-                Text { text: "WYNXO  0.2.0   ·   LOCAL DESKTOP COPILOT"; font.pixelSize: 8; font.letterSpacing: 1.5; color: "#718e7c"; Layout.alignment: Qt.AlignHCenter }
+                Text { text: "WYNXO  0.3.0   ·   OLLAMA-ONLY LOCAL COPILOT"; font.pixelSize: 8; font.letterSpacing: 1.5; color: "#718e7c"; Layout.alignment: Qt.AlignHCenter }
             }
         }
     }
@@ -497,7 +559,7 @@ ApplicationWindow {
         anchors.centerIn: parent
         width: Math.min(540, window.width - 40); height: 440
         modal: true; title: "Command palette"; padding: 18
-        property int matchingCount: 7
+        property int matchingCount: 11
         function updateMatchCount() {
             var query = commandSearch.text.toLowerCase();
             var count = 0;
@@ -534,7 +596,11 @@ ApplicationWindow {
                     {label: "Toggle workspace panel", detail: "Show or hide desktop activity", shortcut: "", icon: "panel", action: "panel"},
                     {label: "Enable desktop control", detail: "Grant or revoke Wayland/X11 input access", shortcut: "", icon: "cursor", action: "desktop"},
                     {label: "Reconnect Ollama", detail: "Refresh local models", shortcut: "", icon: "bolt", action: "refresh"},
-                    {label: "Open settings", detail: "Models, thinking, themes, and appearance", shortcut: "Ctrl+,", icon: "sliders", action: "settings"},
+                    {label: "Open settings", detail: "Models, runtime, thinking, themes, and appearance", shortcut: "Ctrl+,", icon: "sliders", action: "settings"},
+                    {label: "Regenerate response", detail: "Run the last user prompt again in chat mode", shortcut: "Ctrl+R", icon: "retry", action: "regenerate"},
+                    {label: "Duplicate task", detail: "Copy this conversation into a new local task", shortcut: "Ctrl+D", icon: "duplicate", action: "duplicate"},
+                    {label: "Pin or unpin task", detail: "Keep important conversations at the top", shortcut: "", icon: "pin", action: "pin"},
+                    {label: "Clear conversation", detail: "Remove messages but keep this task", shortcut: "", icon: "trash", action: "clear"},
                     {label: "Stop current task", detail: "Cancel generation and desktop actions", shortcut: "Esc", icon: "stop", action: "stop"}
                 ]
                 delegate: ItemDelegate {
@@ -573,6 +639,7 @@ ApplicationWindow {
     }
 
     Dialog { id: deleteDialog; property string taskToDelete: ""; anchors.centerIn: parent; modal: true; title: "Delete this task?"; standardButtons: Dialog.Yes | Dialog.Cancel; onAccepted: bridge && bridge.deleteTask(taskToDelete); Label { text: "This removes its saved conversation from this computer."; color: "#c6d5ca" } background: Rectangle { radius: 12; color: "#28352c"; border.color: "#526d59" } }
+    Dialog { id: clearDialog; anchors.centerIn: parent; modal: true; title: "Clear this conversation?"; standardButtons: Dialog.Yes | Dialog.Cancel; onAccepted: bridge && bridge.clearTask(); Label { text: "The task stays, but all messages are removed from local history."; color: "#c6d5ca" } background: Rectangle { radius: 12; color: "#28352c"; border.color: "#526d59" } }
     Dialog { id: linkDialog; property string link: ""; anchors.centerIn: parent; modal: true; width: 480; title: "Open link in your browser?"; standardButtons: Dialog.Open | Dialog.Cancel; onAccepted: Qt.openUrlExternally(link); Label { width: 430; text: linkDialog.link; wrapMode: Text.WrapAnywhere; color: "#c6d5ca" } background: Rectangle { radius: 12; color: "#28352c"; border.color: "#526d59" } }
     Rectangle { id: toastBox; visible: false; z: 200; anchors.bottom: parent.bottom; anchors.bottomMargin: 24; anchors.horizontalCenter: parent.horizontalCenter; width: toastLabel.implicitWidth+38; height: 42; radius: 10; color: "#c4e2cd"; Text { id: toastLabel; anchors.centerIn: parent; color: "#1d3827"; font.pixelSize: 12 } }
     Timer { id: toastTimer; interval: 2600; onTriggered: toastBox.visible = false }
@@ -584,6 +651,10 @@ ApplicationWindow {
         else if (action === "desktop") bridge && bridge.toggleDesktop();
         else if (action === "refresh") bridge && bridge.refreshModels();
         else if (action === "settings") settings.open();
+        else if (action === "regenerate") bridge && bridge.regenerate();
+        else if (action === "duplicate") bridge && bridge.duplicateTask();
+        else if (action === "pin") { if(bridge && bridge.taskId.length > 0) bridge.togglePin(bridge.taskId); }
+        else if (action === "clear") { if(bridge && bridge.taskId.length > 0) clearDialog.open(); }
         else if (action === "stop") bridge && bridge.stop();
     }
 }
