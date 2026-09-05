@@ -51,18 +51,23 @@ class Store:
             );
         """)
         self._db.commit()
+        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(conversations)")}
+        if "pinned" not in columns:
+            self._db.execute("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            self._db.commit()
 
     def create_conversation(self, title: str = "New conversation", model: str = "") -> dict:
         now = time.time()
         item = {"id": uuid.uuid4().hex, "title": title.strip()[:200] or "New conversation",
-                "model": model, "created_at": now, "updated_at": now}
+                "model": model, "created_at": now, "updated_at": now, "pinned": 0}
         with self._lock, self._db:
-            self._db.execute("INSERT INTO conversations VALUES (:id,:title,:model,:created_at,:updated_at)", item)
+            self._db.execute("INSERT INTO conversations (id,title,model,created_at,updated_at,pinned) "
+                             "VALUES (:id,:title,:model,:created_at,:updated_at,:pinned)", item)
         return item
 
     def list_conversations(self) -> list[dict]:
         with self._lock:
-            return [dict(row) for row in self._db.execute("SELECT * FROM conversations ORDER BY updated_at DESC, id DESC")]
+            return [dict(row) for row in self._db.execute("SELECT * FROM conversations ORDER BY pinned DESC, updated_at DESC, id DESC")]
 
     def get_conversation(self, conversation_id: str) -> dict | None:
         with self._lock:
@@ -73,6 +78,11 @@ class Store:
         with self._lock, self._db:
             self._db.execute("UPDATE conversations SET title=?,updated_at=? WHERE id=?",
                              (title.strip()[:200] or "New conversation", time.time(), conversation_id))
+
+    def set_pinned(self, conversation_id: str, pinned: bool) -> None:
+        with self._lock, self._db:
+            self._db.execute("UPDATE conversations SET pinned=?,updated_at=? WHERE id=?",
+                             (1 if pinned else 0, time.time(), conversation_id))
 
     def delete_conversation(self, conversation_id: str) -> None:
         with self._lock, self._db:

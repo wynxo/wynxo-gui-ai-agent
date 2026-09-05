@@ -16,6 +16,20 @@ from .engine import AgentEngine, OllamaClient
 from .storage import Store
 
 
+def _bounded_int(value, low, high, default):
+    try:
+        return max(low, min(int(value), high))
+    except (TypeError, ValueError):
+        return default
+
+
+def _bounded_float(value, low, high, default):
+    try:
+        return max(low, min(float(value), high))
+    except (TypeError, ValueError):
+        return default
+
+
 class Messages(QAbstractListModel):
     ROLES = {Qt.UserRole + 1: b"speaker", Qt.UserRole + 2: b"body", Qt.UserRole + 3: b"thought"}
 
@@ -89,6 +103,12 @@ class Controller(QObject):
         "Rose": "#f2a7be",
     }
 
+    RUNTIME_PRESETS = {
+        "Fast": {"num_ctx": 8192, "temperature": 0.35, "keep_alive": "2m", "max_steps": 12},
+        "Balanced": {"num_ctx": 16384, "temperature": 0.7, "keep_alive": "5m", "max_steps": 20},
+        "Deep": {"num_ctx": 32768, "temperature": 0.8, "keep_alive": "15m", "max_steps": 40},
+    }
+
     def __init__(self, store=None, desktop=None, autoconnect=True):
         super().__init__()
         self.store = store or Store()
@@ -103,6 +123,15 @@ class Controller(QObject):
             self._theme = "Obsidian"
         self._accent = self._normalise_accent(self.store.get_setting("accent", self.THEMES[self._theme])) or self.THEMES[self._theme]
         self._solid_background = bool(self.store.get_setting("solid_background", True))
+        self._num_ctx = _bounded_int(self.store.get_setting("num_ctx", 16384), 2048, 131072, 16384)
+        self._temperature = _bounded_float(self.store.get_setting("temperature", 0.7), 0.0, 2.0, 0.7)
+        self._keep_alive = str(self.store.get_setting("keep_alive", "5m")).strip()[:32] or "5m"
+        self._max_steps = _bounded_int(self.store.get_setting("max_steps", 20), 1, 100, 20)
+        self._runtime_preset = str(self.store.get_setting("runtime_preset", "Balanced"))
+        if self._runtime_preset not in self.RUNTIME_PRESETS and self._runtime_preset != "Custom":
+            self._runtime_preset = "Custom"
+        self._run_metrics = {"tokens": 0, "prompt_tokens": 0, "cached_prompt_tokens": 0,
+                             "load_ms": 0.0, "total_ms": 0.0, "tokens_per_second": 0.0}
         self._models = []
         self._model_capabilities = []
         self._capability_probe_active = False
@@ -236,6 +265,33 @@ class Controller(QObject):
     def thinkingText(self): return self._thinking_text
     @Property(bool, notify=changed)
     def thinkingActive(self): return self._busy and bool(self._thinking_text)
+    @Property(int, notify=changed)
+    def numCtx(self): return self._num_ctx
+    @Property(float, notify=changed)
+    def temperature(self): return self._temperature
+    @Property(str, notify=changed)
+    def keepAlive(self): return self._keep_alive
+    @Property(int, notify=changed)
+    def maxSteps(self): return self._max_steps
+    @Property(str, notify=changed)
+    def runtimePreset(self): return self._runtime_preset
+    @Property(str, notify=changed)
+    def runtimeSummary(self):
+        return f"{self._runtime_preset} · {self._num_ctx // 1024}K ctx · T{self._temperature:g} · {self._max_steps} actions"
+    @Property(str, notify=changed)
+    def runMetricSummary(self):
+        metrics = self._run_metrics
+        if not metrics.get("tokens") and not metrics.get("prompt_tokens"):
+            return "No generation metrics yet"
+        seconds = metrics.get("total_ms", 0.0) / 1000.0
+        return (f"{metrics.get('tokens', 0)} out · {metrics.get('prompt_tokens', 0)} prompt · "
+                f"{metrics.get('tokens_per_second', 0.0):.1f} tok/s · {seconds:.1f}s")
+    @Property(bool, notify=changed)
+    def canRegenerate(self):
+        return bool(self._task_id and self._history and not self._busy and self._online and not self.desktopEnabled)
+    @Property(bool, notify=changed)
+    def taskPinned(self):
+        return any(item.get("id") == self._task_id and bool(item.get("pinned")) for item in self._tasks)
     @Property("QVariantList", notify=tasksChanged)
     def tasks(self): return self._tasks
     @Property("QVariantList", notify=activityChanged)
@@ -316,6 +372,59 @@ class Controller(QObject):
         self.store.set_setting("model", self._model)
         self._refresh_model_capabilities()
 
+    def _persist_runtime(self):
+        for key, value in (("num_ctx", self._num_ctx), ("temperature", self._temperature),
+                           ("keep_alive", self._keep_alive), ("max_steps", self._max_steps),
+                           ("runtime_preset", self._runtime_preset)):
+            self.store.set_setting(key, value)
+
+    @Slot(str)
+    def applyRuntimePreset(self, name):
+        if self._busy or name not in self.RUNTIME_PRESETS:
+            return
+        preset = self.RUNTIME_PRESETS[name]
+        self._num_ctx = preset["num_ctx"]
+        self._temperature = preset["temperature"]
+        self._keep_alive = preset["keep_alive"]
+        self._max_steps = preset["max_steps"]
+        self._runtime_preset = name
+        self._persist_runtime()
+        self.changed.emit()
+        self.toast.emit(f"{name} runtime preset applied")
+
+    @Slot(str, str, str, str, result=bool)
+    def saveRuntimeSettings(self, num_ctx, temperature, keep_alive, max_steps):
+        if self._busy:
+            self.toast.emit("Stop the current task before changing runtime settings.")
+            return False
+        try:
+            ctx = int(str(num_ctx).strip())
+            temp = float(str(temperature).strip())
+            steps = int(str(max_steps).strip())
+        except ValueError:
+            self._show_error("Runtime values must be valid numbers.")
+            return False
+        keep = str(keep_alive).strip()
+        if not 2048 <= ctx <= 131072:
+            self._show_error("Context size must be between 2048 and 131072 tokens.")
+            return False
+        if not 0.0 <= temp <= 2.0:
+            self._show_error("Temperature must be between 0 and 2.")
+            return False
+        if not 1 <= steps <= 100:
+            self._show_error("Desktop action budget must be between 1 and 100.")
+            return False
+        if not keep or len(keep) > 32 or any(ch.isspace() for ch in keep):
+            self._show_error("Keep-alive must look like 5m, 30s, 0, or -1.")
+            return False
+        self._num_ctx, self._temperature, self._keep_alive, self._max_steps = ctx, temp, keep, steps
+        self._runtime_preset = "Custom"
+        self._persist_runtime()
+        self._error = ""
+        self.changed.emit()
+        self.toast.emit("Runtime settings saved")
+        return True
+
     @staticmethod
     def _normalise_accent(value):
         color = QColor(str(value).strip())
@@ -366,6 +475,8 @@ class Controller(QObject):
         self._error = ""
         self._token_rate = "—"
         self._thinking_text = ""
+        self._run_metrics = {"tokens": 0, "prompt_tokens": 0, "cached_prompt_tokens": 0,
+                             "load_ms": 0.0, "total_ms": 0.0, "tokens_per_second": 0.0}
         self.activityChanged.emit()
         self.changed.emit()
         self.focusComposer.emit()
@@ -381,6 +492,8 @@ class Controller(QObject):
         self.messages.replace(self._history)
         self._activity = []
         self._thinking_text = ""
+        self._run_metrics = {"tokens": 0, "prompt_tokens": 0, "cached_prompt_tokens": 0,
+                             "load_ms": 0.0, "total_ms": 0.0, "tokens_per_second": 0.0}
         self._status = "Ready when you are"
         self.activityChanged.emit()
         self.changed.emit()
@@ -404,6 +517,29 @@ class Controller(QObject):
         self._tasks = self.store.list_conversations()
         self.tasksChanged.emit()
 
+    def _start_run(self, history):
+        self._busy = True
+        self._error = ""
+        self._status = "Thinking about your task"
+        self._token_rate = "—"
+        self._thinking_text = ""
+        self._turn_had_message = False
+        self._activity = []
+        self._run_metrics = {"tokens": 0, "prompt_tokens": 0, "cached_prompt_tokens": 0,
+                             "load_ms": 0.0, "total_ms": 0.0, "tokens_per_second": 0.0}
+        self.activityChanged.emit()
+        self._refresh_tasks()
+        self.changed.emit()
+        engine = AgentEngine(OllamaClient(self._endpoint), self.desktop)
+        model, enabled, think = self._model, self.desktopEnabled, self._think
+        num_ctx, temperature = self._num_ctx, self._temperature
+        keep_alive, max_steps = self._keep_alive, self._max_steps
+        self._run_job = self._job(
+            lambda cancel, emit: engine.run(list(history), model, enabled, cancel, emit, think=think,
+                max_steps=max_steps, num_ctx=num_ctx, temperature=temperature, keep_alive=keep_alive),
+            self._run_done, self._run_failed, self._on_event,
+        )
+
     @Slot(str)
     def send(self, text):
         text = text.strip()
@@ -417,23 +553,62 @@ class Controller(QObject):
         self._history.append({"role": "user", "content": text})
         self.store.set_messages(self._task_id, self._history, self._model)
         self.messages.append("user", text)
-        self._busy = True
-        self._error = ""
-        self._status = "Thinking about your task"
-        self._token_rate = "—"
-        self._thinking_text = ""
-        self._turn_had_message = False
+        self._start_run(list(self._history))
+
+    @Slot()
+    def regenerate(self):
+        if self._busy or not self._task_id or not self._online:
+            return
+        if self.desktopEnabled:
+            self.toast.emit("Disable desktop control before regenerating so actions are not repeated.")
+            return
+        history = list(self._history)
+        while history and history[-1].get("role") != "user":
+            history.pop()
+        if not history:
+            self.toast.emit("There is no user message to regenerate.")
+            return
+        self._history = history
+        self.store.set_messages(self._task_id, history, self._model)
+        self.messages.replace(history)
+        self._start_run(history)
+
+    @Slot()
+    def duplicateTask(self):
+        if self._busy or not self._task_id:
+            return
+        task = self.store.create_conversation(f"{self._task_title} copy"[:200], self._model)
+        self.store.set_messages(task["id"], list(self._history), self._model)
+        self._refresh_tasks()
+        self.openTask(task["id"])
+        self.toast.emit("Task duplicated")
+
+    @Slot()
+    def clearTask(self):
+        if self._busy or not self._task_id:
+            return
+        self._history = []
+        self.store.set_messages(self._task_id, [], self._model)
+        self.messages.replace([])
         self._activity = []
+        self._thinking_text = ""
+        self._token_rate = "—"
+        self._run_metrics = {"tokens": 0, "prompt_tokens": 0, "cached_prompt_tokens": 0,
+                             "load_ms": 0.0, "total_ms": 0.0, "tokens_per_second": 0.0}
+        self._status = "Ready when you are"
         self.activityChanged.emit()
         self._refresh_tasks()
         self.changed.emit()
-        engine = AgentEngine(OllamaClient(self._endpoint), self.desktop)
-        history = list(self._history)
-        model, enabled, think = self._model, self.desktopEnabled, self._think
-        self._run_job = self._job(
-            lambda cancel, emit: engine.run(history, model, enabled, cancel, emit, think=think),
-            self._run_done, self._run_failed, self._on_event,
-        )
+        self.toast.emit("Conversation cleared")
+
+    @Slot(str)
+    def togglePin(self, task_id):
+        task = self.store.get_conversation(task_id)
+        if not task:
+            return
+        self.store.set_pinned(task_id, not bool(task.get("pinned")))
+        self._refresh_tasks()
+        self.changed.emit()
 
     def _on_event(self, event):
         kind = event.get("type")
@@ -464,6 +639,15 @@ class Controller(QObject):
                 self.activityChanged.emit()
         elif kind == "metrics":
             rate = event.get("tokens_per_second", 0)
+            previous = self._run_metrics
+            self._run_metrics = {
+                "tokens": previous.get("tokens", 0) + int(event.get("tokens", 0) or 0),
+                "prompt_tokens": int(event.get("prompt_tokens", 0) or 0),
+                "cached_prompt_tokens": int(event.get("cached_prompt_tokens", 0) or 0),
+                "load_ms": previous.get("load_ms", 0.0) + float(event.get("load_ms", 0.0) or 0.0),
+                "total_ms": previous.get("total_ms", 0.0) + float(event.get("total_ms", 0.0) or 0.0),
+                "tokens_per_second": float(rate) if isinstance(rate, (int, float)) else 0.0,
+            }
             self._token_rate = f"{rate:.1f} tok/s" if isinstance(rate, (int, float)) else "—"
         elif kind == "error":
             self._error = event.get("text", "Something went wrong")
