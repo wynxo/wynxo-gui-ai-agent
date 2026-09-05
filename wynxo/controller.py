@@ -104,6 +104,10 @@ class Controller(QObject):
         self._accent = self._normalise_accent(self.store.get_setting("accent", self.THEMES[self._theme])) or self.THEMES[self._theme]
         self._solid_background = bool(self.store.get_setting("solid_background", True))
         self._models = []
+        self._model_capabilities = []
+        self._capability_probe_active = False
+        self._capability_probe_generation = 0
+        self._capability_error = ""
         self._online = False
         self._busy = False
         self._connecting = False
@@ -153,6 +157,43 @@ class Controller(QObject):
     def model(self): return self._model
     @Property("QStringList", notify=changed)
     def models(self): return self._models
+    @Property("QStringList", notify=changed)
+    def modelCapabilities(self): return self._model_capabilities
+    @Property(bool, notify=changed)
+    def modelCapabilitiesLoading(self): return self._capability_probe_active
+    @Property(bool, notify=changed)
+    def modelSupportsTools(self): return "tools" in self._model_capabilities
+    @Property(bool, notify=changed)
+    def modelSupportsVision(self): return "vision" in self._model_capabilities
+    @Property(bool, notify=changed)
+    def modelSupportsThinking(self): return "thinking" in self._model_capabilities
+    @Property(str, notify=changed)
+    def modelCapabilitySummary(self):
+        if self._capability_probe_active:
+            return "Checking capabilities…"
+        if self._capability_error:
+            return "Capabilities unavailable"
+        labels = ["Chat"]
+        if "tools" in self._model_capabilities:
+            labels.append("Tools")
+        if "vision" in self._model_capabilities:
+            labels.append("Vision")
+        if "thinking" in self._model_capabilities:
+            labels.append("Thinking")
+        return " · ".join(labels)
+    @Property(str, notify=changed)
+    def modelCapabilityHint(self):
+        if self._capability_probe_active:
+            return f"Checking what {self._model} can do before desktop work starts."
+        if self._capability_error:
+            return f"Could not read this model's capabilities: {self._capability_error}"
+        tools = "tools" in self._model_capabilities
+        vision = "vision" in self._model_capabilities
+        if tools and vision:
+            return "Ready for visual desktop control: this model advertises both tools and vision."
+        if tools:
+            return "This model can use non-visual desktop tools, but mouse and keyboard control needs vision too."
+        return "Chat is available, but this model does not advertise desktop tool calling."
     @Property(bool, notify=changed)
     def online(self): return self._online
     @Property(bool, notify=changed)
@@ -200,11 +241,49 @@ class Controller(QObject):
     @Property("QVariantList", notify=activityChanged)
     def activity(self): return self._activity
 
+    def _refresh_model_capabilities(self):
+        self._capability_probe_generation += 1
+        generation = self._capability_probe_generation
+        model, endpoint = self._model, self._endpoint
+        self._model_capabilities = []
+        self._capability_error = ""
+        if not self._online or not model or model not in self._models:
+            self._capability_probe_active = False
+            self.changed.emit()
+            return
+        self._capability_probe_active = True
+        self.changed.emit()
+
+        def done(capabilities):
+            if generation != self._capability_probe_generation:
+                return
+            self._capability_probe_active = False
+            self._model_capabilities = sorted({
+                str(capability).strip().lower()
+                for capability in capabilities if str(capability).strip()
+            })
+            self._capability_error = ""
+            self.changed.emit()
+
+        def failed(message):
+            if generation != self._capability_probe_generation:
+                return
+            self._capability_probe_active = False
+            self._model_capabilities = []
+            self._capability_error = message
+            self.changed.emit()
+
+        self._job(lambda cancel, emit: OllamaClient(endpoint).capabilities(model), done, failed)
+
     @Slot()
     def refreshModels(self):
         if self._probe_active:
             return
         self._probe_active = True
+        self._capability_probe_generation += 1
+        self._capability_probe_active = False
+        self._model_capabilities = []
+        self._capability_error = ""
         endpoint = self._endpoint
         def done(models):
             self._probe_active = False
@@ -215,9 +294,14 @@ class Controller(QObject):
                 self.store.set_setting("model", self._model)
             self._error = "" if self._models else "Ollama is connected. Download a model in Settings to get started."
             self.changed.emit()
+            self._refresh_model_capabilities()
         def failed(message):
             self._probe_active = False
             self._online = False
+            self._models = []
+            self._model_capabilities = []
+            self._capability_probe_active = False
+            self._capability_error = ""
             self._error = f"Ollama is unavailable at {endpoint}. Start Ollama, then reconnect. {message}"
             self.changed.emit()
         self._job(lambda cancel, emit: OllamaClient(endpoint).models(), done, failed)
@@ -225,9 +309,12 @@ class Controller(QObject):
     @Slot(str)
     def setModel(self, model):
         if self._busy or self._pulling or not model.strip(): return
-        self._model = model.strip()
+        model = model.strip()
+        if model == self._model and self._model_capabilities:
+            return
+        self._model = model
         self.store.set_setting("model", self._model)
-        self.changed.emit()
+        self._refresh_model_capabilities()
 
     @staticmethod
     def _normalise_accent(value):
