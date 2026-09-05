@@ -74,7 +74,7 @@ Desktop control starts off each time you open Wynxo. Runs have a 20-action limit
 | X11 | XTEST input + Pillow screenshots | Requires XTEST; keyboard characters must be available in the active keymap |
 | No graphical session | Chat only | Desktop input and capture are unavailable |
 
-On Wayland, select every monitor in the permission dialog so Wynxo can map screenshot pixels to the correct input stream. A compositor must implement the required portals and expose monitor positions. If permission is denied or a portal is unavailable, Wynxo reports the error; it cannot bypass the desktop's permission system. Wayland support needs testing on your specific compositor/version.
+On Wayland, select every monitor in the permission dialog so Wynxo can map screenshot pixels to the correct input stream. Wynxo prefers the position metadata exposed by the portal, then uses monitor sizes or the compositor's stable stream order when that optional metadata is missing. If permission is denied or a portal is unavailable, Wynxo reports the error; it cannot bypass the desktop's permission system. Wayland support still needs testing on your specific compositor/version.
 
 On Debian KDE, these packages supply the usual desktop integration pieces:
 
@@ -86,11 +86,12 @@ Use your desktop's corresponding portal backend on other environments. `libglib2
 
 ## Your workspace
 
-- Stream replies, view model thinking when available, and see generation speed.
+- Stream replies, watch live model thinking when enabled, and see generation speed.
 - Start, reopen, rename, and delete saved tasks.
 - Copy responses or export a conversation to Markdown.
 - Switch between installed models and download a model from Settings.
-- Enable reduced motion in Settings.
+- Use command suggestions for common desktop tasks, plus Obsidian, Violet, Ice, Amber, and Rose themes or a custom accent color.
+- Enable reduced motion or a solid dark canvas in Settings.
 - Keep using chat while desktop access is off or unavailable.
 
 | Shortcut | Action |
@@ -162,7 +163,7 @@ Run the launcher from a terminal to see missing library diagnostics. Package nam
 
 **The `wynxo` command is missing:** Use `~/.local/bin/wynxo` or the application menu. Add `~/.local/bin` to your shell's `PATH` if desired; the installer does not edit shell configuration.
 
-**Desktop control is unavailable:** Check the session/backend explanation in Wynxo, grant the desktop's permission prompt, select every monitor, and confirm portal support. If a compositor does not report monitor positions, update its portal backend or use a single display for this version. X11 is an alternative when available from your login screen.
+**Desktop control is unavailable:** Check the session/backend explanation in Wynxo, grant the desktop's permission prompt, select every monitor, and confirm portal support. Wynxo can fall back when positions are omitted, but a portal that returns the wrong number or dimensions of streams must be updated or tested with one display. X11 is an alternative when available from your login screen.
 
 ## Development
 

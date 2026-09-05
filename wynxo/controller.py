@@ -9,7 +9,7 @@ from pathlib import Path
 from PySide6.QtCore import (
     QAbstractListModel, QModelIndex, QObject, Property, Qt, QThread, Signal, Slot,
 )
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QColor, QGuiApplication
 
 from .desktop import DesktopController
 from .engine import AgentEngine, OllamaClient
@@ -81,6 +81,14 @@ class Controller(QObject):
     toast = Signal(str)
     focusComposer = Signal()
 
+    THEMES = {
+        "Obsidian": "#b9dfc6",
+        "Violet": "#c7b6ff",
+        "Ice": "#9fd5ff",
+        "Amber": "#f0c27b",
+        "Rose": "#f2a7be",
+    }
+
     def __init__(self, store=None, desktop=None, autoconnect=True):
         super().__init__()
         self.store = store or Store()
@@ -90,6 +98,11 @@ class Controller(QObject):
         self._model = self.store.get_setting("model", "qwen3.8:27b")
         self._think = self.store.get_setting("think", False)
         self._reduced_motion = self.store.get_setting("reduced_motion", False)
+        self._theme = self.store.get_setting("theme", "Obsidian")
+        if self._theme not in self.THEMES:
+            self._theme = "Obsidian"
+        self._accent = self._normalise_accent(self.store.get_setting("accent", self.THEMES[self._theme])) or self.THEMES[self._theme]
+        self._solid_background = bool(self.store.get_setting("solid_background", True))
         self._models = []
         self._online = False
         self._busy = False
@@ -103,6 +116,7 @@ class Controller(QObject):
         self._task_id = ""
         self._task_title = "New task"
         self._token_rate = "—"
+        self._thinking_text = ""
         self._tasks = self.store.list_conversations()
         self._desktop_status = self.desktop.status()
         self._jobs = set()
@@ -171,6 +185,16 @@ class Controller(QObject):
     def thinking(self): return self._think
     @Property(bool, notify=changed)
     def reducedMotion(self): return self._reduced_motion
+    @Property(str, notify=changed)
+    def theme(self): return self._theme
+    @Property(str, notify=changed)
+    def accentColor(self): return self._accent
+    @Property(bool, notify=changed)
+    def solidBackground(self): return self._solid_background
+    @Property(str, notify=changed)
+    def thinkingText(self): return self._thinking_text
+    @Property(bool, notify=changed)
+    def thinkingActive(self): return self._busy and bool(self._thinking_text)
     @Property("QVariantList", notify=tasksChanged)
     def tasks(self): return self._tasks
     @Property("QVariantList", notify=activityChanged)
@@ -205,8 +229,15 @@ class Controller(QObject):
         self.store.set_setting("model", self._model)
         self.changed.emit()
 
-    @Slot(str, bool, bool)
-    def saveSettings(self, endpoint, thinking, reduced_motion):
+    @staticmethod
+    def _normalise_accent(value):
+        color = QColor(str(value).strip())
+        if not color.isValid() or color.alpha() != 255:
+            return None
+        return color.name(QColor.HexRgb)
+
+    @Slot(str, bool, bool, str, str, bool)
+    def saveSettings(self, endpoint, thinking, reduced_motion, theme, accent, solid_background):
         if self._busy or self._pulling or self._probe_active:
             self.toast.emit("Wait for the current connection or task to finish.")
             return
@@ -215,10 +246,16 @@ class Controller(QObject):
         except Exception as exc:
             self._show_error(str(exc))
             return
+        theme = theme if theme in self.THEMES else "Obsidian"
+        accent = self._normalise_accent(accent) or self.THEMES[theme]
         self._endpoint = endpoint.strip().rstrip("/")
         self._think = thinking
         self._reduced_motion = reduced_motion
-        for key, value in (("endpoint", self._endpoint), ("think", thinking), ("reduced_motion", reduced_motion)):
+        self._theme = theme
+        self._accent = accent
+        self._solid_background = bool(solid_background)
+        for key, value in (("endpoint", self._endpoint), ("think", thinking), ("reduced_motion", reduced_motion),
+                           ("theme", theme), ("accent", accent), ("solid_background", self._solid_background)):
             self.store.set_setting(key, value)
         self.changed.emit()
         self.refreshModels()
@@ -237,6 +274,7 @@ class Controller(QObject):
         self._status = "Ready when you are"
         self._error = ""
         self._token_rate = "—"
+        self._thinking_text = ""
         self.activityChanged.emit()
         self.changed.emit()
         self.focusComposer.emit()
@@ -251,6 +289,7 @@ class Controller(QObject):
         self._history = self.store.get_messages(task_id)
         self.messages.replace(self._history)
         self._activity = []
+        self._thinking_text = ""
         self._status = "Ready when you are"
         self.activityChanged.emit()
         self.changed.emit()
@@ -291,6 +330,7 @@ class Controller(QObject):
         self._error = ""
         self._status = "Thinking about your task"
         self._token_rate = "—"
+        self._thinking_text = ""
         self._turn_had_message = False
         self._activity = []
         self.activityChanged.emit()
@@ -311,6 +351,8 @@ class Controller(QObject):
                 self.messages.append("assistant")
                 self._turn_had_message = True
             self.messages.stream("body" if kind == "token" else "thought", event.get("text", ""))
+            if kind == "thinking":
+                self._thinking_text = (self._thinking_text + event.get("text", ""))[-8000:]
             self._status = "Writing a response" if kind == "token" else "Thinking about your task"
         elif kind == "message_end":
             self._turn_had_message = False
@@ -345,6 +387,7 @@ class Controller(QObject):
         stopped = self._run_job and self._run_job.cancel.is_set()
         self._busy = False
         self._run_job = None
+        self._thinking_text = ""
         self._status = "Stopped" if stopped else ("Needs attention" if self._error else "Ready when you are")
         self._refresh_tasks()
         self.changed.emit()
@@ -352,6 +395,7 @@ class Controller(QObject):
     def _run_failed(self, message):
         self._busy = False
         self._run_job = None
+        self._thinking_text = ""
         self._status = "Needs attention"
         self._show_error(message)
 

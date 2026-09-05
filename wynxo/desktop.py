@@ -657,26 +657,76 @@ class _PortalBackend:
         return picture
 
     def _map_streams(self, streams):
-        """Match portal monitor streams to Qt's logical monitor rectangles."""
-        mapped = []
-        unused = list(self.layout)
-        for stream, properties in streams:
+        """Match portal streams to Qt monitor rectangles.
+
+        ``position`` is optional in the ScreenCast portal metadata.  Prefer it
+        when present, then use a unique size match, and finally pair unresolved
+        streams with the compositor's stable stream order.  The final fallback
+        is what makes two identical monitors usable on portals that omit
+        positions (KDE commonly does this); it still requires one stream per
+        monitor and never invents coordinates.
+        """
+        entries = []
+        for index, (stream, properties) in enumerate(streams):
             properties = properties or {}
             position = properties.get("position")
             size = properties.get("size") or properties.get("logical_size")
-            if position is not None and len(position) == 2:
-                candidates = [m for m in unused if m["x"] == position[0] and m["y"] == position[1]]
-            else:
-                candidates = unused if len(self.layout) == 1 else []
-            if len(candidates) != 1:
-                raise DesktopError("The desktop portal did not provide an unambiguous position for every monitor.")
-            monitor = candidates[0]
-            unused.remove(monitor)
-            if size is None:
-                size = [monitor["width"], monitor["height"]]
-            if len(size) != 2 or any(not isinstance(v, (int, float)) or v <= 0 for v in size):
+            if position is not None and (not isinstance(position, (list, tuple)) or len(position) != 2):
+                raise DesktopError("The desktop portal returned invalid monitor positions.")
+            if size is not None and (not isinstance(size, (list, tuple)) or len(size) != 2
+                                     or any(not isinstance(v, (int, float)) or v <= 0 for v in size)):
                 raise DesktopError("The desktop portal returned invalid monitor dimensions.")
-            mapped.append({"stream": stream, "x": monitor["x"], "y": monitor["y"],
+            entries.append({"index": index, "stream": stream, "position": position, "size": size})
+
+        unused = sorted(self.layout, key=lambda monitor: (monitor["x"], monitor["y"]))
+        assigned = {}
+
+        # Explicit positions are authoritative and are resolved before any
+        # fallback, so a position-bearing stream can never be consumed by an
+        # earlier position-less stream.
+        pending = []
+        for entry in entries:
+            position = entry["position"]
+            if position is None:
+                pending.append(entry)
+                continue
+            candidates = [m for m in unused if m["x"] == position[0] and m["y"] == position[1]]
+            if len(candidates) != 1:
+                raise DesktopError("The desktop portal returned a monitor position that does not match this desktop.")
+            assigned[entry["index"]] = (entry, candidates[0])
+            unused.remove(candidates[0])
+
+        # A unique stream size is enough to identify monitors with different
+        # resolutions, even when the optional position field is absent.
+        unresolved = []
+        for entry in pending:
+            size = entry["size"]
+            candidates = [m for m in unused if size is not None and
+                          m["width"] == size[0] and m["height"] == size[1]]
+            if len(candidates) == 1:
+                assigned[entry["index"]] = (entry, candidates[0])
+                unused.remove(candidates[0])
+            else:
+                unresolved.append(entry)
+
+        if unresolved:
+            if len(unresolved) != len(unused):
+                raise DesktopError("The desktop portal did not return all selected monitors.")
+            # No position or unique size was available. Pair in the stream
+            # order returned by the compositor and document that it is a
+            # deterministic fallback rather than an absolute guarantee.
+            for entry, monitor in zip(unresolved, unused):
+                size = entry["size"] or [monitor["width"], monitor["height"]]
+                if size[0] != monitor["width"] or size[1] != monitor["height"]:
+                    raise DesktopError("The desktop portal returned monitor dimensions that do not match this desktop.")
+                assigned[entry["index"]] = (entry, monitor)
+            unused = []
+
+        mapped = []
+        for index in range(len(entries)):
+            entry, monitor = assigned[index]
+            size = entry["size"] or [monitor["width"], monitor["height"]]
+            mapped.append({"stream": entry["stream"], "x": monitor["x"], "y": monitor["y"],
                            "width": monitor["width"], "height": monitor["height"],
                            "stream_width": float(size[0]), "stream_height": float(size[1])})
         if unused:

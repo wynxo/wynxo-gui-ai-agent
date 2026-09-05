@@ -339,6 +339,18 @@ class PortalTests(unittest.IsolatedAsyncioTestCase):
         portal.move(2500, 500, None)
         portal._notify.assert_called_once_with("NotifyPointerMotionAbsolute", "udd", [92, 580.0, 500.0], None)
 
+    async def test_multimonitor_streams_without_positions_use_stable_order(self):
+        portal = _PortalBackend([
+            {"x": 0, "y": 0, "width": 1920, "height": 1080},
+            {"x": 1920, "y": 0, "width": 1920, "height": 1080},
+        ])
+        mapped = portal._map_streams([
+            [101, {"size": [1920, 1080]}],
+            [102, {"size": [1920, 1080]}],
+        ])
+        self.assertEqual([item["x"] for item in mapped], [0, 1920])
+        self.assertEqual([item["stream"] for item in mapped], [101, 102])
+
 
 if __name__ == "__main__":
     unittest.main()

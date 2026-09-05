@@ -9,15 +9,17 @@ ApplicationWindow {
     minimumWidth: 880; minimumHeight: 650
     visible: true
     title: bridge && bridge.taskTitle + " — Wynxo"
-    color: "#121615"
+    color: bridge && bridge.solidBackground ? "#0d100f" : "#121615"
     font.family: "Lato"
     font.pixelSize: 14
     property bool inspectorOpen: true
     property bool closing: false
     property string searchText: ""
-    property color accent: "#b9dfc6"
+    property color accent: bridge && bridge.accentColor ? bridge.accentColor : "#b9dfc6"
     property color muted: "#858f89"
     property color bright: "#e7ece8"
+    property var themeNames: ["Obsidian", "Violet", "Ice", "Amber", "Rose"]
+    property var themeColors: ({ "Obsidian": "#b9dfc6", "Violet": "#c7b6ff", "Ice": "#9fd5ff", "Amber": "#f0c27b", "Rose": "#f2a7be" })
 
     onClosing: function(close) {
         if (bridge && !bridge.canClose()) { close.accepted = false; closing = true; closeTimer.start(); }
@@ -239,13 +241,48 @@ ApplicationWindow {
                         }
 
                         Rectangle {
+                            visible: bridge && bridge.thinkingActive
+                            Layout.fillWidth: true; Layout.preferredHeight: 76
+                            radius: 10; color: bridge && bridge.solidBackground ? "#151a17" : "#1a211c"; border.color: "#33463a"
+                            ColumnLayout {
+                                anchors.fill: parent; anchors.margins: 11; spacing: 5
+                                RowLayout { Layout.fillWidth: true
+                                    Text { text: "LIVE THINKING"; color: accent; font.pixelSize: 9; font.letterSpacing: 1.5; font.weight: Font.DemiBold }
+                                    Item { Layout.fillWidth: true }
+                                    Text { text: bridge && bridge.thinking ? "model reasoning" : "response planning"; color: "#71877a"; font.pixelSize: 9 }
+                                }
+                                Text { Layout.fillWidth: true; text: bridge && bridge.thinkingText; color: "#9caf9f"; font.pixelSize: 11; maximumLineCount: 3; elide: Text.ElideRight; wrapMode: Text.WordWrap; lineHeight: 1.2 }
+                            }
+                        }
+
+                        Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: Math.min(220, Math.max(135, composer.contentHeight+78))
+                            Layout.preferredHeight: Math.min(250, Math.max(148, composer.contentHeight+78 + (bridge && !bridge.hasMessages ? 34 : 0)))
                             radius: 15; color: "#202923"
                             border.width: 1; border.color: composer.activeFocus ? "#6d8e74" : "#405346"
                             Behavior on border.color { ColorAnimation { duration: 160 } }
                             ColumnLayout {
                                 anchors.fill: parent; anchors.margins: 14; spacing: 9
+                                Flow {
+                                    Layout.fillWidth: true; Layout.preferredHeight: visible ? 28 : 0
+                                    visible: bridge && !bridge.busy
+                                    spacing: 6
+                                    Repeater {
+                                        model: [
+                                            {label: "Open Paint", prompt: "Open Paint and wait for it to be ready. Inspect the desktop before acting."},
+                                            {label: "Draw something", prompt: "Open a drawing app and draw a simple mountain landscape. Inspect the screen first and work step by step."},
+                                            {label: "Inspect desktop", prompt: "Inspect my desktop and summarize what is open. Ask before changing anything."},
+                                            {label: "Plan a project", prompt: "Help me plan a small project. Ask one useful question, then turn the answer into clear next steps."}
+                                        ]
+                                        delegate: Rectangle {
+                                            required property var modelData
+                                            width: suggestionLabel.implicitWidth + 24; height: 27; radius: 14
+                                            color: suggestionMouse.containsMouse ? "#334638" : "#29352d"; border.color: suggestionMouse.containsMouse ? accent : "#3b4c40"
+                                            Text { id: suggestionLabel; anchors.centerIn: parent; text: modelData.label; color: "#b9d0be"; font.pixelSize: 10 }
+                                            MouseArea { id: suggestionMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { composer.text = modelData.prompt; composer.forceActiveFocus(); } }
+                                        }
+                                    }
+                                }
                                 ScrollView {
                                     Layout.fillWidth: true; Layout.fillHeight: true
                                     TextArea {
@@ -367,7 +404,14 @@ ApplicationWindow {
         padding: 26
         background: Rectangle { radius: 16; color: "#1c2520"; border.color: "#455b4b" }
         header: Item { height: 68; Text { x: 26; y: 27; text: "Make yourself at home"; color: bright; font.pixelSize: 21; font.weight: Font.DemiBold } ActionButton { anchors.right: parent.right; anchors.rightMargin: 15; y: 18; iconName: "close"; quiet: true; width: 35; height: 35; onClicked: settings.close() } }
-        onOpened: { endpointField.text = bridge && bridge.endpoint; thinkCheck.checked = bridge && bridge.thinking; motionCheck.checked = bridge && bridge.reducedMotion; }
+        onOpened: {
+            endpointField.text = bridge && bridge.endpoint;
+            thinkCheck.checked = bridge && bridge.thinking;
+            motionCheck.checked = bridge && bridge.reducedMotion;
+            themePicker.currentIndex = Math.max(0, window.themeNames.indexOf(bridge && bridge.theme));
+            accentField.text = bridge && bridge.accentColor;
+            solidCheck.checked = bridge && bridge.solidBackground;
+        }
         contentItem: ScrollView {
             clip: true
             ColumnLayout {
@@ -385,12 +429,34 @@ ApplicationWindow {
                 }
                 Text { Layout.fillWidth: true; text: bridge && bridge.pullProgress || "Downloads from Ollama’s registry. Large models need substantial memory and disk space."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap }
                 Rectangle { Layout.fillWidth: true; height: 1; color: "#34473a" }
+                Text { text: "APPEARANCE"; color: "#8fae99"; font.pixelSize: 10; font.letterSpacing: 2 }
+                Text { text: "Make Wynxo yours"; color: "#cbdacf"; font.pixelSize: 12 }
+                ComboBox {
+                    id: themePicker
+                    Layout.fillWidth: true; Layout.preferredHeight: 41
+                    model: window.themeNames
+                    font.pixelSize: 12
+                    contentItem: Text { text: themePicker.displayText; color: bright; verticalAlignment: Text.AlignVCenter; leftPadding: 11; font: themePicker.font }
+                    indicator: Icon { name: "down"; width: 15; height: 15; x: themePicker.width-22; y: 12; ink: "#8da996" }
+                    background: Rectangle { radius: 8; color: "#141d17"; border.color: themePicker.activeFocus ? accent : "#415647" }
+                    onActivated: accentField.text = window.themeColors[currentText]
+                    delegate: ItemDelegate { required property var modelData; width: themePicker.popup.width-10; height: 38; contentItem: Row { spacing: 9; Rectangle { width: 13; height: 13; radius: 7; color: window.themeColors[modelData]; anchors.verticalCenter: parent.verticalCenter } Text { text: modelData; color: "#d6e2da"; font.pixelSize: 12; verticalAlignment: Text.AlignVCenter } } background: Rectangle { radius: 5; color: parent.highlighted ? "#3b5041" : "transparent" } }
+                    popup: Popup { y: themePicker.height+3; width: Math.max(250, themePicker.width); padding: 5; background: Rectangle { radius: 9; color: "#26312a"; border.color: "#465a4b" } contentItem: ListView { implicitHeight: Math.min(220, contentHeight); model: themePicker.popup.visible ? themePicker.delegateModel : null; clip: true; currentIndex: themePicker.highlightedIndex } }
+                }
+                RowLayout { Layout.fillWidth: true; spacing: 9
+                    Text { text: "Accent"; color: "#a7bcae"; font.pixelSize: 11 }
+                    TextField { id: accentField; Layout.fillWidth: true; height: 38; placeholderText: "#b9dfc6"; color: bright; font.family: "monospace"; font.pixelSize: 11; padding: 10; background: Rectangle { radius: 8; color: "#141d17"; border.color: "#415647" } }
+                    Rectangle { width: 30; height: 30; radius: 15; color: accentField.text; border.color: "#718b79"; border.width: 1 }
+                }
+                CheckBox { id: solidCheck; text: "Use a solid dark canvas"; palette.windowText: "#c3d4c9"; palette.buttonText: "#c3d4c9"; font.pixelSize: 12 }
+                Text { Layout.fillWidth: true; text: "Themes set the accent system. Enter any opaque hex color for a custom primary color."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap }
+                Rectangle { Layout.fillWidth: true; height: 1; color: "#34473a" }
                 CheckBox { id: thinkCheck; text: "Let the model think before responding"; palette.windowText: "#c3d4c9"; palette.buttonText: "#c3d4c9"; font.pixelSize: 12 }
                 CheckBox { id: motionCheck; text: "Reduce animations"; palette.windowText: "#c3d4c9"; palette.buttonText: "#c3d4c9"; font.pixelSize: 12 }
                 // Desktop access remains available on smaller windows.
                 ActionButton { Layout.fillWidth: true; text: bridge && bridge.desktopEnabled ? "Disable desktop control" : "Enable desktop control"; iconName: "desktop"; enabled: bridge && !bridge.connecting; onClicked: bridge && bridge.toggleDesktop() }
                 Text { Layout.fillWidth: true; text: "Desktop mode can click, type, and change things in your apps. Enable it for a task you want done. Esc stops the agent while this window is focused."; color: "#849e8d"; font.pixelSize: 11; wrapMode: Text.WordWrap; lineHeight: 1.4 }
-                ActionButton { Layout.fillWidth: true; text: "Save settings"; primary: true; onClicked: { bridge && bridge.saveSettings(endpointField.text, thinkCheck.checked, motionCheck.checked); settings.close(); } }
+                ActionButton { Layout.fillWidth: true; text: "Save settings"; primary: true; onClicked: { bridge && bridge.saveSettings(endpointField.text, thinkCheck.checked, motionCheck.checked, themePicker.currentText, accentField.text, solidCheck.checked); settings.close(); } }
                 Text { text: "WYNXO  0.1.0   ·   LOCAL DESKTOP COPILOT"; font.pixelSize: 8; font.letterSpacing: 1.5; color: "#718e7c"; Layout.alignment: Qt.AlignHCenter }
             }
         }
