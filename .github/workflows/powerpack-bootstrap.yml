@@ -1,5 +1,6 @@
 name: Powerpack bootstrap
 
+# This temporary branch-only workflow applies and validates the local powerpack.
 on:
   push:
     branches: [feat/local-powerpack]
