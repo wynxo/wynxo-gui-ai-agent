@@ -1,6 +1,7 @@
 module Wynxo
 singleton Theme 1.0 Theme.qml
 singleton ContextKinds 1.0 ContextKinds.qml
+singleton WorkspaceMode 1.0 WorkspaceMode.qml
 
 # Foundation
 Icon 1.0 Icon.qml
