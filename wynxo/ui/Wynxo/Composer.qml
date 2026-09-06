@@ -63,7 +63,6 @@ Item {
             anchors.margins: Theme.s3
             spacing: Theme.s2
 
-            // -------------------------------------------------- attachments
             Flow {
                 Layout.fillWidth: true
                 visible: root.hasAttachments
@@ -168,7 +167,6 @@ Item {
                 }
             }
 
-            // ------------------------------------------------------- prompt
             ScrollView {
                 Layout.fillWidth: true
                 Layout.minimumHeight: root.homeMode ? 68 : 46
@@ -223,7 +221,6 @@ Item {
                 }
             }
 
-            // ------------------------------------------------------ toolbar
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.s1
@@ -311,9 +308,8 @@ Item {
                     text: bridge && bridge.desktopEnabled ? "Screen on" : "Screen off"
                     iconName: "cursor"
                     selected: !!(bridge && bridge.desktopEnabled)
-                    onClicked: if (bridge && !bridge.connecting) bridge.toggleDesktop()
                     ToolTip.visible: hovered
-                    ToolTip.text: bridge && bridge.desktopEnabled ? "Turn screen control off" : "Turn screen control on"
+                    ToolTip.text: "Screen control is managed in Agent settings"
                 }
 
                 Row {
