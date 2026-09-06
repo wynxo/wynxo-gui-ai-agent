@@ -89,6 +89,27 @@ def human_size(count) -> str:
     return ""
 
 
+def explain(error: Exception, what: str = "That file") -> str:
+    """An OSError as a sentence.
+
+    `[Errno 2] No such file or directory: '/home/you/…'` tells the user the
+    thing they already clicked on is gone, in the least useful possible words.
+    """
+    if isinstance(error, ValueError):
+        return str(error)
+    number = getattr(error, "errno", None)
+    if number == 2:
+        return f"{what} is no longer there."
+    if number == 13:
+        return f"{what} cannot be read — check its permissions."
+    if number == 21:
+        return f"{what} is a folder."
+    if number == 40:
+        return f"{what} is behind a loop of symbolic links."
+    reason = getattr(error, "strerror", None) or str(error)
+    return f"{what} could not be read: {reason}."
+
+
 def resolve_within(root, candidate) -> Path:
     """Resolve `candidate` and prove it is inside `root`.
 

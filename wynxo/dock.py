@@ -168,7 +168,7 @@ class FileTree(QAbstractListModel):
             try:
                 self._rows = self._level(self._root, 0)
             except (OSError, ValueError) as exc:
-                self._error = str(exc)
+                self._error = files.explain(exc, "This project folder")
         self.endResetModel()
         self.changed.emit()
 
@@ -210,7 +210,7 @@ class FileTree(QAbstractListModel):
         try:
             children = self._level(path, depth + 1)
         except (OSError, ValueError) as exc:
-            self._error = str(exc)
+            self._error = files.explain(exc, "That folder")
             self.changed.emit()
             return
         self._expanded.add(path)
@@ -671,8 +671,9 @@ class DockController(QObject):
         try:
             record = files.read_file(self._project, str(path))
         except (OSError, ValueError) as exc:
-            self._viewer = {"path": str(path), "name": Path(str(path)).name,
-                            "error": str(exc), "text": "", "lines": 0}
+            name = Path(str(path)).name
+            self._viewer = {"path": str(path), "name": name, "lines": 0, "text": "",
+                            "error": files.explain(exc, f"“{name}”")}
             self._viewer_dirty = False
             self.viewerChanged.emit()
             return
@@ -717,7 +718,7 @@ class DockController(QObject):
         try:
             files.write_file(self._project, self._viewer["path"], self._viewer_buffer)
         except (OSError, ValueError) as exc:
-            self.toast.emit(f"Could not save: {exc}")
+            self.toast.emit(files.explain(exc, f"“{self._viewer.get('name', 'That file')}”"))
             return False
         self._viewer["text"] = self._viewer_buffer
         self._viewer_dirty = False

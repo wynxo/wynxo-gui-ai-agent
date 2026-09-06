@@ -147,3 +147,20 @@ def test_search_is_bounded_and_case_insensitive(project):
     assert files.search_tree(project, "readme")
     assert files.search_tree(project, "", limit=5) == []
     assert len(files.search_tree(project, "e", limit=2)) <= 2
+
+
+# ---------------------------------------------------------------- messages
+def test_an_os_error_is_explained_rather_than_printed(project):
+    """`[Errno 2] No such file or directory: '/home/you/…'` tells the user the
+    thing they clicked on is gone, in the least useful possible words."""
+    try:
+        files.read_file(project, "not-there.txt")
+    except OSError as error:
+        message = files.explain(error, "“notes.md”")
+    assert message == "“notes.md” is no longer there."
+    assert "Errno" not in message
+
+    assert "permissions" in files.explain(PermissionError(13, "Permission denied"))
+    assert files.explain(ValueError("That path is outside the project folder")) \
+        == "That path is outside the project folder"
+    assert files.explain(OSError("something odd")).endswith(".")
