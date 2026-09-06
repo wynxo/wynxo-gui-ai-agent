@@ -24,7 +24,7 @@ QtObject {
     readonly property color surfaceRaised:   "#2b2b2b"
     readonly property color surfaceHover:    "#323232"
     readonly property color surfaceSelected: "#383838"
-    readonly property color surfaceSunken:   "#0d0d0d"
+    readonly property color surfaceSunken:   "#08080a"
     readonly property color scrim:           "#cc070707"
 
     readonly property color borderSubtle: "#373737"
@@ -32,7 +32,7 @@ QtObject {
 
     readonly property color textPrimary:   "#f4f4f4"
     readonly property color textSecondary: "#c3c3c3"
-    readonly property color textMuted:     "#8f8f8f"
+    readonly property color textMuted:     "#a3a3a3"
     readonly property color textInverse:   "#111111"
 
     readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#b6a2f5"
