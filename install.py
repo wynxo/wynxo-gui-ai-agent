@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -19,6 +20,10 @@ import venv
 APP_ID = "io.github.wynxo.Wynxo"
 MARKER = ".wynxo-install.json"
 MANIFEST = "manifest.json"
+
+_MISSING_SO = re.compile(
+    r"(?P<name>[A-Za-z0-9_+.-]+\.so(?:\.[A-Za-z0-9_+.-]+)+)(?::|\s+=>\s+not found)"
+)
 
 
 def absolute(value: str | Path) -> Path:
@@ -114,13 +119,6 @@ def read_manifest(root: Path) -> dict:
 
 
 def points_into(path: Path, root: Path) -> bool:
-    """Is this a link Wynxo made into its own installation?
-
-    A symlink into ``root`` cannot belong to another application: nothing else
-    installs into Wynxo's directory. This is what lets a launcher be reclaimed
-    after its manifest has gone, without weakening the check for a real file
-    that somebody else owns.
-    """
     if not path.is_symlink():
         return False
     target = Path(os.readlink(path))
@@ -138,7 +136,8 @@ def check_managed(path: Path, old: dict, root: Path | None = None) -> None:
         return
     raise ValueError(
         f"Refusing to overwrite a file Wynxo does not recognise: {path}\n"
-        f"If it is left over from an older Wynxo, remove it and install again.")
+        f"If it is left over from an older Wynxo, remove it and install again."
+    )
 
 
 def _snapshot(paths: list[Path]) -> dict:
@@ -175,74 +174,211 @@ def _copy_source(source: Path, destination: Path) -> None:
 
 def _is_nixos() -> bool:
     try:
-        return Path("/etc/os-release").read_text(errors="ignore").lower().find("nixos") >= 0
+        return "nixos" in Path("/etc/os-release").read_text(errors="ignore").lower()
     except OSError:
         return Path("/nix/store").is_dir()
 
 
-def _nixos_runtime_lib_dirs() -> list[Path]:
-    """Find native runtime libraries required by binary PyPI wheels on NixOS.
-
-    PySide/Shiboken wheels expect a conventional FHS loader search path. NixOS
-    intentionally does not expose libstdc++.so.6 globally, so a plain venv can
-    install successfully but fail at import time. Prefer the system profile when
-    available, then select a GCC runtime already present in /nix/store. No Nix
-    package is downloaded and the user's system configuration is not changed.
-    """
+def _nix_closure_paths() -> list[Path]:
+    """Return rooted Nix store paths before falling back to the whole store."""
     if not _is_nixos():
         return []
+    roots = [Path("/run/current-system")]
+    user = os.environ.get("USER")
+    if user:
+        roots.append(Path("/nix/var/nix/profiles/per-user") / user / "profile")
+    paths: list[Path] = []
+    seen: set[str] = set()
+    nix_store = shutil.which("nix-store")
+    if nix_store:
+        for root in roots:
+            if not root.exists():
+                continue
+            result = subprocess.run(
+                [nix_store, "-qR", str(root)], capture_output=True, text=True, check=False
+            )
+            if result.returncode != 0:
+                continue
+            for line in result.stdout.splitlines():
+                if line.startswith("/nix/store/") and line not in seen:
+                    seen.add(line)
+                    paths.append(Path(line))
+    return paths
 
-    candidates: list[Path] = []
-    for path in (Path("/run/current-system/sw/lib"), Path("/run/current-system/sw/lib64")):
-        if path.is_dir():
-            candidates.append(path)
 
-    store = Path("/nix/store")
-    if store.is_dir():
-        patterns = (
-            "*gcc*-lib/lib/libstdc++.so.6",
-            "*gcc*-lib/lib64/libstdc++.so.6",
-            "*gcc*/lib/libstdc++.so.6",
-            "*gcc*/lib64/libstdc++.so.6",
+def _library_in_prefix(prefix: Path, name: str) -> Path | None:
+    for relative in (
+        Path("lib") / name,
+        Path("lib64") / name,
+        Path("lib/x86_64-linux-gnu") / name,
+    ):
+        candidate = prefix / relative
+        if candidate.exists():
+            return candidate.parent
+    return None
+
+
+def _find_nix_library(name: str, closure: list[Path] | None = None) -> Path | None:
+    """Find one missing soname in a rooted Nix closure, then in /nix/store."""
+    if not _is_nixos() or "/" in name or "\x00" in name:
+        return None
+
+    for prefix in (
+        Path("/run/current-system/sw"),
+        Path.home() / ".nix-profile",
+    ):
+        found = _library_in_prefix(prefix, name)
+        if found:
+            return found
+
+    for prefix in closure if closure is not None else _nix_closure_paths():
+        found = _library_in_prefix(prefix, name)
+        if found:
+            return found
+
+    find = shutil.which("find")
+    if find and Path("/nix/store").is_dir():
+        result = subprocess.run(
+            [find, "/nix/store", "-maxdepth", "3", "-name", name, "-print", "-quit"],
+            capture_output=True, text=True, check=False,
         )
-        matches: list[Path] = []
-        for pattern in patterns:
-            try:
-                matches.extend(store.glob(pattern))
-            except OSError:
-                pass
-        # Newer store paths sort after older versions often enough for this
-        # purpose, but uniqueness matters more than exact version ordering.
-        for library in sorted(matches, reverse=True):
-            parent = library.parent
-            if parent not in candidates:
-                candidates.append(parent)
-
-    # Keep only directories that can actually satisfy the first hard dependency
-    # reported by Shiboken. This avoids injecting unrelated store directories.
-    useful = [path for path in candidates if (path / "libstdc++.so.6").exists()]
-    return useful[:4]
+        match = result.stdout.splitlines()
+        if match:
+            path = Path(match[0])
+            if path.exists():
+                return path.parent
+    return None
 
 
-def _runtime_environment() -> dict[str, str]:
+def _missing_library_names(output: str) -> list[str]:
+    """Extract missing ELF sonames from Python/import and ldd diagnostics."""
+    names: list[str] = []
+    for match in _MISSING_SO.finditer(output or ""):
+        name = match.group("name")
+        if name not in names:
+            names.append(name)
+    for line in (output or "").splitlines():
+        if "=> not found" not in line:
+            continue
+        name = line.split("=>", 1)[0].strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _runtime_environment(lib_dirs: list[Path] | None = None) -> dict[str, str]:
     env = os.environ.copy()
-    lib_dirs = _nixos_runtime_lib_dirs()
-    if lib_dirs:
+    dirs = [Path(path) for path in (lib_dirs or []) if Path(path).is_dir()]
+    if dirs:
         current = env.get("LD_LIBRARY_PATH", "")
-        joined = os.pathsep.join(str(path) for path in lib_dirs)
+        joined = os.pathsep.join(str(path) for path in dirs)
         env["LD_LIBRARY_PATH"] = joined + (os.pathsep + current if current else "")
     return env
 
 
-def _launcher_runtime_prefix() -> str:
-    lib_dirs = _nixos_runtime_lib_dirs()
-    if not lib_dirs:
-        return ""
-    joined = ":".join(str(path) for path in lib_dirs)
-    return f"export LD_LIBRARY_PATH={shlex.quote(joined)}${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}\n"
+def _resolve_command_libraries(
+    command: list[str], *, cwd: Path, lib_dirs: list[Path], closure: list[Path],
+    extra_env: dict[str, str] | None = None, attempts: int = 32,
+) -> subprocess.CompletedProcess:
+    """Run a probe and teach its environment each missing Nix soname in turn."""
+    last: subprocess.CompletedProcess | None = None
+    for _ in range(attempts):
+        env = _runtime_environment(lib_dirs)
+        if extra_env:
+            env.update(extra_env)
+        last = subprocess.run(
+            command, cwd=cwd, env=env, capture_output=True, text=True, check=False
+        )
+        if last.returncode == 0:
+            return last
+        output = (last.stdout or "") + "\n" + (last.stderr or "")
+        missing = _missing_library_names(output)
+        added = False
+        unresolved: list[str] = []
+        for name in missing:
+            directory = _find_nix_library(name, closure)
+            if directory is None:
+                unresolved.append(name)
+                continue
+            if directory not in lib_dirs:
+                print(f"NixOS: found {name} in {directory}", flush=True)
+                lib_dirs.append(directory)
+                added = True
+        if added:
+            continue
+        if unresolved:
+            raise RuntimeError(
+                "NixOS is missing native libraries required by Wynxo: "
+                + ", ".join(unresolved)
+                + ". Add the packages providing them to your NixOS configuration and run the installer again."
+            )
+        tail = "\n".join(output.strip().splitlines()[-18:])
+        raise RuntimeError(f"Wynxo's native dependency check failed:\n{tail}")
+    output = "" if last is None else ((last.stdout or "") + "\n" + (last.stderr or ""))
+    raise RuntimeError("Could not resolve Wynxo's native dependencies after repeated attempts.\n" + output[-4000:])
 
 
-def _build_environment(release: Path) -> None:
+def _scan_elf_dependencies(environment: Path, lib_dirs: list[Path], closure: list[Path]) -> None:
+    """Resolve native dependencies of the Qt modules and platform plugins we use."""
+    if not _is_nixos():
+        return
+    ldd = shutil.which("ldd")
+    if not ldd:
+        return
+
+    site_packages = list((environment / "lib").glob("python*/site-packages"))
+    if not site_packages:
+        return
+    site = site_packages[0]
+    patterns = (
+        "shiboken6/Shiboken*.so",
+        "PySide6/QtCore*.so",
+        "PySide6/QtGui*.so",
+        "PySide6/QtQml*.so",
+        "PySide6/QtQuick*.so",
+        "PySide6/QtWidgets*.so",
+        "PySide6/Qt/lib/libQt6Core.so*",
+        "PySide6/Qt/lib/libQt6Gui.so*",
+        "PySide6/Qt/lib/libQt6Qml.so*",
+        "PySide6/Qt/lib/libQt6Quick.so*",
+        "PySide6/Qt/plugins/platforms/libqoffscreen.so",
+        "PySide6/Qt/plugins/platforms/libqxcb.so",
+        "PySide6/Qt/plugins/platforms/libqwayland*.so",
+    )
+    targets: list[Path] = []
+    for pattern in patterns:
+        for target in site.glob(pattern):
+            if target.is_file() and target not in targets:
+                targets.append(target)
+
+    for _ in range(16):
+        missing: list[str] = []
+        env = _runtime_environment(lib_dirs)
+        for target in targets:
+            result = subprocess.run([ldd, str(target)], env=env, capture_output=True, text=True, check=False)
+            for name in _missing_library_names((result.stdout or "") + "\n" + (result.stderr or "")):
+                if name not in missing:
+                    missing.append(name)
+        if not missing:
+            return
+        added = False
+        unresolved: list[str] = []
+        for name in missing:
+            directory = _find_nix_library(name, closure)
+            if directory is None:
+                unresolved.append(name)
+                continue
+            if directory not in lib_dirs:
+                print(f"NixOS: found {name} in {directory}", flush=True)
+                lib_dirs.append(directory)
+                added = True
+        if unresolved:
+            print("NixOS: optional Qt plugin libraries not present: " + ", ".join(unresolved), flush=True)
+        if not added:
+            return
+
+
+def _build_environment(release: Path) -> list[Path]:
     environment = release / "venv"
     print("Creating an isolated Python environment…", flush=True)
     try:
@@ -251,14 +387,46 @@ def _build_environment(release: Path) -> None:
         raise RuntimeError("Python venv support is required. On Debian/Ubuntu: sudo apt install python3-venv") from exc
     python = environment / "bin/python"
     print("Installing Wynxo and its GUI dependencies (first install may take a few minutes)…", flush=True)
-    subprocess.run([str(python), "-m", "pip", "install", "--disable-pip-version-check", str(release / "source")], check=True)
-    env = _runtime_environment()
-    if _is_nixos() and not _nixos_runtime_lib_dirs():
-        raise RuntimeError(
-            "NixOS was detected, but libstdc++.so.6 was not found in the system profile or /nix/store. "
-            "Add stdenv.cc.cc.lib (or gcc.cc.lib) to your system/user packages and run the installer again."
+    subprocess.run(
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check", str(release / "source")],
+        check=True,
+    )
+
+    if not _is_nixos():
+        subprocess.run(
+            [str(python), "-c", "import wynxo, PySide6, httpx, dbus_next, PIL, Xlib"],
+            check=True,
         )
-    subprocess.run([str(python), "-c", "import wynxo, PySide6, httpx, dbus_next, PIL, Xlib"], check=True, env=env)
+        return []
+
+    print("NixOS detected — resolving native Qt runtime libraries…", flush=True)
+    closure = _nix_closure_paths()
+    lib_dirs: list[Path] = []
+    _scan_elf_dependencies(environment, lib_dirs, closure)
+
+    probe = (
+        "import wynxo, httpx, dbus_next, PIL, Xlib; "
+        "from PySide6 import QtCore, QtGui, QtQml, QtQuick, QtQuickControls2, QtWidgets"
+    )
+    _resolve_command_libraries(
+        [str(python), "-c", probe], cwd=release, lib_dirs=lib_dirs, closure=closure
+    )
+
+    console = environment / "bin/wynxo"
+    if console.exists():
+        _resolve_command_libraries(
+            [str(console), "--smoke-test"], cwd=release, lib_dirs=lib_dirs, closure=closure,
+            extra_env={"QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"},
+        )
+    return lib_dirs
+
+
+def _launcher_runtime_prefix(lib_dirs: list[Path] | None = None) -> str:
+    dirs = [str(Path(path)) for path in (lib_dirs or [])]
+    if not dirs:
+        return ""
+    joined = ":".join(dirs)
+    return f"export LD_LIBRARY_PATH={shlex.quote(joined)}${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}\n"
 
 
 def desktop_argument(value: Path) -> str:
@@ -307,18 +475,19 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
             release.mkdir()
             atomic_write(release / ".wynxo-release", APP_ID.encode())
             _copy_source(source, release / "source")
-            _build_environment(release)
+            runtime_dirs = _build_environment(release) or []
             snapshots = _snapshot(internal + external + [root / MANIFEST])
             try:
                 launcher = (
                     "#!/bin/sh\nset -eu\n"
                     f"export WYNXO_INSTALL_ROOT={shlex.quote(str(root))}\n"
-                    + _launcher_runtime_prefix()
+                    + _launcher_runtime_prefix(runtime_dirs)
                     + 'if [ "${1-}" = "--uninstall" ]; then\n'
                     '  shift\n'
                     '  exec "$WYNXO_INSTALL_ROOT/current/venv/bin/python" "$WYNXO_INSTALL_ROOT/uninstall.py" --install-root "$WYNXO_INSTALL_ROOT" "$@"\n'
                     'fi\n'
-                    'exec "$WYNXO_INSTALL_ROOT/current/venv/bin/python" -m wynxo "$@"\n'
+                    'cd "$WYNXO_INSTALL_ROOT/current"\n'
+                    'exec "$WYNXO_INSTALL_ROOT/current/venv/bin/wynxo" "$@"\n'
                 )
                 atomic_write(root / "wynxo", launcher.encode(), 0o755)
                 atomic_link(root / "uninstall.py", "current/source/uninstall.py")
@@ -343,8 +512,10 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                     "files": {str(path): fingerprint(path) for path in internal + external},
                     "external": [str(path) for path in external],
                     "releases": old.get("releases", []) + [release_id],
+                    "runtime_lib_dirs": [str(path) for path in runtime_dirs],
                     "data_dirs": old.get("data_dirs", [
-                        str(data / "wynxo"), str(xdg_path("XDG_CONFIG_HOME", ".config") / "wynxo"),
+                        str(data / "wynxo"),
+                        str(xdg_path("XDG_CONFIG_HOME", ".config") / "wynxo"),
                         str(xdg_path("XDG_CACHE_HOME", ".cache") / "wynxo"),
                     ]),
                 }
@@ -364,8 +535,14 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--install-root", type=Path, default=default_root(), help="App directory (default: XDG_DATA_HOME/wynxo-app)")
-    parser.add_argument("--bin-dir", type=Path, default=Path.home() / ".local/bin", help="Launcher directory (default: ~/.local/bin)")
+    parser.add_argument(
+        "--install-root", type=Path, default=default_root(),
+        help="App directory (default: XDG_DATA_HOME/wynxo-app)",
+    )
+    parser.add_argument(
+        "--bin-dir", type=Path, default=Path.home() / ".local/bin",
+        help="Launcher directory (default: ~/.local/bin)",
+    )
     args = parser.parse_args(argv)
     if sys.platform != "linux":
         parser.error("Wynxo currently supports Linux.")
