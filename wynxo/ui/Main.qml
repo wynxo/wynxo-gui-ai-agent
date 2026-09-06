@@ -382,6 +382,7 @@ ApplicationWindow {
         dragMargin: 0
         background: Rectangle { color: Theme.background }
         WorkspaceDock {
+            id: drawerDock
             anchors.fill: parent
             panelOpen: true
             panelWidth: dockDrawer.width - Theme.railWidth - 5
@@ -523,21 +524,27 @@ ApplicationWindow {
 
     function toggleDock() {
         if (!window.roomForDock) {
+            drawerDock.userSelectedWorkspaceTab = true;
             if (dockDrawer.opened) dockDrawer.close();
             else dockDrawer.open();
             return;
         }
+        dock.userSelectedWorkspaceTab = true;
         if (window.dockState) window.dockState.toggle();
     }
 
     function openDock(tab) {
         if (!window.dockState) return;
         if (!window.roomForDock) {
+            drawerDock.userSelectedWorkspaceTab = true;
+            drawerDock.planSelected = false;
             window.dockState.setTab(tab);
             if (!dockDrawer.opened) dockDrawer.open();
             return;
         }
-        window.dockState.openTab(tab);
+        // Route through WorkspaceDock so leaving Plan cannot accidentally
+        // toggle the underlying backend tab closed when it is the same tab.
+        dock.pickWorkspaceTab(tab);
     }
 
     function focusSearch() {
