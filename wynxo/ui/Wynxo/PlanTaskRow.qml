@@ -3,11 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    One real agent action rendered as a calm plan step.
+    One agent-authored plan step.
 
-    Plan deliberately reads the same action state that powers Activity rather
-    than inventing a second checklist. Activity is the audit trail; this row is
-    the compact, task-oriented view of that evidence.
+    Plan statuses are intentionally mapped onto the same visual vocabulary as
+    Activity so completed/running/failed always mean the same thing, while the
+    content itself remains a concise task plan rather than a tool log.
 */
 Item {
     id: root
@@ -15,41 +15,39 @@ Item {
     property int number: 1
     property bool last: false
 
-    readonly property string rawState: String(step && step.state || "queued")
-    readonly property string stateKey: rawState === "declined" ? "cancelled"
+    readonly property string rawState: String(step && step.status || "pending")
+    readonly property string stateKey: rawState === "completed" ? "done"
+                                      : rawState === "in_progress" ? "running"
+                                      : rawState === "skipped" ? "cancelled"
                                       : rawState === "pending" ? "queued"
                                       : rawState
-    readonly property bool active: stateKey === "running" || stateKey === "waiting"
+    readonly property bool active: stateKey === "running"
     readonly property bool done: stateKey === "done"
     readonly property bool failed: stateKey === "failed"
     readonly property bool skipped: stateKey === "cancelled"
     readonly property color tone: Theme.stateColor(stateKey)
-    readonly property string titleText: String(step && (step.summary || step.label) || "Agent step")
+    readonly property string titleText: String(step && step.title || "Plan step")
     readonly property string stateText: done ? "Completed"
-                                           : active ? (stateKey === "waiting" ? "Waiting" : "Running")
+                                           : active ? "Running"
                                            : failed ? "Failed"
                                            : skipped ? "Skipped"
                                            : "Pending"
-    readonly property string detailText: failed || skipped ? String(step && (step.output || step.detail) || "") : ""
 
-    implicitHeight: content.implicitHeight + Theme.s3
+    implicitHeight: content.implicitHeight + Theme.s4
 
     Accessible.role: Accessible.ListItem
     Accessible.name: titleText + ", " + stateText
 
-    // A quiet timeline line gives the checklist structure without turning the
-    // panel into a project-management dashboard.
     Rectangle {
-        x: 17
-        y: 26
+        x: 20
+        y: 27
         width: 1
-        height: Math.max(0, root.height - 18)
+        height: Math.max(0, root.height - 17)
         visible: !root.last
         color: Theme.borderSubtle
     }
 
     Item {
-        id: marker
         x: Theme.s3
         y: Theme.s2
         width: 18
@@ -66,7 +64,7 @@ Item {
         Icon {
             anchors.centerIn: parent
             visible: root.done || root.failed || root.skipped
-            name: root.done ? "check" : "close"
+            name: root.done ? "check" : root.failed ? "warning" : "close"
             ink: root.done ? Theme.textPrimary : root.tone
             width: 10; height: 10
             weight: 1.9
@@ -123,19 +121,6 @@ Item {
                 font.weight: root.active || root.failed ? Font.Medium : Font.Normal
                 Layout.alignment: Qt.AlignTop
             }
-        }
-
-        Text {
-            Layout.fillWidth: true
-            visible: text !== ""
-            text: root.detailText
-            color: root.failed ? Theme.danger : Theme.textMuted
-            font.family: Theme.sansFamily
-            font.pixelSize: Theme.micro
-            wrapMode: Text.WordWrap
-            maximumLineCount: 3
-            elide: Text.ElideRight
-            lineHeight: 1.3
         }
     }
 }
