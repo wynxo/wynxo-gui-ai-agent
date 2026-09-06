@@ -46,6 +46,14 @@ def test_workspace_auto_opens_plan_only_for_multistep_runs():
     assert "if (!bridge || !root.dock || root.userSelectedWorkspaceTab)" in dock
 
 
+def test_shortcuts_and_header_respect_manual_workspace_choice():
+    main = (ROOT / "wynxo" / "ui" / "Main.qml").read_text(encoding="utf-8")
+    assert "dock.userSelectedWorkspaceTab = true" in main
+    assert "drawerDock.userSelectedWorkspaceTab = true" in main
+    assert "dock.pickWorkspaceTab(tab)" in main
+    assert "drawerDock.planSelected = false" in main
+
+
 def test_plan_and_activity_remain_separate_surfaces():
     dock = source("WorkspaceDock.qml")
     rail = source("DockTabBar.qml")
