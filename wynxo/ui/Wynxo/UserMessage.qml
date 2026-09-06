@@ -56,7 +56,10 @@ Item {
             anchors.top: parent.top
             anchors.margins: Theme.s3
             anchors.leftMargin: Theme.s3 + 18
-            anchors.rightMargin: Theme.s6
+            // Keep the compact edit/copy controls out of the text lane even
+            // for a very long prompt. They remain keyboard-reachable without
+            // requiring pointer hover.
+            anchors.rightMargin: 68
             text: root.body
             readOnly: true
             selectByMouse: true
@@ -108,8 +111,8 @@ Item {
             anchors.top: parent.top
             anchors.topMargin: Theme.s2
             spacing: 0
-            opacity: !root.editing && hover.hovered ? 1 : 0
-            visible: opacity > 0
+            opacity: root.editing ? 0 : (hover.hovered ? 1 : 0.58)
+            visible: !root.editing
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
                 width: 26; height: 26; iconSize: 12; iconName: "edit"; tooltip: "Edit and run again"
