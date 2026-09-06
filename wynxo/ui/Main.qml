@@ -182,10 +182,14 @@ ApplicationWindow {
                 Layout.bottomMargin: Theme.s4
                 spacing: window.homeMode ? Theme.s2 : Theme.s3
 
-                // Equal flexible space above and below keeps the empty-state
-                // prompt/composer cluster optically centered like ChatGPT's
-                // desktop home screen.
-                Item { Layout.fillHeight: true; visible: window.homeMode }
+                // The reference home screen sits a little above mathematical
+                // center. A 2:3 stretch split gives it that calmer, intentional
+                // placement while still adapting smoothly to window height.
+                Item {
+                    Layout.fillHeight: true
+                    Layout.verticalStretchFactor: 2
+                    visible: window.homeMode
+                }
 
                 TaskView {
                     id: taskView
@@ -199,7 +203,7 @@ ApplicationWindow {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.maximumWidth: window.homeMode ? 640 : Theme.readingWidth
                     Layout.alignment: Qt.AlignHCenter
                     visible: bridge && bridge.capabilityWarning.length > 0
                     Layout.preferredHeight: visible ? warningText.implicitHeight + Theme.s3 * 2 : 0
@@ -227,7 +231,7 @@ ApplicationWindow {
 
                 ErrorBanner {
                     Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.maximumWidth: window.homeMode ? 640 : Theme.readingWidth
                     Layout.alignment: Qt.AlignHCenter
                     onActionInvoked: function(action) { window.runCommand(action); }
                 }
@@ -236,7 +240,7 @@ ApplicationWindow {
                     id: composer
                     objectName: "mainComposer"
                     Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.maximumWidth: window.homeMode ? 640 : Theme.readingWidth
                     Layout.alignment: Qt.AlignHCenter
                     onSubmitted: function(text) { if (bridge) bridge.send(text); }
                     onOpenModelManager: models.open()
@@ -257,7 +261,11 @@ ApplicationWindow {
                     elide: Text.ElideMiddle
                 }
 
-                Item { Layout.fillHeight: true; visible: window.homeMode }
+                Item {
+                    Layout.fillHeight: true
+                    Layout.verticalStretchFactor: 3
+                    visible: window.homeMode
+                }
             }
         }
     }
