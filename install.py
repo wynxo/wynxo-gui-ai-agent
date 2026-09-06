@@ -134,10 +134,6 @@ def check_managed(path: Path, old: dict, root: Path | None = None) -> None:
     expected = old.get("files", {}).get(str(path))
     if actual is None or (expected is not None and actual == expected):
         return
-    # Losing the install root strands the launcher: the manifest that proved
-    # it was ours went with it. Refusing forever leaves no way forward, and
-    # the uninstaller has nothing to remove either, so adopt what is provably
-    # Wynxo's own rather than deadlocking the user out of their own app.
     if points_into(path, root) if root is not None else False:
         return
     raise ValueError(
@@ -177,6 +173,75 @@ def _copy_source(source: Path, destination: Path) -> None:
         shutil.copytree(source / name, destination / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
 
+def _is_nixos() -> bool:
+    try:
+        return Path("/etc/os-release").read_text(errors="ignore").lower().find("nixos") >= 0
+    except OSError:
+        return Path("/nix/store").is_dir()
+
+
+def _nixos_runtime_lib_dirs() -> list[Path]:
+    """Find native runtime libraries required by binary PyPI wheels on NixOS.
+
+    PySide/Shiboken wheels expect a conventional FHS loader search path. NixOS
+    intentionally does not expose libstdc++.so.6 globally, so a plain venv can
+    install successfully but fail at import time. Prefer the system profile when
+    available, then select a GCC runtime already present in /nix/store. No Nix
+    package is downloaded and the user's system configuration is not changed.
+    """
+    if not _is_nixos():
+        return []
+
+    candidates: list[Path] = []
+    for path in (Path("/run/current-system/sw/lib"), Path("/run/current-system/sw/lib64")):
+        if path.is_dir():
+            candidates.append(path)
+
+    store = Path("/nix/store")
+    if store.is_dir():
+        patterns = (
+            "*gcc*-lib/lib/libstdc++.so.6",
+            "*gcc*-lib/lib64/libstdc++.so.6",
+            "*gcc*/lib/libstdc++.so.6",
+            "*gcc*/lib64/libstdc++.so.6",
+        )
+        matches: list[Path] = []
+        for pattern in patterns:
+            try:
+                matches.extend(store.glob(pattern))
+            except OSError:
+                pass
+        # Newer store paths sort after older versions often enough for this
+        # purpose, but uniqueness matters more than exact version ordering.
+        for library in sorted(matches, reverse=True):
+            parent = library.parent
+            if parent not in candidates:
+                candidates.append(parent)
+
+    # Keep only directories that can actually satisfy the first hard dependency
+    # reported by Shiboken. This avoids injecting unrelated store directories.
+    useful = [path for path in candidates if (path / "libstdc++.so.6").exists()]
+    return useful[:4]
+
+
+def _runtime_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    lib_dirs = _nixos_runtime_lib_dirs()
+    if lib_dirs:
+        current = env.get("LD_LIBRARY_PATH", "")
+        joined = os.pathsep.join(str(path) for path in lib_dirs)
+        env["LD_LIBRARY_PATH"] = joined + (os.pathsep + current if current else "")
+    return env
+
+
+def _launcher_runtime_prefix() -> str:
+    lib_dirs = _nixos_runtime_lib_dirs()
+    if not lib_dirs:
+        return ""
+    joined = ":".join(str(path) for path in lib_dirs)
+    return f"export LD_LIBRARY_PATH={shlex.quote(joined)}${{LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}}\n"
+
+
 def _build_environment(release: Path) -> None:
     environment = release / "venv"
     print("Creating an isolated Python environment…", flush=True)
@@ -187,11 +252,16 @@ def _build_environment(release: Path) -> None:
     python = environment / "bin/python"
     print("Installing Wynxo and its GUI dependencies (first install may take a few minutes)…", flush=True)
     subprocess.run([str(python), "-m", "pip", "install", "--disable-pip-version-check", str(release / "source")], check=True)
-    subprocess.run([str(python), "-c", "import wynxo, PySide6, httpx, dbus_next, PIL, Xlib"], check=True)
+    env = _runtime_environment()
+    if _is_nixos() and not _nixos_runtime_lib_dirs():
+        raise RuntimeError(
+            "NixOS was detected, but libstdc++.so.6 was not found in the system profile or /nix/store. "
+            "Add stdenv.cc.cc.lib (or gcc.cc.lib) to your system/user packages and run the installer again."
+        )
+    subprocess.run([str(python), "-c", "import wynxo, PySide6, httpx, dbus_next, PIL, Xlib"], check=True, env=env)
 
 
 def desktop_argument(value: Path) -> str:
-    # Escape both the Desktop Entry string layer and its Exec argument layer.
     argument = str(value).replace("%", "%%")
     for old, new in (("\\", "\\\\"), ('"', '\\"'), ("`", "\\`"), ("$", "\\$")):
         argument = argument.replace(old, new)
@@ -225,7 +295,6 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
             external = [launcher_link, desktop, icon]
             for path in internal + external:
                 check_managed(path, old, root)
-            # Changing install destinations should never strand launchers from a prior install.
             previous_external = set(old.get("external", []))
             if previous_external and previous_external != {str(p) for p in external}:
                 raise ValueError("Install destinations changed; uninstall the existing copy first (your data is kept).")
@@ -244,7 +313,8 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                 launcher = (
                     "#!/bin/sh\nset -eu\n"
                     f"export WYNXO_INSTALL_ROOT={shlex.quote(str(root))}\n"
-                    'if [ "${1-}" = "--uninstall" ]; then\n'
+                    + _launcher_runtime_prefix()
+                    + 'if [ "${1-}" = "--uninstall" ]; then\n'
                     '  shift\n'
                     '  exec "$WYNXO_INSTALL_ROOT/current/venv/bin/python" "$WYNXO_INSTALL_ROOT/uninstall.py" --install-root "$WYNXO_INSTALL_ROOT" "$@"\n'
                     'fi\n'
@@ -255,9 +325,6 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                 atomic_link(root / "current", f"releases/{release_id}")
                 atomic_link(launcher_link, str(root / "wynxo"))
                 atomic_write(icon, (source / "assets/wynxo.svg").read_bytes())
-                # The QuickBar action gives desktops something to bind a
-                # custom keyboard shortcut to, since Linux has no portable
-                # way for an application to claim a global hotkey itself.
                 entry = (
                     "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Wynxo\n"
                     "Comment=Your local AI workbench\n"
@@ -292,7 +359,6 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
             owned_root(root)
             shutil.rmtree(root)
         raise
-    # Old releases are retained so upgrades never remove files used by a running app.
     return launcher_link
 
 
