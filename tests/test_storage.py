@@ -81,3 +81,52 @@ def test_default_store_respects_xdg_data_directory(monkeypatch, tmp_path):
     assert store.path == tmp_path / "wynxo" / "history.sqlite3"
     assert os.stat(store.path.parent).st_mode & 0o777 == 0o700
     store.close()
+
+
+def test_listing_carries_previews_and_message_counts(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    conversation = store.create_conversation("Planning")
+    store.set_messages(conversation["id"], [
+        {"role": "user", "content": "How do I ship this?"},
+        {"role": "assistant", "content": "Start with the release checklist."},
+    ])
+    empty = store.create_conversation("Untouched")
+
+    listing = {item["id"]: item for item in store.list_conversations()}
+    assert listing[conversation["id"]]["message_count"] == 2
+    assert listing[conversation["id"]]["preview"] == "Start with the release checklist."
+    assert listing[empty["id"]]["message_count"] == 0
+    assert listing[empty["id"]]["preview"] == ""
+    store.close()
+
+
+def test_preview_labels_the_user_and_survives_tool_rows(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    conversation = store.create_conversation("Desktop run")
+    store.set_messages(conversation["id"], [{"role": "user", "content": "Open Firefox"}])
+    assert store.list_conversations()[0]["preview"] == "You: Open Firefox"
+    store.set_messages(conversation["id"], [
+        {"role": "user", "content": "Open Firefox"},
+        {"role": "tool", "tool_name": "open_app", "content": '{"ok": true}'},
+    ])
+    assert store.list_conversations()[0]["preview"] == "Desktop actions"
+    store.close()
+
+
+def test_search_matches_titles_and_message_bodies(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    first = store.create_conversation("Release notes")
+    second = store.create_conversation("Untitled")
+    store.set_messages(first["id"], [{"role": "user", "content": "draft the changelog"}])
+    store.set_messages(second["id"], [
+        {"role": "user", "content": "a stray mention of kubernetes"},
+        {"role": "assistant", "content": "noted"},
+    ])
+
+    assert [item["id"] for item in store.search("release")] == [first["id"]]
+    assert [item["id"] for item in store.search("KUBERNETES")] == [second["id"]]
+    # The match is inside an older message, not in the title or the preview.
+    assert [item["match"] for item in store.search("kubernetes")] == ["message"]
+    assert len(store.search("")) == 2
+    assert store.search("nothing here") == []
+    store.close()

@@ -65,9 +65,61 @@ class Store:
                              "VALUES (:id,:title,:model,:created_at,:updated_at,:pinned)", item)
         return item
 
+    LIST_SQL = """
+        SELECT c.*,
+               (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) AS message_count,
+               (SELECT m.payload FROM messages m WHERE m.conversation_id = c.id
+                ORDER BY m.position DESC LIMIT 1) AS last_payload
+        FROM conversations c
+        ORDER BY c.pinned DESC, c.updated_at DESC, c.id DESC
+    """
+
+    @staticmethod
+    def _preview(payload: str | None) -> str:
+        """A one-line summary of the newest message, for the sidebar."""
+        if not payload:
+            return ""
+        try:
+            message = json.loads(payload)
+        except (ValueError, TypeError):
+            return ""
+        role = message.get("role", "")
+        if role == "tool":
+            return "Desktop actions"
+        text = " ".join(str(message.get("content", "")).split())
+        if not text and message.get("thinking"):
+            text = " ".join(str(message["thinking"]).split())
+        if not text:
+            return ""
+        prefix = "You: " if role == "user" else ""
+        return (prefix + text)[:120]
+
     def list_conversations(self) -> list[dict]:
         with self._lock:
-            return [dict(row) for row in self._db.execute("SELECT * FROM conversations ORDER BY pinned DESC, updated_at DESC, id DESC")]
+            rows = [dict(row) for row in self._db.execute(self.LIST_SQL)]
+        for row in rows:
+            row["preview"] = self._preview(row.pop("last_payload", None))
+        return rows
+
+    def search(self, query: str, limit: int = 60) -> list[dict]:
+        """Conversations whose title or message text contains ``query``."""
+        needle = str(query or "").strip().lower()
+        if not needle:
+            return self.list_conversations()[:limit]
+        results = []
+        for conversation in self.list_conversations():
+            if needle in conversation["title"].lower() or needle in conversation["preview"].lower():
+                results.append({**conversation, "match": "title"})
+                continue
+            with self._lock:
+                rows = self._db.execute(
+                    "SELECT payload FROM messages WHERE conversation_id=? AND lower(payload) LIKE ? LIMIT 1",
+                    (conversation["id"], f"%{needle}%")).fetchone()
+            if rows:
+                results.append({**conversation, "match": "message"})
+            if len(results) >= limit:
+                break
+        return results
 
     def get_conversation(self, conversation_id: str) -> dict | None:
         with self._lock:

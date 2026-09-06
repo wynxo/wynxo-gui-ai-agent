@@ -204,6 +204,36 @@ class DesktopController:
             self._size = None
             self._detail = "Desktop control is off."
 
+    def capture(self, kind: str = "screen", cancel: threading.Event | None = None) -> dict:
+        """Read-only screen or window capture for chat context.
+
+        This never requires — and never grants — input control, and it
+        deliberately does not record a coordinate space: a picture taken for
+        context must not become the basis for clicking somewhere later.
+        """
+        backend = self._backend
+        if backend is None:
+            raise DesktopError("No graphical Linux session found, so the screen cannot be captured.")
+        if not backend.available:
+            raise DesktopError(backend.unavailable_reason)
+        _check(cancel)
+        picture, detail = backend.capture(kind, cancel)
+        result = _png_result(picture, backend.name)
+        result.pop("coordinate_space", None)
+        result["detail"] = detail
+        result["capture"] = kind
+        return result
+
+    def active_window(self) -> dict:
+        """Best-effort title of the focused window, for a context label."""
+        backend = self._backend
+        if backend is None or not backend.available:
+            return {"title": "", "detail": "No graphical session"}
+        try:
+            return backend.active_window()
+        except Exception as exc:
+            return {"title": "", "detail": str(exc)[:160]}
+
     def _permission(self, cancel) -> None:
         _check(cancel)
         if not self.status()["connected"]:
@@ -379,6 +409,62 @@ class _X11Backend:
         from PIL import ImageGrab
         _check(cancel)
         return ImageGrab.grab(xdisplay=os.environ.get("DISPLAY", ""))
+
+    def _read_only_display(self):
+        from Xlib import display
+        return display.Display()
+
+    def _focused(self, connection):
+        """Return (window, title) for the focused window, or (None, "")."""
+        root = connection.screen().root
+        try:
+            atom = connection.intern_atom("_NET_ACTIVE_WINDOW")
+            value = root.get_full_property(atom, 0)
+            window = connection.create_resource_object("window", value.value[0]) if value and value.value else None
+        except Exception:
+            window = None
+        if window is None:
+            window = connection.get_input_focus().focus
+        title = ""
+        for name in ("_NET_WM_NAME", "WM_NAME"):
+            try:
+                prop = window.get_full_property(connection.intern_atom(name), 0)
+                if prop and prop.value:
+                    title = prop.value.decode("utf-8", "replace") if isinstance(prop.value, bytes) else str(prop.value)
+                    break
+            except Exception:
+                continue
+        return window, title.strip()
+
+    def active_window(self):
+        connection = self._read_only_display()
+        try:
+            _, title = self._focused(connection)
+            return {"title": title, "detail": "X11"}
+        finally:
+            connection.close()
+
+    def capture(self, kind, cancel):
+        from PIL import ImageGrab
+        _check(cancel)
+        full = ImageGrab.grab(xdisplay=os.environ.get("DISPLAY", ""))
+        if kind != "window":
+            return full, "Full screen"
+        connection = self._read_only_display()
+        try:
+            window, title = self._focused(connection)
+            geometry = window.get_geometry()
+            origin = window.translate_coords(connection.screen().root, 0, 0)
+            left, top = -origin.x, -origin.y
+            box = (max(0, left), max(0, top),
+                   min(full.width, left + geometry.width), min(full.height, top + geometry.height))
+            if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                return full, "Full screen (window bounds unavailable)"
+            return full.crop(box), title or "Active window"
+        except Exception:
+            return full, "Full screen (window bounds unavailable)"
+        finally:
+            connection.close()
 
     def move(self, x, y, cancel):
         from Xlib import X
@@ -632,6 +718,35 @@ class _PortalBackend:
 
     def screenshot(self, cancel):
         return self._run(self._screenshot(), cancel, timeout=125)
+
+    def capture(self, kind, cancel):
+        # The Screenshot portal is independent of RemoteDesktop, so context
+        # captures work without ever asking for pointer or keyboard control.
+        picture = self._run(self._capture_only(), cancel, timeout=125)
+        detail = "Full screen"
+        if kind == "window":
+            detail = "Full screen (Wayland has no per-window capture)"
+        return picture, detail
+
+    async def _capture_only(self):
+        from dbus_next import Variant
+        from PIL import Image
+        await self._init_bus()
+        result = await self._request(self._SHOT, "Screenshot", "sa{sv}", [""],
+                                     {"interactive": Variant("b", False), "modal": Variant("b", False)})
+        uri = urlparse(result.get("uri", ""))
+        if uri.scheme != "file" or uri.netloc not in ("", "localhost"):
+            raise DesktopError("The portal did not return a local screenshot file.")
+        path = Path(unquote(uri.path))
+        if path.stat().st_size > 80 * 1024 * 1024:
+            raise DesktopError("Screenshot exceeds the 80 MB limit.")
+        with Image.open(path) as raw:
+            raw.load()
+            return raw.convert("RGB")
+
+    def active_window(self):
+        # Wayland compositors do not expose the focused window to applications.
+        return {"title": "", "detail": "Wayland does not expose window titles"}
 
     async def _screenshot(self):
         from dbus_next import Variant

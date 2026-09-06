@@ -230,6 +230,9 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                 atomic_link(root / "current", f"releases/{release_id}")
                 atomic_link(launcher_link, str(root / "wynxo"))
                 atomic_write(icon, (source / "assets/wynxo.svg").read_bytes())
+                # The QuickBar action gives desktops something to bind a
+                # custom keyboard shortcut to, since Linux has no portable
+                # way for an application to claim a global hotkey itself.
                 entry = (
                     "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Wynxo\n"
                     "Comment=Your local AI desktop copilot\n"
@@ -237,6 +240,11 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                     f"Icon={str(icon).replace(chr(92), chr(92) * 2)}\n"
                     "Terminal=false\nCategories=Utility;Development;\nKeywords=AI;Ollama;Assistant;Copilot;\n"
                     "StartupWMClass=wynxo\n"
+                    "Actions=QuickBar;NewChat;\n"
+                    "\n[Desktop Action QuickBar]\nName=Quick bar\n"
+                    f"Exec={desktop_argument(root / 'wynxo')} --quick\n"
+                    "\n[Desktop Action NewChat]\nName=New chat\n"
+                    f"Exec={desktop_argument(root / 'wynxo')}\n"
                 )
                 atomic_write(desktop, entry.encode())
                 manifest = {

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wynxo"
-version = "0.3.0"
+version = "1.0.0"
 description = "A local Ollama copilot for the Linux desktop"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,7 +28,11 @@ Repository = "https://github.com/wynxo/wynxo-gui-ai-agent"
 include = ["wynxo*"]
 
 [tool.setuptools.package-data]
-wynxo = ["ui/*.qml", "ui/**/*.qml", "ui/*.svg", "ui/*.ttf", "qml/*.qml", "qml/**/*.qml", "assets/*", "assets/**/*"]
+wynxo = [
+  "ui/*.qml", "ui/**/*.qml", "ui/*.svg", "ui/**/qmldir",
+  "ui/fonts/*.ttf", "ui/fonts/*.txt",
+  "qml/*.qml", "qml/**/*.qml", "assets/*", "assets/**/*",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
