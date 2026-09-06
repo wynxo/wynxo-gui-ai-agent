@@ -136,3 +136,33 @@ def test_the_finished_run_scene_settles_every_step():
         assert answer["body"].count("KolourPaint is open") == 1
     finally:
         bridge.shutdown()
+
+
+def test_the_browser_scene_serves_a_real_page():
+    """The Browser screenshot is worth taking only if it shows a rendered
+    page. The scene serves one from loopback so the snapshot job needs no
+    network and the image is of Qt WebEngine, not of an empty state."""
+    import urllib.request
+    from wynxo.demo import serve_preview_page
+
+    server, url = serve_preview_page()
+    try:
+        assert url.startswith("http://127.0.0.1:")
+        with urllib.request.urlopen(url, timeout=5) as response:
+            body = response.read().decode("utf-8")
+        assert response.status == 200
+        assert "Local browsing" in body
+        assert "Qt WebEngine" in body
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_browser_scene_navigates_to_it():
+    bridge = DemoController("dock-browser")
+    try:
+        assert bridge.workspaceDock.tab == "browser"
+        if bridge.workspaceDock.browserAvailable:
+            assert bridge.workspaceDock.browserRequest.startswith("http://127.0.0.1:")
+    finally:
+        bridge.shutdown()

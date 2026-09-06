@@ -7,7 +7,10 @@ actual renderer rather than a mock-up.
 """
 from __future__ import annotations
 
+import http.server
+import socketserver
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -140,6 +143,59 @@ CODE_STEPS = [
 ]
 
 
+# The Browser scene loads a real page over real HTTP from a real server, so the
+# screenshot is of Qt WebEngine rendering rather than of an empty state. Local
+# and self-contained: the snapshot job needs no network.
+PREVIEW_PAGE = b"""<!doctype html><meta charset="utf-8"><title>Wynxo \xe2\x80\x94 local browsing</title>
+<style>
+ :root{color-scheme:dark}
+ body{font:15px/1.65 system-ui,sans-serif;background:#191919;color:#f2f1ed;margin:0;padding:28px 26px}
+ h1{font-size:21px;margin:0 0 6px;letter-spacing:-.3px}
+ p.lede{color:#97968f;margin:0 0 20px;font-size:13px}
+ h2{font-size:13px;color:#c6c5bf;margin:22px 0 8px;font-weight:600}
+ ul{margin:0;padding-left:18px;color:#c6c5bf}
+ li{margin:5px 0}
+ code{background:#0e0e0e;color:#d8d7d2;padding:1px 5px;border-radius:4px;font:12px ui-monospace,monospace}
+ .note{border-left:2px solid #df7e5e;padding:2px 0 2px 12px;margin-top:22px;color:#97968f;font-size:13px}
+</style>
+<h1>Local browsing</h1>
+<p class="lede">Served over HTTP from this machine and rendered by Qt WebEngine.</p>
+<h2>What the panel does</h2>
+<ul>
+ <li>The address bar shows where you actually are</li>
+ <li>Back and forward follow real history</li>
+ <li><code>http</code> and <code>https</code> only \xe2\x80\x94 nothing else is opened</li>
+ <li>Pop-ups and permission requests are refused</li>
+</ul>
+<h2>And the model</h2>
+<ul>
+ <li>Sees nothing here until you attach the page</li>
+ <li>Gets it as untrusted text, labelled with its address</li>
+</ul>
+<p class="note">Read a doc beside the task instead of leaving Wynxo to find it.</p>
+"""
+
+
+class _PreviewPage(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(PREVIEW_PAGE)))
+        self.end_headers()
+        self.wfile.write(PREVIEW_PAGE)
+
+    def log_message(self, *arguments):
+        pass
+
+
+def serve_preview_page():
+    """Start a loopback server for the Browser scene. Returns its URL."""
+    server = socketserver.TCPServer(("127.0.0.1", 0), _PreviewPage)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/"
+
+
 class DemoDesktop:
     def __init__(self, connected: bool = True):
         self.connected = connected
@@ -181,6 +237,7 @@ class DemoController(WorkspaceController):
         connected = scene in ("desktop", "conversation", "run", "empty-work-locked")
         super().__init__(store=store, desktop=DemoDesktop(connected), autoconnect=False)
         self._preview_directory = Path(directory)
+        self._page_server = None
         self.scene = scene
         self._seed()
 
@@ -370,6 +427,9 @@ class DemoController(WorkspaceController):
             self.attachmentsChanged.emit()
         elif tab == "terminal":
             self.dock.startTerminal()
+        elif tab == "browser" and self.dock.browserAvailable:
+            self._page_server, url = serve_preview_page()
+            self.dock.navigate(url)
         self.activityChanged.emit()
         self.changed.emit()
 
@@ -404,6 +464,13 @@ class DemoController(WorkspaceController):
 
     def shutdown(self):
         super().shutdown()
+        if self._page_server is not None:
+            try:
+                self._page_server.shutdown()
+                self._page_server.server_close()
+            except Exception:
+                pass
+            self._page_server = None
         try:
             self.store.close()
         except Exception:
