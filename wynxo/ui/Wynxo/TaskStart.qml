@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 
 /*!
-    Quiet empty state: one prompt, one line of context. No dashboard, no cards.
+    Quiet empty state sized to the shell's compact home slot. Project context
+    lives in the command box and sidebar, so this area stays deliberately terse.
 */
 Item {
     id: root
@@ -12,28 +13,22 @@ Item {
     readonly property string headline: mode === "work" ? "What should Wynxo do?"
                                       : mode === "codex" ? "What do you want to build?"
                                       : "What do you want to work on?"
-    readonly property string detail: mode === "work"
-        ? "Wynxo can inspect and operate the desktop when screen control is enabled."
-        : mode === "codex"
-            ? (bridge && bridge.projectPath
-                ? "Working in " + bridge.projectName
-                : "Choose a project folder, then describe the change you want.")
-            : (bridge && bridge.projectPath ? "Project · " + bridge.projectName : "Chat with your local model")
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: root.headline + ". " + root.detail
+    Accessible.name: root.headline
 
     ColumnLayout {
         anchors.centerIn: parent
-        width: Math.min(parent.width, 760)
-        spacing: Theme.s3
+        width: Math.min(parent.width, 640)
+        spacing: Theme.s1
 
         RowLayout {
             Layout.fillWidth: true
+            Layout.preferredHeight: 22
             spacing: Theme.s2
             Mark {
-                Layout.preferredWidth: 20
-                Layout.preferredHeight: 20
+                Layout.preferredWidth: 18
+                Layout.preferredHeight: 18
             }
             Text {
                 text: mode === "codex" ? "Wynxi" : "Wynxo"
@@ -45,7 +40,7 @@ Item {
             Rectangle {
                 visible: mode !== "chat"
                 implicitWidth: modeLabel.implicitWidth + Theme.s2 * 2
-                implicitHeight: 22
+                implicitHeight: 20
                 radius: Theme.r1
                 color: Theme.surface
                 border.width: 1
@@ -55,7 +50,7 @@ Item {
                     anchors.centerIn: parent
                     text: mode === "codex" ? "Code" : "Work"
                     color: Theme.textMuted
-                    font.family: Theme.sansFamily
+                    font.family: Theme.monoFamily
                     font.pixelSize: Theme.micro
                 }
             }
@@ -66,31 +61,12 @@ Item {
             Layout.fillWidth: true
             text: root.headline
             horizontalAlignment: Text.AlignLeft
-            wrapMode: Text.WordWrap
+            elide: Text.ElideRight
             color: Theme.textPrimary
             font.family: Theme.sansFamily
-            font.pixelSize: root.width < 620 ? 25 : 29
+            font.pixelSize: root.width < 620 ? 24 : 27
             font.weight: Font.Medium
-            font.letterSpacing: -0.55
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.s2
-            Icon {
-                name: bridge && bridge.projectPath ? "folderOpen" : "terminal"
-                ink: Theme.textMuted
-                Layout.preferredWidth: 13
-                Layout.preferredHeight: 13
-            }
-            Text {
-                Layout.fillWidth: true
-                text: root.detail
-                color: Theme.textMuted
-                font.family: mode === "codex" && bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
-                font.pixelSize: Theme.caption
-                elide: Text.ElideMiddle
-            }
+            font.letterSpacing: -0.5
         }
     }
 }
