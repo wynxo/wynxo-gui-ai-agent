@@ -2,18 +2,17 @@ import QtQuick
 import QtQuick.Layouts
 
 /*!
-    The quiet starting point for each workspace mode.
+    The quiet starting point for each task mode.
 
-    Chat stays intentionally close to the sparse ChatGPT-style home screen.
-    Work and Codex add only one restrained line of context so the user always
-    understands what kind of agent is active without turning the empty state
-    into a dashboard.
+    A new Wynxo task can choose Chat or Work once. After that choice — and for
+    every reopened task — the mode comes from the task itself. Wynxi tasks are
+    coding tasks from the moment they are created.
 */
 Item {
     id: root
     signal starterChosen(string prompt)
 
-    readonly property string mode: bridge && bridge.desktopEnabled ? "work" : WorkspaceMode.current
+    readonly property string mode: bridge ? bridge.taskMode : "chat"
     readonly property string headline: mode === "work" ? "What should I do on your screen?"
                                       : mode === "codex" ? "What are we building?"
                                       : "Where should we begin?"
