@@ -15,26 +15,27 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    // Charcoal canvas, graphite surfaces, one step between each level. The
-    // interface reads as one sheet of material with a few things raised on it.
-    readonly property color background:      "#212121"
-    readonly property color backgroundSoft:  "#171717"
-    readonly property color surface:         "#282828"
-    readonly property color surfaceRaised:   "#303030"
-    readonly property color surfaceHover:    "#343434"
-    readonly property color surfaceSelected: "#3b3b3b"
-    readonly property color surfaceSunken:   "#08080a"
-    readonly property color scrim:           "#cc07070a"
+    // Near-black canvas and sidebar with a restrained graphite surface ladder.
+    // The contrast is intentionally subtle so the app reads like one polished
+    // desktop workspace rather than a stack of separate cards.
+    readonly property color background:      "#181818"
+    readonly property color backgroundSoft:  "#111111"
+    readonly property color surface:         "#202020"
+    readonly property color surfaceRaised:   "#2b2b2b"
+    readonly property color surfaceHover:    "#323232"
+    readonly property color surfaceSelected: "#383838"
+    readonly property color surfaceSunken:   "#0d0d0d"
+    readonly property color scrim:           "#cc070707"
 
-    readonly property color borderSubtle: "#3b3b3b"
-    readonly property color borderStrong: "#515151"
+    readonly property color borderSubtle: "#373737"
+    readonly property color borderStrong: "#4a4a4a"
 
-    readonly property color textPrimary:   "#f4f2ee"
-    readonly property color textSecondary: "#bbb8b1"
-    readonly property color textMuted:     "#aaa7a0"
-    readonly property color textInverse:   "#101011"
+    readonly property color textPrimary:   "#f4f4f4"
+    readonly property color textSecondary: "#c3c3c3"
+    readonly property color textMuted:     "#8f8f8f"
+    readonly property color textInverse:   "#111111"
 
-    readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#e9e3d6"
+    readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#b6a2f5"
     readonly property color accentHover: Qt.lighter(accent, 1.08)
     readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.13)
     readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.34)
@@ -70,11 +71,10 @@ QtObject {
     readonly property int s7: 32
     readonly property int s8: 48
 
-    // Softer conversation surfaces, with tighter corners for small controls.
-    readonly property int r1: 4
-    readonly property int r2: 6
+    readonly property int r1: 5
+    readonly property int r2: 8
     readonly property int r3: 16
-    readonly property int r4: 20
+    readonly property int r4: 22
     readonly property int rPill: 999
 
     // Minimum hit target, kept at or above 32px even in compact density.
