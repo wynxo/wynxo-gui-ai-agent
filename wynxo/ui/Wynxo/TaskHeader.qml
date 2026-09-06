@@ -5,9 +5,10 @@ import QtQuick.Layouts
 /*!
     Where you are, what is happening, and one menu.
 
-    Nothing here is a permanent readout. Connection state appears only when it
-    is not fine; the run state appears only while something is running. When
-    everything works, the bar is a breadcrumb and a "…".
+    The empty task deliberately becomes much quieter: it keeps only the
+    sidebar affordance, connection state when something is wrong, and a
+    centered Chat / Work switch. Once a conversation starts the regular task
+    breadcrumb and controls return.
 */
 Item {
     id: root
@@ -23,13 +24,36 @@ Item {
 
     implicitHeight: Theme.compact ? 46 : 52
 
+    readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
     readonly property bool connecting: bridge && bridge.connectionState === "connecting"
 
     Rectangle {
         anchors.fill: parent
         color: Theme.background
+    }
 
+    // The home-mode switch is intentionally independent of the row below so it
+    // stays geometrically centered even when a sidebar toggle or status chip is
+    // visible on one side.
+    Segmented {
+        id: homeModeSwitch
+        visible: root.homeMode
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: parent.verticalCenter
+        width: Math.min(220, Math.max(176, root.width - 160))
+        height: 36
+        z: 3
+        options: [
+            { id: "chat", label: "Chat", detail: "Talk to the model without screen control" },
+            { id: "work", label: "Work", detail: "Let Wynxo inspect and act on your desktop" },
+        ]
+        current: bridge && bridge.desktopEnabled ? "work" : "chat"
+        onSelected: function(value) {
+            if (!bridge || bridge.connecting) return;
+            var wantsWork = value === "work";
+            if (wantsWork !== bridge.desktopEnabled) bridge.toggleDesktop();
+        }
     }
 
     RowLayout {
@@ -49,6 +73,7 @@ Item {
 
         // -------------------------------------------------- the breadcrumb
         RowLayout {
+            visible: !root.homeMode
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s2
             spacing: Theme.s2
@@ -95,10 +120,14 @@ Item {
             Item { Layout.fillWidth: true }
         }
 
+        // In the empty state the regular breadcrumb is gone, so this spacer
+        // keeps status controls pinned to the right without moving the centered
+        // Chat / Work switch.
+        Item { visible: root.homeMode; Layout.fillWidth: true }
+
         // ------------------------------------------------------- run state
-        // One row that says what is happening and offers the way out of it.
         Rectangle {
-            visible: bridge && bridge.busy
+            visible: !root.homeMode && bridge && bridge.busy
             Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
             Layout.preferredHeight: Theme.controlSmall
             Layout.maximumWidth: Math.max(120, root.width * 0.38)
@@ -161,9 +190,10 @@ Item {
         }
 
         // ------------------------------------------------ screen control on
-        // Only prominent when Wynxo can actually reach your desktop.
+        // In an active conversation this is still a useful direct status. On
+        // the home screen the Chat / Work switch owns the same choice instead.
         Chip {
-            visible: bridge && bridge.desktopEnabled && !bridge.busy && root.width > 480
+            visible: !root.homeMode && bridge && bridge.desktopEnabled && !bridge.busy && root.width > 480
             text: "Screen control"
             iconName: "cursor"
             selected: true
@@ -185,6 +215,7 @@ Item {
         }
 
         IconButton {
+            visible: !root.homeMode
             iconName: "more"
             tooltip: "More actions"
             active: overflow.opened
