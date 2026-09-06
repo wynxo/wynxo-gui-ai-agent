@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pytest
+
 import install as installer
 import uninstall as remover
 
@@ -150,7 +152,7 @@ class InstallerTests(unittest.TestCase):
         self.bin.mkdir()
         launcher = self.bin / "wynxo"
         launcher.write_text("some other program")
-        with self.assertRaisesRegex(ValueError, "unowned or modified"):
+        with self.assertRaisesRegex(ValueError, "does not recognise"):
             self.install()
         self.assertEqual(launcher.read_text(), "some other program")
         self.assertFalse(self.root.exists())
@@ -159,7 +161,7 @@ class InstallerTests(unittest.TestCase):
         self.install()
         self.desktop.write_text("my custom desktop entry")
         current = os.readlink(self.root / "current")
-        with self.assertRaisesRegex(ValueError, "modified"):
+        with self.assertRaisesRegex(ValueError, "does not recognise"):
             self.install()
         self.assertEqual(self.desktop.read_text(), "my custom desktop entry")
         self.assertEqual(os.readlink(self.root / "current"), current)
@@ -222,3 +224,70 @@ class InstallerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------------------------------------------- stranded launchers
+# Losing the install root without losing the launcher used to deadlock the
+# user out of their own app: install refused to touch the file, and uninstall
+# reported nothing to do.
+
+def test_a_launcher_left_behind_by_a_missing_root_can_be_reinstalled_over(tmp_path, monkeypatch):
+    import install as inst
+    home = tmp_path / "home"
+    (home / ".local/bin").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+
+    root = home / ".local/share/wynxo-app"
+    launcher = home / ".local/bin/wynxo"
+    launcher.symlink_to(root / "wynxo")          # The root itself never existed.
+    assert not inst.exists(root)
+
+    # The guard used to refuse this outright, with no way forward.
+    inst.check_managed(launcher, {"files": {}}, root)
+
+
+def test_a_file_belonging_to_something_else_is_still_refused(tmp_path):
+    import install as inst
+    root = tmp_path / "wynxo-app"
+    intruder = tmp_path / "bin" / "wynxo"
+    intruder.parent.mkdir(parents=True)
+    intruder.write_text("#!/bin/sh\necho not ours\n")
+
+    with pytest.raises(ValueError, match="does not recognise"):
+        inst.check_managed(intruder, {"files": {}}, root)
+
+    # Nor a link that points somewhere outside the installation.
+    elsewhere = tmp_path / "bin" / "other"
+    elsewhere.symlink_to(tmp_path / "somewhere-else" / "wynxo")
+    with pytest.raises(ValueError, match="does not recognise"):
+        inst.check_managed(elsewhere, {"files": {}}, root)
+
+
+def test_uninstall_clears_a_stranded_launcher_instead_of_shrugging(tmp_path, monkeypatch):
+    import uninstall as uninst
+    home = tmp_path / "home"
+    (home / ".local/bin").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+
+    root = home / ".local/share/wynxo-app"
+    launcher = home / ".local/bin/wynxo"
+    launcher.symlink_to(root / "wynxo")
+
+    messages = uninst.uninstall(root, bin_dir=home / ".local/bin")
+    assert not launcher.is_symlink()
+    assert any("leftover" in line for line in messages)
+
+
+def test_uninstall_leaves_a_launcher_pointing_somewhere_else_alone(tmp_path, monkeypatch):
+    import uninstall as uninst
+    home = tmp_path / "home"
+    (home / ".local/bin").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: home))
+
+    root = home / ".local/share/wynxo-app"
+    foreign = home / ".local/bin/wynxo"
+    foreign.symlink_to(tmp_path / "some-other-tool" / "wynxo")
+
+    messages = uninst.uninstall(root, bin_dir=home / ".local/bin")
+    assert foreign.is_symlink(), "a link Wynxo did not create was removed"
+    assert messages == [f"No installation found at {root}."]

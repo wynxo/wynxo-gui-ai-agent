@@ -25,7 +25,7 @@ Sheet {
         { title: "Task", rows: [
             { keys: "Enter", label: "Send" },
             { keys: "Shift+Enter", label: "New line" },
-            { keys: "Esc", label: "Stop generation and desktop actions" },
+            { keys: "Esc", label: "Stop — while Wynxo has focus" },
             { keys: "Ctrl+N", label: "New task" },
             { keys: "Ctrl+R", label: "Regenerate" },
             { keys: "Ctrl+D", label: "Duplicate task" },
@@ -36,6 +36,10 @@ Sheet {
             { keys: "Ctrl+Shift+P", label: "Command palette" },
             { keys: "Ctrl+B", label: "Show or hide the sidebar" },
             { keys: "Ctrl+Space", label: "Quick bar" },
+        ]},
+        { title: "While a run is on", rows: [
+            { keys: "Esc", label: "Stop, from the Wynxo window" },
+            { keys: "Desktop", label: "Stop from any window — see Settings → Agent" },
         ]},
         { title: "Context", rows: [
             { keys: "Ctrl+Shift+V", label: "Paste an image as context" },

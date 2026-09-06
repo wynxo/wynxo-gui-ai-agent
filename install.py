@@ -113,11 +113,36 @@ def read_manifest(root: Path) -> dict:
     return result
 
 
-def check_managed(path: Path, old: dict) -> None:
+def points_into(path: Path, root: Path) -> bool:
+    """Is this a link Wynxo made into its own installation?
+
+    A symlink into ``root`` cannot belong to another application: nothing else
+    installs into Wynxo's directory. This is what lets a launcher be reclaimed
+    after its manifest has gone, without weakening the check for a real file
+    that somebody else owns.
+    """
+    if not path.is_symlink():
+        return False
+    target = Path(os.readlink(path))
+    if not target.is_absolute():
+        target = path.parent / target
+    return root == target or root in absolute(target).parents
+
+
+def check_managed(path: Path, old: dict, root: Path | None = None) -> None:
     actual = fingerprint(path)
     expected = old.get("files", {}).get(str(path))
-    if actual is not None and (expected is None or actual != expected):
-        raise ValueError(f"Refusing to overwrite an unowned or modified file: {path}")
+    if actual is None or (expected is not None and actual == expected):
+        return
+    # Losing the install root strands the launcher: the manifest that proved
+    # it was ours went with it. Refusing forever leaves no way forward, and
+    # the uninstaller has nothing to remove either, so adopt what is provably
+    # Wynxo's own rather than deadlocking the user out of their own app.
+    if points_into(path, root) if root is not None else False:
+        return
+    raise ValueError(
+        f"Refusing to overwrite a file Wynxo does not recognise: {path}\n"
+        f"If it is left over from an older Wynxo, remove it and install again.")
 
 
 def _snapshot(paths: list[Path]) -> dict:
@@ -199,7 +224,7 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
             internal = [root / "wynxo", root / "uninstall.py", root / "current"]
             external = [launcher_link, desktop, icon]
             for path in internal + external:
-                check_managed(path, old)
+                check_managed(path, old, root)
             # Changing install destinations should never strand launchers from a prior install.
             previous_external = set(old.get("external", []))
             if previous_external and previous_external != {str(p) for p in external}:

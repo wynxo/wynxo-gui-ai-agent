@@ -22,7 +22,7 @@ from PySide6.QtGui import QColor, QGuiApplication
 from . import context as ctx
 from . import markdown as md
 from . import notify
-from .desktop import DesktopController
+from .desktop import DesktopController, SessionTokens
 from .engine import (
     ASK, AUTO, PERMISSION_LABELS, PERMISSION_MODES, SAFE, AgentEngine, OllamaClient,
     action_summary,
@@ -344,6 +344,21 @@ class Job(QThread):
             self.failed.emit(str(exc) or type(exc).__name__)
 
 
+class _StoredTokens(SessionTokens):
+    """Keeps the portal's restore token in the same private database as the
+    rest of the settings, so screen control stops asking on every launch."""
+
+    def __init__(self, store):
+        super().__init__()
+        self._store = store
+
+    def load(self) -> str:
+        return str(self._store.get_setting("desktop_restore_token", "") or "")
+
+    def save(self, token: str) -> None:
+        self._store.set_setting("desktop_restore_token", str(token or ""))
+
+
 class Controller(QObject):
     changed = Signal()
     tasksChanged = Signal()
@@ -357,6 +372,7 @@ class Controller(QObject):
     toast = Signal(str)
     focusComposer = Signal()
     quickBarRequested = Signal()
+    stopRequested = Signal()
     scrollToEnd = Signal()
 
     THEMES = {
@@ -387,7 +403,7 @@ class Controller(QObject):
     def __init__(self, store=None, desktop=None, autoconnect=True):
         super().__init__()
         self.store = store or Store()
-        self.desktop = desktop or DesktopController()
+        self.desktop = desktop or DesktopController(tokens=_StoredTokens(self.store))
         self.messages = Messages(self)
         setting = self.store.get_setting
         self._endpoint = setting("endpoint", "http://127.0.0.1:11434")
@@ -456,6 +472,12 @@ class Controller(QObject):
         self._search = ""
         self._tasks = self.store.list_conversations()
         self._desktop_status = self.desktop.status()
+        # A global stop shortcut fires on the portal's own thread. Emitting a
+        # signal hands it to the GUI thread, which is the only one allowed to
+        # touch the run.
+        self.stopRequested.connect(self.stop)
+        if hasattr(self.desktop, "set_stop_handler"):
+            self.desktop.set_stop_handler(self.stopRequested.emit)
         self._jobs: set[Job] = set()
         self._run_job: Job | None = None
         self._pull_job: Job | None = None
@@ -611,6 +633,12 @@ class Controller(QObject):
     def desktopBackend(self): return self._desktop_status.get("backend", "Unavailable")
     @Property(str, notify=changed)
     def desktopDetail(self): return self._desktop_status.get("detail", "Desktop access is off")
+    @Property(bool, notify=changed)
+    def desktopRemembered(self): return bool(self._desktop_status.get("remembered"))
+    @Property(str, notify=changed)
+    def desktopStopShortcut(self): return self._desktop_status.get("stopShortcut", "")
+    @Property(str, notify=changed)
+    def desktopStopDetail(self): return self._desktop_status.get("stopDetail", "")
     @Property(str, notify=changed)
     def permissionMode(self): return self._permission_mode
     @Property(str, notify=changed)

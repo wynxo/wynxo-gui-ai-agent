@@ -45,9 +45,11 @@ class FakeBackend:
         if down and self.cancel_on_key:
             self.cancel_on_key.set()
 
+    picture_size = (640, 480)
+
     def screenshot(self, cancel):
         from PIL import Image
-        return Image.new("RGB", (640, 480), "#112233")
+        return Image.new("RGB", self.picture_size, "#112233")
 
     def scroll(self, dx, dy, cancel):
         self.events.append(("scroll", dx, dy))
@@ -354,3 +356,190 @@ class PortalTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WaylandSessionTests(unittest.IsolatedAsyncioTestCase):
+    """The portal handshake, driven against a recorded fake rather than a real
+    compositor. These assert the options Wynxo sends and what it does with the
+    replies; they cannot prove any particular desktop honours them."""
+
+    def _portal(self, tokens=None, version=2, start=None):
+        from wynxo.desktop import SessionTokens
+        portal = _PortalBackend([{"x": 0, "y": 0, "width": 1920, "height": 1080}],
+                                tokens=tokens if tokens is not None else SessionTokens())
+        portal.calls = []
+        portal._init_bus = AsyncMock()
+        portal._version = AsyncMock(return_value=version)
+        replies = {
+            "CreateSession": {"session_handle": "/s/1"},
+            "SelectDevices": {},
+            "SelectSources": {},
+            "Start": start if start is not None else {
+                "devices": 3, "restore_token": "fresh-token",
+                "streams": [(7, {"position": [0, 0], "size": [1920, 1080]})],
+            },
+        }
+
+        async def request(interface, member, signature, prefix, options, timeout=120):
+            portal.calls.append((member, options))
+            return replies[member]
+
+        portal._request = request
+        return portal
+
+    async def test_a_remembered_session_is_offered_back_to_the_portal(self):
+        from wynxo.desktop import SessionTokens
+        tokens = SessionTokens()
+        tokens.save("saved-token")
+        portal = self._portal(tokens=tokens)
+        await portal._connect()
+
+        devices = dict(portal.calls)["SelectDevices"]
+        self.assertEqual(devices["restore_token"].value, "saved-token")
+        # 2 is "persist until the user revokes it".
+        self.assertEqual(devices["persist_mode"].value, 2)
+        # The token is single use, so the new one replaces it.
+        self.assertEqual(tokens.load(), "fresh-token")
+        self.assertTrue(portal.restored)
+
+    async def test_a_portal_without_persistence_is_not_sent_the_options(self):
+        portal = self._portal(version=1)
+        await portal._connect()
+        devices = dict(portal.calls)["SelectDevices"]
+        self.assertNotIn("persist_mode", devices)
+        self.assertNotIn("restore_token", devices)
+
+    async def test_declining_to_persist_leaves_nothing_stored(self):
+        from wynxo.desktop import SessionTokens
+        tokens = SessionTokens()
+        portal = self._portal(tokens=tokens, start={
+            "devices": 3, "streams": [(7, {"position": [0, 0], "size": [1920, 1080]})]})
+        await portal._connect()
+        self.assertEqual(tokens.load(), "")
+        self.assertFalse(portal.restored)
+
+    async def test_a_token_the_portal_will_not_restore_is_thrown_away(self):
+        """Keeping a rejected token would fail the same way on every launch."""
+        from wynxo.desktop import SessionTokens
+        tokens = SessionTokens()
+        tokens.save("stale-token")
+        portal = self._portal(tokens=tokens, start={"devices": 1, "streams": []})
+        with self.assertRaises(DesktopError):
+            await portal._connect()
+        self.assertEqual(tokens.load(), "")
+
+
+class GlobalStopTests(unittest.IsolatedAsyncioTestCase):
+    """The stop key that has to work while another window has focus."""
+
+    def _shortcut(self, on_stop, version=2, bound=None, fail=False):
+        from wynxo.desktop import GlobalStop
+        portal = _PortalBackend([{"x": 0, "y": 0, "width": 1920, "height": 1080}])
+        portal._version = AsyncMock(return_value=version)
+
+        async def request(interface, member, signature, prefix, options, timeout=120):
+            if fail:
+                raise DesktopError("portal said no")
+            if member == "CreateSession":
+                return {"session_handle": "/shortcut/1"}
+            return {"shortcuts": bound if bound is not None
+                    else [("stop", {"trigger_description": "Ctrl+Alt+Esc"})]}
+
+        portal._request = request
+        return GlobalStop(portal, on_stop)
+
+    async def test_the_desktop_decides_the_key_and_we_report_what_it_chose(self):
+        stop = self._shortcut(lambda: None,
+                              bound=[("stop", {"trigger_description": "Meta+Shift+X"})])
+        await stop.bind()
+        self.assertTrue(stop.bound)
+        self.assertEqual(stop.trigger, "Meta+Shift+X")
+        self.assertIn("Meta+Shift+X", stop.detail)
+
+    async def test_pressing_it_stops_the_run(self):
+        from dbus_next import Message
+        fired = []
+        stop = self._shortcut(lambda: fired.append(True))
+        await stop.bind()
+        stop.handle_signal(Message.new_signal(
+            "/org/freedesktop/portal/desktop", stop._IFACE, "Activated",
+            "osta{sv}", ["/shortcut/1", "stop", 0, {}]))
+        self.assertEqual(fired, [True])
+
+    async def test_another_session_or_another_shortcut_is_ignored(self):
+        from dbus_next import Message
+        fired = []
+        stop = self._shortcut(lambda: fired.append(True))
+        await stop.bind()
+        for session, name in (("/other", "stop"), ("/shortcut/1", "something-else")):
+            stop.handle_signal(Message.new_signal(
+                "/org/freedesktop/portal/desktop", stop._IFACE, "Activated",
+                "osta{sv}", [session, name, 0, {}]))
+        self.assertEqual(fired, [])
+
+    async def test_a_desktop_without_the_portal_still_runs(self):
+        """Screen control must not depend on this; Escape in the window is
+        still there when the shortcut cannot be bound."""
+        for kwargs in ({"version": 0}, {"fail": True}):
+            stop = self._shortcut(lambda: None, **kwargs)
+            await stop.bind()
+            self.assertFalse(stop.bound)
+            self.assertTrue(stop.detail)
+
+
+class PointerMotionTests(unittest.TestCase):
+    """A pointer that teleports cannot be followed or interrupted."""
+
+    def _controller(self):
+        controller = DesktopController(backend=FakeBackend())
+        controller.connect()
+        controller._size = (1920, 1080)
+        return controller
+
+    def test_the_pointer_travels_to_its_target_and_lands_on_it(self):
+        controller = self._controller()
+        controller.execute("move_pointer", {"x": 100, "y": 100})
+        controller.execute("move_pointer", {"x": 900, "y": 700})
+        moves = [event for event in controller._backend.events if event[0] == "move"]
+        self.assertGreater(len(moves), 5, "the pointer jumped instead of moving")
+        self.assertEqual((round(moves[-1][1]), round(moves[-1][2])), (900, 700))
+        # Monotonic travel: no overshoot past the target.
+        self.assertTrue(all(100 <= event[1] <= 900 for event in moves[1:]))
+
+    def test_a_short_hop_is_not_drawn_out(self):
+        controller = self._controller()
+        controller.execute("move_pointer", {"x": 100, "y": 100})
+        before = len(controller._backend.events)
+        controller.execute("move_pointer", {"x": 103, "y": 102})
+        self.assertEqual(len(controller._backend.events) - before, 1)
+
+    def test_stopping_mid_glide_leaves_the_pointer_where_it_stopped(self):
+        controller = self._controller()
+        controller.execute("move_pointer", {"x": 0, "y": 0})
+        cancel = threading.Event()
+        controller._backend.cancel_on_move = cancel
+        with self.assertRaises(DesktopCancelled):
+            controller.execute("move_pointer", {"x": 1900, "y": 1000}, cancel)
+        moves = [event for event in controller._backend.events if event[0] == "move"]
+        self.assertLess(moves[-1][1], 1900, "the glide ran to completion after a stop")
+
+    def test_a_screenshot_of_the_same_screen_keeps_the_pointer(self):
+        controller = self._controller()
+        controller._backend.picture_size = (1920, 1080)
+        controller.execute("screenshot", {})
+        controller.execute("move_pointer", {"x": 900, "y": 700})
+        controller.execute("screenshot", {})
+        self.assertEqual(controller._pointer, (900, 700))
+
+    def test_a_new_coordinate_space_forgets_where_the_pointer_was(self):
+        """Gliding from a point measured in a different screen size would
+        drag the cursor across the desktop from nowhere."""
+        controller = self._controller()
+        controller._backend.picture_size = (1920, 1080)
+        controller.execute("screenshot", {})
+        controller.execute("move_pointer", {"x": 900, "y": 700})
+        self.assertIsNotNone(controller._pointer)
+
+        controller._backend.picture_size = (1280, 720)
+        controller.execute("screenshot", {})
+        self.assertIsNone(controller._pointer)

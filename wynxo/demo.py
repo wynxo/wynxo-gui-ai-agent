@@ -127,7 +127,10 @@ class DemoDesktop:
         return {"backend": "Wayland / Desktop portal", "available": True,
                 "connected": self.connected,
                 "detail": "Connected through the desktop portal. Screenshot permission "
-                          "is managed separately by your desktop."}
+                          "is managed separately by your desktop.",
+                "remembered": self.connected,
+                "stopShortcut": "Ctrl+Alt+Esc" if self.connected else "",
+                "stopDetail": ""}
 
     def connect(self):
         self.connected = True

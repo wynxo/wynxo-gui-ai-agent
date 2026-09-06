@@ -906,3 +906,69 @@ def test_embedding_only_models_are_flagged_out_of_the_quick_picker(tmp_path):
         assert by_name["embedder"]["chat"] is False
     finally:
         bridge.shutdown()
+
+
+# ----------------------------------------------------------- wayland session
+# Screen control is only usable day to day if the desktop stops asking, and
+# only safe if it can be stopped from whatever window has focus.
+
+def test_the_portal_restore_token_is_kept_with_the_other_settings(tmp_path):
+    from wynxo.controller import _StoredTokens
+    store = Store(tmp_path / "history.sqlite3")
+    tokens = _StoredTokens(store)
+
+    assert tokens.load() == ""
+    tokens.save("first-token")
+    assert store.get_setting("desktop_restore_token") == "first-token"
+    # Single use: the next session's token replaces it rather than adding to it.
+    tokens.save("second-token")
+    assert tokens.load() == "second-token"
+    tokens.clear()
+    assert tokens.load() == ""
+
+
+def test_a_global_stop_shortcut_reaches_the_running_task(tmp_path):
+    """The shortcut fires on the portal's thread; the run may only be touched
+    from the GUI thread, so it travels as a signal."""
+    handlers = []
+
+    class ShortcutDesktop(IdleDesktop):
+        def set_stop_handler(self, handler):
+            handlers.append(handler)
+
+    bridge = controller(tmp_path, desktop=ShortcutDesktop(connected=True))
+    try:
+        assert handlers, "no stop handler was registered with the desktop"
+        stopped = []
+        bridge.stopRequested.connect(lambda: stopped.append(True))
+
+        handlers[0]()          # As the portal would, from its own thread.
+        APP.processEvents()
+        assert stopped == [True]
+    finally:
+        bridge.shutdown()
+
+
+def test_the_interface_reports_what_the_desktop_decided(tmp_path):
+    class WaylandDesktop(IdleDesktop):
+        def status(self):
+            return {"connected": True, "available": True, "backend": "Wayland / Desktop portal",
+                    "detail": "Connected", "remembered": True,
+                    "stopShortcut": "Meta+Shift+X", "stopDetail": ""}
+
+    bridge = controller(tmp_path, desktop=WaylandDesktop(connected=True))
+    try:
+        assert bridge.desktopRemembered is True
+        # Whatever key the compositor chose, not the one Wynxo asked for.
+        assert bridge.desktopStopShortcut == "Meta+Shift+X"
+    finally:
+        bridge.shutdown()
+
+
+def test_a_desktop_without_those_features_reports_nothing_rather_than_guessing(tmp_path):
+    bridge = controller(tmp_path, desktop=IdleDesktop(connected=True))
+    try:
+        assert bridge.desktopRemembered is False
+        assert bridge.desktopStopShortcut == ""
+    finally:
+        bridge.shutdown()

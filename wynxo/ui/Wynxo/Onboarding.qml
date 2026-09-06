@@ -73,7 +73,7 @@ Popup {
                     return bridge && bridge.models.length
                            ? "Wynxo will use " + bridge.model + ". Any chat model works; screen control also needs vision and tool calling."
                            : "No models are installed yet. Open the model manager to download one — gemma3:4b is a good place to start.";
-                return "Wynxo can see your screen and use your mouse and keyboard, but only when you turn it on. It starts off every session, and Escape stops everything instantly.";
+                return "Wynxo can see your screen and use your mouse and keyboard, but only when you turn it on. It starts off every session. Escape stops it from the Wynxo window, and your desktop can give it a stop key that works from anywhere.";
             }
             color: Theme.textSecondary
             font.family: Theme.sansFamily

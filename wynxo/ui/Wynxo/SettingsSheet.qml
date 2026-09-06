@@ -309,7 +309,7 @@ Sheet {
                         spacing: Theme.s6
                         Group {
                             title: "Screen control"
-                            description: "Wynxo can see your screen and use your mouse and keyboard. It starts off every time Wynxo opens, and Escape stops any running task immediately."
+                            description: "Wynxo can see your screen and use your mouse and keyboard. It starts off every time Wynxo opens."
                             Row {
                                 spacing: Theme.s3
                                 WButton {
@@ -340,6 +340,56 @@ Sheet {
                             Text {
                                 width: parent.width
                                 text: bridge ? bridge.desktopBackend + " — " + bridge.desktopDetail : ""
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                            Row {
+                                width: parent.width
+                                spacing: Theme.s2
+                                visible: bridge && bridge.desktopRemembered
+                                Icon { name: "check"; ink: Theme.success; width: 13; height: 13
+                                       anchors.verticalCenter: parent.verticalCenter }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Your desktop remembered this permission, so it did not ask again."
+                                    color: Theme.textMuted
+                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                }
+                            }
+                        }
+
+                        Group {
+                            title: "Stopping a run"
+                            description: "Escape stops generation and desktop actions whenever Wynxo has focus. While a model is driving another window, Wynxo does not — so it also asks your desktop for a shortcut that works from anywhere."
+                            Row {
+                                spacing: Theme.s2
+                                visible: !!(bridge && bridge.desktopStopShortcut)
+                                Icon { name: "keyboard"; ink: Theme.textMuted; width: 14; height: 14
+                                       anchors.verticalCenter: parent.verticalCenter }
+                                Text {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Stop from anywhere"
+                                    color: Theme.textSecondary
+                                    font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                                }
+                                KeyHint {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    keys: bridge ? bridge.desktopStopShortcut : ""
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                visible: !!(bridge && bridge.desktopStopDetail) && !(bridge && bridge.desktopStopShortcut)
+                                text: bridge ? bridge.desktopStopDetail : ""
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                            Text {
+                                width: parent.width
+                                visible: !(bridge && bridge.desktopEnabled)
+                                text: "Turn screen control on to see which key your desktop assigned."
                                 color: Theme.textMuted
                                 font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                                 wrapMode: Text.WordWrap; lineHeight: 1.45

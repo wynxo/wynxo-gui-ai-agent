@@ -58,7 +58,8 @@ of your input.
 When enabled, a model with vision and tool calling can open applications,
 click, type, scroll and drag. Every action appears inline with the task that
 asked for it — one row each, with its state and duration, closing on a summary
-line you can read in a second. Escape stops everything, instantly.
+line you can read in a second. The pointer travels rather than teleporting,
+so you can see what it is about to do — and Escape stops it.
 
 **Permission modes**
 Screen control is not a single switch:
@@ -188,18 +189,30 @@ Start with something small:
 
 Turn it on first, under **Settings → Agent** — the one place it is switched.
 The header says so while it is on. On Wayland, allow the screen-sharing and input
-permissions your desktop asks for. Install the application you want it to use
-first — Wynxo discovers apps through their desktop entries and never runs a
-shell command.
+permissions your desktop asks for; Wynxo asks the portal to remember them, so a
+desktop that supports session persistence will not ask again. Install the
+application you want it to use first — Wynxo discovers apps through their
+desktop entries and never runs a shell command.
 
-While it works, the timeline shows each action, whether it succeeded, and how
-long it took. Screenshots feed a vision model; pointer motion and keyboard
-input affect your real desktop.
+While it works, the actions appear inline with the task, each with its state
+and duration. The pointer travels to where it is going rather than teleporting,
+so you can follow it and interrupt it. Screenshots feed a vision model; pointer
+motion and keyboard input affect your real desktop.
+
+**Stopping.** Escape stops generation and desktop actions whenever Wynxo has
+focus. While a model drives another window, Wynxo does not have focus — so it
+also asks your desktop to bind a stop shortcut that works from anywhere, through
+the GlobalShortcuts portal. Your compositor owns that binding and may choose a
+different key from the one requested; whichever it assigns is shown under
+**Settings → Agent**. On a desktop without that portal, screen control still
+works and Escape in the Wynxo window still stops it.
 
 Safety, unchanged from earlier releases and extended in this one:
 
-- Screen control starts **off** every time Wynxo opens.
-- **Escape** stops generation and desktop actions immediately.
+- Screen control starts **off** every time Wynxo opens, remembered permission
+  or not: persistence removes the prompt, never the switch.
+- **Escape** stops generation and desktop actions from the Wynxo window, and a
+  desktop-bound shortcut stops them from anywhere.
 - Turning screen control off revokes input access at the backend, not just in
   the UI, even while an action is in flight.
 - Every run has an action budget (20 by default); Wynxo stops and asks rather
@@ -219,7 +232,7 @@ An action that already happened is not undone by stopping.
 
 | Session | Backend | Notes |
 | --- | --- | --- |
-| KDE / GNOME Wayland | XDG RemoteDesktop, ScreenCast and Screenshot portals | Select every monitor; the compositor owns the permission dialog |
+| KDE / GNOME Wayland | XDG RemoteDesktop, ScreenCast, Screenshot and GlobalShortcuts portals | Select every monitor; the compositor owns the permission dialog and the stop key |
 | X11 | XTEST input, Pillow capture | Needs XTEST; typed characters must exist in the active keymap |
 | No graphical session | Chat only | Input and capture are unavailable |
 
@@ -229,6 +242,18 @@ the portal exposes, then monitor sizes, then the compositor's stable stream
 order. Capturing the screen *for context* uses the Screenshot portal alone and
 never asks for input control. Per-window capture is X11-only; Wayland
 compositors do not expose it.
+
+Two portal features are used where the desktop offers them, and skipped in
+silence where it does not:
+
+| Portal | What Wynxo asks for | Without it |
+| --- | --- | --- |
+| RemoteDesktop v2 `persist_mode` | Remember this permission, so screen control stops prompting on every launch | The compositor's dialog appears each time, as before |
+| GlobalShortcuts | One shortcut that stops a run while another window has focus | Escape still stops it from the Wynxo window |
+
+The restore token the portal issues is single use: Wynxo stores the new one
+after every session and discards it if the portal ever refuses to restore it,
+so a stale token cannot leave screen control permanently broken.
 
 On Debian KDE:
 
@@ -247,7 +272,7 @@ specific compositor and version.
 | Shortcut | Action |
 | --- | --- |
 | Enter / Shift+Enter | Send / new line |
-| Escape | Stop generation and desktop actions |
+| Escape | Stop generation and desktop actions (from the Wynxo window) |
 | Ctrl+N | New task |
 | Ctrl+K | Search tasks |
 | Ctrl+Shift+P | Command palette |

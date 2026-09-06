@@ -24,6 +24,29 @@ from urllib.parse import unquote, urlparse
 import uuid
 
 
+class SessionTokens:
+    """Where the portal's restore token is kept between runs.
+
+    The token is single-use: the portal issues a fresh one every time a
+    session starts, so it is always overwritten rather than appended to.
+    The default keeps it in memory, which is what tests and one-off uses
+    want; the app hands in a store-backed one so screen control stops
+    asking permission on every launch.
+    """
+
+    def __init__(self):
+        self._token = ""
+
+    def load(self) -> str:
+        return self._token
+
+    def save(self, token: str) -> None:
+        self._token = str(token or "")
+
+    def clear(self) -> None:
+        self.save("")
+
+
 class DesktopError(RuntimeError):
     """An unsupported, unapproved, or failed desktop action."""
 
@@ -151,24 +174,37 @@ class DesktopController:
     Input and screenshot operations are serialized, with interruptible waits.
     """
 
-    def __init__(self, *, monitor_layout: list[dict] | None = None, backend=None):
+    def set_stop_handler(self, handler) -> None:
+        """Called before connect(): what a global stop shortcut should do.
+
+        It fires on the portal's own thread, so the handler must be safe to
+        call from anywhere — the app posts it onto the GUI thread.
+        """
+        if self._backend is not None and hasattr(self._backend, "on_stop"):
+            self._backend.on_stop = handler
+
+    def __init__(self, *, monitor_layout: list[dict] | None = None, backend=None, tokens=None):
         self._lock = threading.RLock()
         self._enabled = False
         self._detail = "Desktop control is off. Enable it to connect."
         if backend is not None:
             self._backend = backend
         elif os.environ.get("XDG_SESSION_TYPE") == "wayland" or os.environ.get("WAYLAND_DISPLAY"):
-            self._backend = _PortalBackend(monitor_layout if monitor_layout is not None else _qt_monitor_layout())
+            self._backend = _PortalBackend(monitor_layout if monitor_layout is not None else _qt_monitor_layout(),
+                                           tokens=tokens)
         elif os.environ.get("DISPLAY"):
             self._backend = _X11Backend()
         else:
             self._backend = None
         self._size: tuple[int, int] | None = None
+        # Where the pointer was last put, so motion can be drawn from it.
+        self._pointer: tuple[float, float] | None = None
 
     def status(self) -> dict:
         backend = self._backend
         available = bool(backend and backend.available)
         connected = bool(self._enabled and backend and backend.connected)
+        shortcut = getattr(backend, "stop_shortcut", None) if connected else None
         detail = self._detail
         if backend is None:
             detail = "No graphical Linux session found. Chat is still available."
@@ -177,7 +213,13 @@ class DesktopController:
         elif self._enabled and not backend.connected:
             detail = "Desktop access ended. Enable control to reconnect."
         return {"backend": backend.name if backend else "unavailable", "available": available,
-                "connected": connected, "detail": detail}
+                "connected": connected, "detail": detail,
+                # True once the desktop granted control without asking again.
+                "remembered": bool(connected and getattr(backend, "restored", False)),
+                # How to stop a run while another window has focus, when the
+                # desktop supports binding one.
+                "stopShortcut": shortcut.trigger if shortcut else "",
+                "stopDetail": shortcut.detail if shortcut else ""}
 
     def connect(self) -> dict:
         with self._lock:
@@ -202,6 +244,7 @@ class DesktopController:
             if self._backend:
                 self._backend.disconnect()
             self._size = None
+            self._pointer = None
             self._detail = "Desktop control is off."
 
     def capture(self, kind: str = "screen", cancel: threading.Event | None = None) -> dict:
@@ -239,6 +282,31 @@ class DesktopController:
         if not self.status()["connected"]:
             raise DesktopError("Desktop control is off. Enable it before running desktop actions.")
 
+    # A pointer that jumps cannot be followed, and a user who cannot see where
+    # it is going has no chance to stop it. Motion is drawn out just enough to
+    # read, and every step re-checks permission and cancellation.
+    _GLIDE_SECONDS = 0.16
+    _GLIDE_STEPS = 12
+
+    def _glide(self, x: float, y: float, cancel) -> None:
+        start = self._pointer
+        self._pointer = (x, y)
+        distance = 0.0 if start is None else math.hypot(x - start[0], y - start[1])
+        if start is None or distance < 8:
+            self._backend.move(x, y, cancel)
+            return
+        steps = max(2, min(self._GLIDE_STEPS, int(distance / 24)))
+        for step in range(1, steps + 1):
+            self._permission(cancel)
+            fraction = step / steps
+            # Ease out, so the pointer settles on its target rather than
+            # arriving at full speed.
+            eased = 1 - (1 - fraction) ** 3
+            self._backend.move(start[0] + (x - start[0]) * eased,
+                               start[1] + (y - start[1]) * eased, cancel)
+            if step < steps:
+                _pause(self._GLIDE_SECONDS / steps, cancel)
+
     def _point(self, args: dict) -> tuple[float, float]:
         if not self._size:
             raise DesktopError("Take a screenshot before using pointer coordinates.")
@@ -257,6 +325,10 @@ class DesktopController:
             if name == "screenshot":
                 picture = self._backend.screenshot(cancel)
                 self._permission(cancel)
+                # A different coordinate space invalidates the remembered
+                # pointer; motion must never be drawn from a stale point.
+                if self._size != picture.size:
+                    self._pointer = None
                 self._size = picture.size
                 return _png_result(picture, self._backend.name)
             if name == "wait":
@@ -265,14 +337,14 @@ class DesktopController:
             elif name == "open_app":
                 self._open_app(args, cancel)
             elif name == "move_pointer":
-                self._backend.move(*self._point(args), cancel)
+                self._glide(*self._point(args), cancel=cancel)
             elif name == "click":
                 point = self._point(args)
                 button = args.get("button", "left")
                 if button not in ("left", "middle", "right"):
                     raise DesktopError("button must be left, middle, or right.")
                 count = _integer(args.get("count", 1), "count", 1, 3)
-                self._backend.move(*point, cancel)
+                self._glide(*point, cancel=cancel)
                 for _ in range(count):
                     self._permission(cancel)
                     try:
@@ -289,7 +361,7 @@ class DesktopController:
                     raise DesktopError("Each drag point must be [x, y].")
                 points = [self._point({"x": p[0], "y": p[1]}) for p in raw]
                 duration = _number(args.get("duration", 1), "duration", 0.1, 10)
-                self._backend.move(*points[0], cancel)
+                self._glide(*points[0], cancel=cancel)
                 try:
                     self._backend.button("left", True, cancel)
                     # Interpolate even two-point drags to produce actual strokes.
@@ -302,6 +374,7 @@ class DesktopController:
                         x = points[index][0] + (points[index + 1][0] - points[index][0]) * fraction
                         y = points[index][1] + (points[index + 1][1] - points[index][1]) * fraction
                         self._backend.move(x, y, cancel)
+                        self._pointer = (x, y)
                         _pause(duration / segments, cancel)
                 finally:
                     self._backend.button("left", False, None)
@@ -528,6 +601,90 @@ class _X11Backend:
                 self._display.sync()
 
 
+class GlobalStop:
+    """A stop key that works while another application has focus.
+
+    Wynxo's own Escape only reaches it when Wynxo is focused, which is exactly
+    what it is not while a model is driving some other window. The
+    GlobalShortcuts portal is the Wayland-supported way to be reachable
+    anyway. The compositor owns the binding: it may assign a different key
+    from the one asked for, or refuse entirely, so the trigger it reports back
+    is what gets shown to the user rather than an assumption.
+    """
+
+    _DEST = "org.freedesktop.portal.Desktop"
+    _PATH = "/org/freedesktop/portal/desktop"
+    _IFACE = "org.freedesktop.portal.GlobalShortcuts"
+    SHORTCUT = "stop"
+    # A bare Escape cannot be taken globally without breaking Escape for every
+    # other application, so the request is for a deliberate chord.
+    PREFERRED = "CTRL+ALT+ESCAPE"
+
+    def __init__(self, portal, on_stop):
+        self._portal = portal
+        self._on_stop = on_stop
+        self._session = None
+        self.trigger = ""
+        self.detail = ""
+
+    @property
+    def bound(self) -> bool:
+        return bool(self._session)
+
+    def handle_signal(self, message) -> None:
+        """Called from the portal's message handler for every signal."""
+        if (self._session and message.interface == self._IFACE
+                and message.member == "Activated"
+                and message.body and message.body[0] == self._session
+                and len(message.body) > 1 and message.body[1] == self.SHORTCUT):
+            try:
+                self._on_stop()
+            except Exception:
+                pass
+
+    async def bind(self) -> None:
+        """Ask for the shortcut. Failure is not fatal: on a desktop without
+        this portal, screen control still works and Escape still stops it
+        while Wynxo is focused."""
+        from dbus_next import Variant
+        portal = self._portal
+        self._session = None
+        self.trigger = ""
+        try:
+            if await portal._version(self._IFACE) < 1:
+                self.detail = "This desktop has no global shortcut portal."
+                return
+            created = await portal._request(
+                self._IFACE, "CreateSession", "a{sv}", [],
+                {"session_handle_token": Variant("s", "wynxo_" + uuid.uuid4().hex)}, timeout=30)
+            session = created["session_handle"]
+            bound = await portal._request(
+                self._IFACE, "BindShortcuts", "oa(sa{sv})sa{sv}",
+                [session, [(self.SHORTCUT, {
+                    "description": Variant("s", "Stop Wynxo acting on your screen"),
+                    "preferred_trigger": Variant("s", self.PREFERRED)})], ""],
+                {}, timeout=60)
+            self._session = session
+            for shortcut in bound.get("shortcuts") or []:
+                if shortcut and shortcut[0] == self.SHORTCUT:
+                    self.trigger = str((shortcut[1] or {}).get("trigger_description", "") or "")
+            self.detail = ("Emergency stop: " + self.trigger if self.trigger
+                           else "Emergency stop is bound; your desktop settings show the key.")
+        except Exception as exc:
+            self._session = None
+            self.detail = f"No global stop shortcut: {str(exc)[:120]}"
+
+    async def release(self) -> None:
+        session, self._session = self._session, None
+        self.trigger = ""
+        self.detail = ""
+        if session:
+            try:
+                await self._portal._call("org.freedesktop.portal.Session", "Close", path=session)
+            except Exception:
+                pass
+
+
 class _PortalBackend:
     name = "Wayland / Desktop portal"
     detail = "Connected through the desktop portal. Screenshot permission is managed separately by your desktop."
@@ -539,11 +696,19 @@ class _PortalBackend:
     _REQUEST = "org.freedesktop.portal.Request"
     _SESSION = "org.freedesktop.portal.Session"
 
-    def __init__(self, monitor_layout):
+    # Permissions persist until the user revokes them in their desktop
+    # settings, which is what stops Wynxo asking on every launch.
+    _PERSIST_UNTIL_REVOKED = 2
+
+    def __init__(self, monitor_layout, tokens=None):
         self.available = all(importlib.util.find_spec(p) is not None for p in ("dbus_next", "PIL"))
         self.unavailable_reason = "Install the app dependencies (dbus-next and Pillow) for Wayland control."
         self.connected = False
         self.layout = monitor_layout
+        self.tokens = tokens if tokens is not None else SessionTokens()
+        self.restored = False
+        self.on_stop = None            # Set by the controller before connect().
+        self.stop_shortcut = None
         self._loop = None
         self._thread = None
         self._bus = None
@@ -606,6 +771,8 @@ class _PortalBackend:
         from dbus_next import MessageType
         if message.message_type != MessageType.SIGNAL:
             return
+        if self.stop_shortcut is not None:
+            self.stop_shortcut.handle_signal(message)
         if message.interface == self._SESSION and message.member == "Closed" and message.path == self._session:
             self.connected = False
             self._session = None
@@ -625,6 +792,19 @@ class _PortalBackend:
             detail = ": ".join(str(item) for item in reply.body) if reply else "No reply"
             raise DesktopError(f"Desktop portal: {detail[:400]}")
         return reply.body
+
+    async def _version(self, interface) -> int:
+        """Portal interface version, so optional options are only sent where
+        they are understood. An unreadable version reads as the base one."""
+        from dbus_next import Message
+        try:
+            reply = await asyncio.wait_for(self._bus.call(Message(
+                destination=self._DEST, path=self._PATH,
+                interface="org.freedesktop.DBus.Properties", member="Get",
+                signature="ss", body=[interface, "version"])), 10)
+            return int(self._unwrap(self._check_reply(reply)[0]))
+        except Exception:
+            return 1
 
     async def _call(self, interface, member, signature="", body=None, path=None):
         from dbus_next import Message
@@ -671,14 +851,28 @@ class _PortalBackend:
     async def _connect(self):
         from dbus_next import Variant
         await self._init_bus()
+        remembered = self.tokens.load()
+        self.restored = False
         try:
             created = await self._request(self._REMOTE, "CreateSession", "a{sv}", [],
                                           {"session_handle_token": Variant("s", "wynxo_" + uuid.uuid4().hex)})
             self._session = created["session_handle"]
-            await self._request(self._REMOTE, "SelectDevices", "oa{sv}", [self._session], {"types": Variant("u", 3)})
+            devices = {"types": Variant("u", 3)}
+            # Session persistence arrived in version 2 of the interface; older
+            # portals reject nothing, they simply prompt as they always did.
+            if await self._version(self._REMOTE) >= 2:
+                devices["persist_mode"] = Variant("u", self._PERSIST_UNTIL_REVOKED)
+                if remembered:
+                    devices["restore_token"] = Variant("s", remembered)
+            await self._request(self._REMOTE, "SelectDevices", "oa{sv}", [self._session], devices)
             await self._request(self._CAST, "SelectSources", "oa{sv}", [self._session],
                                 {"types": Variant("u", 1), "multiple": Variant("b", len(self.layout) > 1)})
             result = await self._request(self._REMOTE, "Start", "osa{sv}", [self._session, ""], {})
+            # The token is single use: whatever comes back replaces what we
+            # sent, and an absent one means the user declined to persist.
+            issued = str(result.get("restore_token", "") or "")
+            self.tokens.save(issued)
+            self.restored = bool(remembered and issued)
             if result.get("devices", 0) & 3 != 3:
                 raise DesktopError("Allow both keyboard and pointer access in the desktop permission dialog.")
             streams = result.get("streams", [])
@@ -696,7 +890,15 @@ class _PortalBackend:
             self._logical_size = (max_x - min_x, max_y - min_y)
             self._pixel_size = None
             self.connected = True
+            if self.on_stop is not None:
+                self.stop_shortcut = GlobalStop(self, self.on_stop)
+                await self.stop_shortcut.bind()
         except BaseException:
+            # A token the portal would not restore is worse than none: keep it
+            # and every future launch fails the same way. Drop it so the next
+            # attempt asks the user cleanly.
+            if remembered:
+                self.tokens.clear()
             await self._disconnect()
             raise
 
@@ -706,6 +908,9 @@ class _PortalBackend:
             self._run(self._disconnect(), timeout=20)
 
     async def _disconnect(self):
+        shortcut, self.stop_shortcut = self.stop_shortcut, None
+        if shortcut is not None:
+            await shortcut.release()
         session, self._session = self._session, None
         self.connected = False
         self._pixel_size = None

@@ -8,12 +8,35 @@ from pathlib import Path
 import shutil
 import sys
 
-from install import APP_ID, MANIFEST, MARKER, absolute, default_root, exists, fingerprint, install_lock, owned_root, read_manifest
+from install import (APP_ID, MANIFEST, MARKER, absolute, default_root, exists, fingerprint,
+                     install_lock, owned_root, points_into, read_manifest, xdg_path)
 
 
-def uninstall(root: Path | None = None, purge: bool = False) -> list[str]:
+def strays(root: Path, bin_dir: Path | None = None) -> list[Path]:
+    """Files left behind by an installation whose root has gone.
+
+    Only links that point into ``root`` count: nothing else installs there, so
+    they are provably Wynxo's. Anything else is left alone and reported.
+    """
+    data = xdg_path("XDG_DATA_HOME", ".local/share")
+    candidates = [absolute(bin_dir or Path.home() / ".local/bin") / "wynxo",
+                  data / "applications" / f"{APP_ID}.desktop",
+                  data / "icons/hicolor/scalable/apps" / f"{APP_ID}.svg"]
+    return [path for path in candidates if points_into(path, root)]
+
+
+def uninstall(root: Path | None = None, purge: bool = False, bin_dir: Path | None = None) -> list[str]:
     root = absolute(root or os.environ.get("WYNXO_INSTALL_ROOT") or default_root())
     if not exists(root):
+        # The root can go without taking its launcher with it. Saying "nothing
+        # found" while a stale link sits in the way leaves the user unable to
+        # install or to uninstall, so clean up what is unmistakably ours.
+        left = strays(root, bin_dir)
+        for path in left:
+            path.unlink(missing_ok=True)
+        if left:
+            return [f"No installation found at {root}."]              + \
+                   [f"Removed a leftover link: {path}" for path in left]
         return [f"No installation found at {root}."]
     owned_root(root)
     messages = []
@@ -83,9 +106,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-root", type=Path, default=Path(os.environ.get("WYNXO_INSTALL_ROOT", str(default_root()))))
     parser.add_argument("--purge", action="store_true", help="Also remove Wynxo conversations, settings and cache; never Ollama models")
+    parser.add_argument("--bin-dir", type=Path, default=None,
+                        help="Where the launcher was installed, if not ~/.local/bin")
     args = parser.parse_args(argv)
     try:
-        messages = uninstall(args.install_root, args.purge)
+        messages = uninstall(args.install_root, args.purge, args.bin_dir)
     except (Exception, KeyboardInterrupt) as exc:
         print(f"Uninstall stopped: {exc}", file=sys.stderr)
         return 1
