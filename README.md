@@ -149,7 +149,8 @@ Every image below is a real capture of the running Qt application, produced by
 | **Terminal** — a real shell, in the project folder<br>![](docs/screenshots/20-dock-terminal.png) | **Changes** — every uncommitted file, and its diff<br>![](docs/screenshots/21-dock-changes.png) |
 | **Browser** — a page beside the conversation<br>![](docs/screenshots/22-dock-browser.png) | **Context** — everything the model can see<br>![](docs/screenshots/23-dock-context.png) |
 | **Activity** — the whole run, not just the summary<br>![](docs/screenshots/24-dock-activity.png) | **System** — measured, or absent<br>![](docs/screenshots/25-system.png) |
-| **An agent run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) | **Permission** — the exact action, before it runs<br>![](docs/screenshots/04-permission.png) |
+| **A coding run** — read, search, edit, then the command<br>![](docs/screenshots/26-code-run.png) | **A desktop run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) |
+| **Permission** — the exact command, and where it would run<br>![](docs/screenshots/04-permission.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/05-context.png) |
 | **Settings** — six sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
 | **Model** — switch and set the speed in one place<br>![](docs/screenshots/06-models.png) | **Model manager** — capabilities, size, favourites, downloads<br>![](docs/screenshots/07-model-manager.png) |
 | **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/10-quick-bar.png) | **First run** — four steps, then out of your way<br>![](docs/screenshots/11-welcome.png) |
@@ -450,6 +451,7 @@ To see the interface without any real history, Ollama, or desktop access:
 .venv/bin/python -m wynxo --ui-preview dock-browser    # the embedded browser
 .venv/bin/python -m wynxo --ui-preview dock-context    # what the model can see
 .venv/bin/python -m wynxo --ui-preview dock-activity   # the run timeline
+.venv/bin/python -m wynxo --ui-preview codex-run       # a coding turn, start to finish
 ```
 
 The dock scenes point at this checkout, so Files, Changes and Terminal show a

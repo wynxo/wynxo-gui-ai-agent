@@ -59,6 +59,7 @@ Item {
                 height: stepColumn.implicitHeight + Theme.s2
                 property bool expanded: false
                 property color tone: Theme.stateColor(modelData.state)
+                readonly property bool isCommand: modelData.name === "run_command"
 
                 // The rail runs the full height of every row but the last, so
                 // the steps read as one sequence rather than separate cards.
@@ -97,7 +98,8 @@ Item {
                         Text {
                             text: modelData.summary || modelData.label
                             color: Theme.textPrimary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                            font.family: step.isCommand ? Theme.monoFamily : Theme.sansFamily
+                            font.pixelSize: step.isCommand ? Theme.code : Theme.label
                             width: Math.min(implicitWidth, stepColumn.width - 150)
                             elide: Text.ElideRight
                             anchors.verticalCenter: parent.verticalCenter
@@ -132,9 +134,33 @@ Item {
                         }
                     }
 
+                    // A command's output is terminal output: monospaced, on
+                    // the sunken surface, with the same ink the panel uses.
+                    // Everything else is prose and stays prose.
+                    Rectangle {
+                        width: parent.width
+                        visible: step.isCommand && !!modelData.output
+                        height: visible ? commandOutput.implicitHeight + Theme.s2 * 2 : 0
+                        radius: Theme.r1
+                        color: Theme.surfaceSunken
+                        Text {
+                            id: commandOutput
+                            anchors.fill: parent
+                            anchors.margins: Theme.s2
+                            text: modelData.output || ""
+                            textFormat: Text.PlainText
+                            color: modelData.state === "failed" ? Theme.danger : Theme.textSecondary
+                            font.family: Theme.monoFamily; font.pixelSize: Theme.micro
+                            wrapMode: Text.WrapAnywhere
+                            maximumLineCount: step.expanded ? 24 : 3
+                            elide: Text.ElideRight
+                            lineHeight: 1.45
+                        }
+                    }
+
                     Text {
                         width: parent.width
-                        visible: text !== ""
+                        visible: !step.isCommand && text !== ""
                         text: modelData.output || ""
                         textFormat: Text.PlainText
                         color: modelData.state === "failed" ? Theme.danger : Theme.textMuted
@@ -160,7 +186,9 @@ Item {
                 }
 
                 MouseArea {
+                    id: stepArea
                     anchors.fill: parent
+                    anchors.rightMargin: 30
                     hoverEnabled: true
                     enabled: !!modelData.detail || !!modelData.output
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
@@ -168,6 +196,19 @@ Item {
                     ToolTip.visible: containsMouse && enabled && !step.expanded
                     ToolTip.text: "Show details"
                     ToolTip.delay: 700
+                }
+
+                IconButton {
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.topMargin: 2
+                    width: 26; height: 26; iconSize: 12
+                    visible: step.isCommand && !!bridge && !!bridge.workspaceDock
+                    opacity: stepArea.containsMouse || hovered ? 1 : 0
+                    iconName: "terminal"
+                    tooltip: "Open the terminal here"
+                    onClicked: if (bridge && bridge.workspaceDock) bridge.workspaceDock.openTab("terminal")
+                    Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
                 }
             }
         }

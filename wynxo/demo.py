@@ -119,6 +119,27 @@ STEPS = [
 ]
 
 
+# A coding run: read, search, edit, then a real command with real output.
+# This is the shape §19 of the redesign asks for, so the screenshot has to be
+# of that shape rather than of a desktop run.
+CODE_STEPS = [
+    {"name": "read_file", "icon": "file", "label": "Reading a file",
+     "summary": "Read wynxo/ui/Wynxo/Composer.qml", "detail": '{"path": "wynxo/ui/Wynxo/Composer.qml"}',
+     "state": "done", "ms": 90, "output": "403 lines", "risk": "low"},
+    {"name": "search", "icon": "search", "label": "Searching the project",
+     "summary": "Search for “maxHeight”", "detail": '{"pattern": "maxHeight"}',
+     "state": "done", "ms": 240, "output": "3 matches in 2 files", "risk": "low"},
+    {"name": "edit_file", "icon": "edit", "label": "Editing a file",
+     "summary": "Edit wynxo/ui/Wynxo/Composer.qml", "detail": '{"path": "wynxo/ui/Wynxo/Composer.qml"}',
+     "state": "done", "ms": 130, "output": "+6 −6", "risk": "normal"},
+    {"name": "run_command", "icon": "terminal", "label": "Running a command",
+     "summary": "python -m pytest tests/test_ui_assets.py -q",
+     "detail": '{"command": "python -m pytest tests/test_ui_assets.py -q", "cwd": "."}',
+     "state": "done", "ms": 4120, "risk": "normal",
+     "output": "..............................\n30 passed in 1.35s"},
+]
+
+
 class DemoDesktop:
     def __init__(self, connected: bool = True):
         self.connected = connected
@@ -241,6 +262,9 @@ class DemoController(WorkspaceController):
             self._seed_context_scene()
             return
 
+        if self.scene == "codex-run":
+            self._seed_code_run()
+            return
         if self.scene in ("desktop", "run"):
             self._task_mode, self._task_mode_locked = "work", True
             self.store.set_setting(self._mode_key(self._task_id), "work")
@@ -266,6 +290,33 @@ class DemoController(WorkspaceController):
         item["body"] = ANSWER
         item["blocks"] = md.segment(ANSWER)
         self.messages._emit(row, list(Messages_roles()))
+
+    def _seed_code_run(self):
+        """A Wynxi turn: the execution blocks, then the answer."""
+        self._task_mode, self._task_mode_locked = "codex", True
+        self._task_title = "Rewrite the composer layout"
+        self.store.set_setting(self._mode_key(self._task_id), "codex")
+        self.messages.replace([])
+        self.messages.append_message(
+            "user", "The composer is too tall on a fresh task. Find where the height "
+                    "comes from, tighten it, and run the QML tests.")
+        for step in CODE_STEPS:
+            self.messages.append_activity(step)
+            self.messages.update_last_step(**{k: step[k] for k in ("state", "ms", "output")})
+            self.dock.record(step)
+            self.dock.record_update(**{k: step[k] for k in ("state", "ms", "output")})
+        self._activity = [dict(step) for step in CODE_STEPS]
+        self.messages.append_message(
+            "assistant",
+            "The height came from the scroll area's minimum, not from the text: a fresh "
+            "task reserved `68px` for a field holding one line.\n\n"
+            "`Composer.qml` now asks for **48px** on a fresh task and **38px** in a "
+            "conversation, and grows with what you type. The QML asset tests still pass.")
+        self._run_metrics = {"tokens": 214, "prompt_tokens": 3810, "cached_prompt_tokens": 2400,
+                             "load_ms": 0.0, "total_ms": 9120.0, "tokens_per_second": 23.4}
+        self._token_rate = "23.4 tok/s"
+        self.activityChanged.emit()
+        self.changed.emit()
 
     def _seed_finished_run(self):
         self._task_title = "Draw a mountain scene in KolourPaint"
@@ -391,4 +442,5 @@ SCENES = [
     ("23-dock-context", "dock-context", ""),
     ("24-dock-activity", "dock-activity", ""),
     ("25-system", "conversation", "system"),
+    ("26-code-run", "codex-run", ""),
 ]

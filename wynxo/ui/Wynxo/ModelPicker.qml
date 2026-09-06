@@ -84,7 +84,16 @@ AbstractButton {
             anchors.top: parent.top
             spacing: Theme.s3
 
-            SectionLabel { Layout.fillWidth: true; text: "Model" }
+            SectionLabel { text: "Model" }
+            Item { Layout.fillWidth: true }
+            // Where inference runs is the one fact a local-first app should
+            // never make you go looking for.
+            Text {
+                text: bridge ? "Ollama · " + bridge.endpointScopeLabel.toLowerCase() : ""
+                color: Theme.textDisabled
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.micro
+            }
 
             Text {
                 Layout.fillWidth: true

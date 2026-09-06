@@ -21,11 +21,18 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install Qt runtime libraries
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 \
+            libnss3 libxcomposite1 libxdamage1 libxrandr2 libasound2t64
       - name: Install package and test tools
         run: python -m pip install . pytest
       - name: Test
-        run: python -m pytest -q
+        # The dock's tests run a real shell and a real Git repository, so both
+        # have to be present; runners have them, but say so.
+        run: |
+          git --version && /bin/bash --version | head -1
+          python -m pytest -q
       - name: Validate Python sources
         run: python -m compileall -q wynxo install.py uninstall.py
       - name: Load native GUI
@@ -48,7 +55,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 \
-            libxcb-cursor0 libxkbcommon-x11-0
+            libxcb-cursor0 libxkbcommon-x11-0 \
+            libnss3 libxcomposite1 libxdamage1 libxrandr2 libasound2t64
       - name: Install package
         run: python -m pip install .
       - name: Render the interface

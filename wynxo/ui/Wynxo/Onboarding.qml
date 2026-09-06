@@ -2,12 +2,12 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-/*! A four-step welcome, shown once. Never blocks anything for long. */
+/*! A five-step welcome, shown once. Never blocks anything for long. */
 Popup {
     id: root
     anchors.centerIn: Overlay.overlay
     width: Math.min(520, parent ? parent.width - Theme.s6 : 520)
-    height: 268
+    height: 288
     modal: true
     focus: true
     padding: 0
@@ -16,7 +16,7 @@ Popup {
     signal openModelManager()
 
     property int step: 0
-    readonly property int lastStep: 3
+    readonly property int lastStep: 4
 
     Overlay.modal: Rectangle { color: Theme.scrim }
     background: Rectangle {
@@ -49,6 +49,7 @@ Popup {
                 text: ["Wynxo",
                        "Connect Ollama",
                        "Choose a model",
+                       "Your workspace",
                        "Screen control"][root.step]
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
@@ -73,6 +74,8 @@ Popup {
                     return bridge && bridge.models.length
                            ? "Wynxo will use " + bridge.model + ". Any chat model works; screen control also needs vision and tool calling."
                            : "No models are installed on that Ollama server yet. Open the model manager to download one — gemma3:4b is a good place to start.";
+                if (root.step === 3)
+                    return "Open a project folder and the dock on the right becomes useful: its files, a real shell running in it, and whatever Git says has changed — plus what the model can currently see and everything it has done. Ctrl+Shift+B opens and closes it; each tool has its own key.";
                 return "Wynxo can see your screen and use your mouse and keyboard, but only when you turn it on. Those desktop actions still happen on this computer even if Ollama inference runs on another machine. Escape stops it from the Wynxo window, and your desktop can give it a stop key that works from anywhere.";
             }
             color: Theme.textSecondary
@@ -94,7 +97,7 @@ Popup {
             Row {
                 spacing: Theme.s2
                 Repeater {
-                    model: 4
+                    model: root.lastStep + 1
                     delegate: Rectangle {
                         required property int index
                         width: index === root.step ? 16 : 5
@@ -117,12 +120,14 @@ Popup {
             WButton {
                 text: root.step === 1 && !(bridge && bridge.online) ? "Retry"
                     : root.step === 2 && bridge && !bridge.models.length ? "Open model manager"
+                    : root.step === 3 && !(bridge && bridge.projectPath) ? "Open a project…"
                     : root.step === root.lastStep ? "Start using Wynxo" : "Continue"
                 variant: "primary"
                 focus: true
                 onClicked: {
                     if (root.step === 1 && !(bridge && bridge.online)) { if (bridge) bridge.refreshModels(); return; }
                     if (root.step === 2 && bridge && !bridge.models.length) { root.done(); root.openModelManager(); return; }
+                    if (root.step === 3 && bridge && !bridge.projectPath) { bridge.chooseProject(); return; }
                     if (root.step === root.lastStep) root.done();
                     else root.step += 1;
                 }
