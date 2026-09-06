@@ -7,17 +7,17 @@ import Wynxo
 /*!
     The application shell.
 
-    Two regions: where you are, and what you are doing. The sidebar is docked
-    and resizable above 900px and a drawer below it. A new task deliberately
-    stays sparse: one centered prompt and one composer. Conversation-only
-    controls appear after the first message instead of crowding the home screen.
+    Wynxo owns Chat and Work; Wynxi owns coding. A fresh Wynxo task can choose
+    Chat or Work once in the header. Product changes happen in the sidebar and
+    always start a fresh task, so reopening a saved conversation never changes
+    what kind of assistant it is.
 */
 ApplicationWindow {
     id: window
     width: 1400; height: 900
     minimumWidth: 560; minimumHeight: 520
     visible: true
-    title: (bridge ? bridge.taskTitle : "Wynxo") + " — Wynxo"
+    title: (bridge ? bridge.taskTitle : "Wynxo") + " — " + (bridge ? bridge.productName : "Wynxo")
     color: bridge && bridge.solidBackground ? Theme.background : Theme.backgroundSoft
 
     // ------------------------------------------------------------ layout
@@ -79,7 +79,10 @@ ApplicationWindow {
     }
 
     // -------------------------------------------------------- shortcuts
-    Shortcut { sequences: ["Ctrl+N"]; onActivated: if (bridge) bridge.newTask() }
+    Shortcut {
+        sequences: ["Ctrl+N"]
+        onActivated: if (bridge) bridge.taskMode === "codex" ? bridge.newTaskMode("codex") : bridge.newTask()
+    }
     Shortcut { sequences: ["Ctrl+,"]; onActivated: settings.show(settings.generalPage) }
     Shortcut { sequences: ["Ctrl+K"]; onActivated: window.focusSearch() }
     Shortcut { sequences: ["Ctrl+M"]; onActivated: models.open() }
@@ -113,6 +116,7 @@ ApplicationWindow {
             collapsed: window.sidebarCollapsed
             onCollapseRequested: function(value) { if (bridge) bridge.setSidebarCollapsed(value); }
             onNewTask: if (bridge) bridge.newTask()
+            onNewModeTask: function(mode) { if (bridge) bridge.newTaskMode(mode); }
             onOpenSettings: settings.show(settings.generalPage)
             onRenameRequested: function(id, title) { renameSheet.ask(id, title); }
             onDeleteRequested: function(id, title) { deleteSheet.ask(id, title); }
@@ -168,9 +172,7 @@ ApplicationWindow {
                 onOpenShortcuts: shortcuts.open()
                 onClearRequested: clearSheet.open()
                 onModeRequested: function(mode) {
-                    if (!bridge || bridge.connecting) return;
-                    var wantsWork = mode === "work";
-                    if (wantsWork !== bridge.desktopEnabled) bridge.toggleDesktop();
+                    if (bridge && !bridge.connecting) bridge.setTaskMode(mode);
                 }
             }
 
@@ -182,9 +184,6 @@ ApplicationWindow {
                 Layout.bottomMargin: Theme.s4
                 spacing: window.homeMode ? Theme.s2 : Theme.s3
 
-                // The reference home screen sits a little above mathematical
-                // center. A 2:3 stretch split gives it that calmer, intentional
-                // placement while still adapting smoothly to window height.
                 Item {
                     Layout.fillHeight: true
                     Layout.verticalStretchFactor: 2
@@ -246,8 +245,6 @@ ApplicationWindow {
                     onOpenModelManager: models.open()
                 }
 
-                // Home suggestions were deliberately removed. The first screen
-                // now asks for one thing only: the user's instruction.
                 Text {
                     Layout.fillWidth: true
                     Layout.maximumWidth: Theme.readingWidth
@@ -255,6 +252,7 @@ ApplicationWindow {
                     horizontalAlignment: Text.AlignHCenter
                     visible: bridge && bridge.hasMessages
                     text: bridge && bridge.projectPath ? "Working in " + bridge.projectName
+                          : bridge && bridge.taskMode === "codex" ? "Wynxi · Local coding agent"
                           : "Local AI · Commands, apps, and everyday questions"
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
@@ -285,6 +283,7 @@ ApplicationWindow {
             id: drawerSidebar
             anchors.fill: parent
             onNewTask: { if (bridge) bridge.newTask(); sidebarDrawer.close(); }
+            onNewModeTask: function(mode) { if (bridge) bridge.newTaskMode(mode); sidebarDrawer.close(); }
             onOpenSettings: { sidebarDrawer.close(); settings.show(settings.generalPage); }
             onRenameRequested: function(id, title) { sidebarDrawer.close(); renameSheet.ask(id, title); }
             onDeleteRequested: function(id, title) { sidebarDrawer.close(); deleteSheet.ask(id, title); }
@@ -385,11 +384,6 @@ ApplicationWindow {
     // Preview hook: --snapshot drives the real UI into a named state so README
     // screenshots come from this renderer, not from a mock-up.
     property string previewOverlay: ""
-    property string previewWorkspaceMode: "chat"
-    onPreviewWorkspaceModeChanged: {
-        if (previewWorkspaceMode === "chat" || previewWorkspaceMode === "work" || previewWorkspaceMode === "codex")
-            WorkspaceMode.current = previewWorkspaceMode;
-    }
     function closeOverlays() {
         settings.close(); models.close(); palette.close(); shortcuts.close();
         onboarding.close(); quickBar.close();
@@ -434,7 +428,7 @@ ApplicationWindow {
     function runCommand(action) {
         if (!bridge) return;
         switch (action) {
-        case "new": bridge.newTask(); break;
+        case "new": bridge.taskMode === "codex" ? bridge.newTaskMode("codex") : bridge.newTask(); break;
         case "search": window.focusSearch(); break;
         case "models": models.open(); break;
         case "settings": settings.show(settings.generalPage); break;
