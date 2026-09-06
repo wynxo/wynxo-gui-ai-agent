@@ -3,12 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Where you are, what is happening, and which kind of assistant you want.
+    A task chooses its surface once.
 
-    Chat is the quiet conversational surface, Work owns visual desktop control,
-    and Codex is the project-first coding surface. The selector stays centered
-    on the home screen and remains available in wide active conversations; on
-    narrow windows the same three modes live in the overflow menu.
+    New Wynxo tasks expose a small Chat / Work choice at the left edge of the
+    header. The moment one is chosen (or the first Chat message is sent), the
+    choice disappears and becomes part of that task. Wynxi is entered from the
+    product switch in the sidebar and is always a coding task.
 */
 Item {
     id: root
@@ -28,46 +28,19 @@ Item {
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
     readonly property bool connecting: bridge && bridge.connectionState === "connecting"
-    readonly property string resolvedMode: bridge && bridge.desktopEnabled ? "work" : WorkspaceMode.current
+    readonly property string resolvedMode: bridge ? bridge.taskMode : "chat"
+    readonly property bool canChooseMode: root.homeMode && bridge
+        && !bridge.taskModeLocked && bridge.taskMode !== "codex"
 
     function requestMode(value) {
-        if (value !== "chat" && value !== "work" && value !== "codex") return;
+        if ((value !== "chat" && value !== "work") || !root.canChooseMode) return;
         if (!bridge || bridge.connecting || bridge.busy) return;
-        if (value === root.resolvedMode) {
-            // A failed/denied Work connection leaves the tab selected so the
-            // user can see what they asked for; clicking it again must retry.
-            if (value !== "work" || bridge.desktopEnabled) return;
-        }
-        WorkspaceMode.current = value;
         root.modeRequested(value);
     }
-
-    Shortcut { sequences: ["Ctrl+1"]; onActivated: root.requestMode("chat") }
-    Shortcut { sequences: ["Ctrl+2"]; onActivated: root.requestMode("work") }
-    Shortcut { sequences: ["Ctrl+3"]; onActivated: root.requestMode("codex") }
 
     Rectangle {
         anchors.fill: parent
         color: Theme.background
-    }
-
-    // Independent from the row below so left/right status controls never knock
-    // the mode switch off the geometric center of the workspace.
-    Segmented {
-        id: modeSwitch
-        visible: root.homeMode || root.width >= 960
-        anchors.horizontalCenter: parent.horizontalCenter
-        anchors.verticalCenter: parent.verticalCenter
-        width: root.homeMode ? Math.min(300, Math.max(220, root.width - 150)) : 292
-        height: 36
-        z: 4
-        options: [
-            { id: "chat", label: "Chat", detail: "Conversation and local non-visual tools" },
-            { id: "work", label: "Work", detail: "Visual desktop control with Ollama" },
-            { id: "codex", label: "Codex", detail: "Project-aware coding, commands, edits and tests" },
-        ]
-        current: root.resolvedMode
-        onSelected: function(value) { root.requestMode(value); }
     }
 
     RowLayout {
@@ -85,6 +58,22 @@ Item {
             onClicked: root.toggleSidebar()
         }
 
+        // The only mode chooser. It lives on one side instead of floating in
+        // the centre, and vanishes permanently for this task after selection.
+        Segmented {
+            id: modeSwitch
+            visible: root.canChooseMode
+            Layout.preferredWidth: 184
+            Layout.preferredHeight: 34
+            Layout.leftMargin: root.sidebarCollapsed ? Theme.s1 : Theme.s2
+            options: [
+                { id: "chat", label: "Chat", detail: "Conversation and local tools" },
+                { id: "work", label: "Work", detail: "Desktop control with Ollama" },
+            ]
+            current: root.resolvedMode
+            onSelected: function(value) { root.requestMode(value); }
+        }
+
         // -------------------------------------------------- the breadcrumb
         RowLayout {
             visible: !root.homeMode
@@ -95,13 +84,11 @@ Item {
             AbstractButton {
                 id: titleButton
                 Layout.fillWidth: true
-                Layout.maximumWidth: Math.min(implicitWidth,
-                    modeSwitch.visible ? Math.max(120, root.width * 0.23) : Math.max(180, root.width * 0.48))
+                Layout.maximumWidth: Math.max(180, root.width * 0.48)
                 implicitHeight: Theme.controlSmall
                 implicitWidth: titleText.implicitWidth + Theme.s2 * 2
                 hoverEnabled: true
                 enabled: !!(bridge && bridge.taskId)
-                opacity: 1
                 Accessible.name: "Rename this task"
                 onClicked: root.renameRequested()
                 ToolTip.visible: hovered && enabled
@@ -117,7 +104,7 @@ Item {
                 }
                 contentItem: Text {
                     id: titleText
-                    text: bridge && bridge.hasMessages ? bridge.taskTitle : "Wynxo"
+                    text: bridge && bridge.hasMessages ? bridge.taskTitle : (bridge ? bridge.productName : "Wynxo")
                     color: Theme.textPrimary
                     font.family: Theme.sansFamily
                     font.pixelSize: Theme.heading
@@ -142,7 +129,7 @@ Item {
             visible: !root.homeMode && bridge && bridge.busy
             Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
             Layout.preferredHeight: Theme.controlSmall
-            Layout.maximumWidth: Math.max(120, root.width * (modeSwitch.visible ? 0.26 : 0.38))
+            Layout.maximumWidth: Math.max(120, root.width * 0.38)
             radius: Theme.r2
             color: Theme.surfaceRaised
             border.width: 1
@@ -164,7 +151,7 @@ Item {
                     text: !bridge ? ""
                         : bridge.permissionPending ? "Waiting for you"
                         : root.resolvedMode === "codex" ? "Coding"
-                        : bridge.desktopEnabled ? "Working on your screen" : "Running"
+                        : root.resolvedMode === "work" ? "Working on your screen" : "Running"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     elide: Text.ElideRight
@@ -203,8 +190,8 @@ Item {
         }
 
         Chip {
-            visible: !root.homeMode && bridge && bridge.desktopEnabled && !bridge.busy
-                     && root.width > 720 && !modeSwitch.visible
+            visible: !root.homeMode && bridge && root.resolvedMode === "work"
+                     && bridge.desktopEnabled && !bridge.busy && root.width > 720
             text: "Screen control"
             iconName: "cursor"
             selected: true
@@ -236,10 +223,6 @@ Item {
                 anchorX: -menuWidth + parent.width
                 menuWidth: 270
                 items: [
-                    { id: "modeChat", label: "Chat mode", icon: "chat", shortcut: "Ctrl+1", disabled: root.resolvedMode === "chat" },
-                    { id: "modeWork", label: "Work mode", icon: "desktop", shortcut: "Ctrl+2", disabled: root.resolvedMode === "work" && bridge && bridge.desktopEnabled },
-                    { id: "modeCodex", label: "Codex mode", icon: "code", shortcut: "Ctrl+3", disabled: root.resolvedMode === "codex" },
-                    { separator: true },
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
                     { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard" },
                     { separator: true },
@@ -254,10 +237,7 @@ Item {
                     { id: "settings", label: "Settings", icon: "sliders", shortcut: "Ctrl+," },
                 ]
                 onPicked: function(id) {
-                    if (id === "modeChat") root.requestMode("chat");
-                    else if (id === "modeWork") root.requestMode("work");
-                    else if (id === "modeCodex") root.requestMode("codex");
-                    else if (id === "palette") root.openCommandPalette();
+                    if (id === "palette") root.openCommandPalette();
                     else if (id === "shortcuts") root.openShortcuts();
                     else if (id === "rename") root.renameRequested();
                     else if (id === "settings") root.openSettings();
