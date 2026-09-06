@@ -11,8 +11,8 @@ import QtQuick.Layouts
     gesture opens and dismisses.
 
     Plan is intentionally a presentation tab rather than another backend tool.
-    It reads the conversation's real agent steps, so it can live beside Files,
-    Terminal and Activity without duplicating their controller state.
+    It shows the agent-authored, persisted execution plan while Activity remains
+    the detailed audit trail of commands and desktop actions.
 */
 Item {
     id: root
@@ -100,11 +100,10 @@ Item {
                 Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast; easing.type: Theme.easing } }
             }
 
-            // When a multi-step run is happening with the dock closed, the
-            // small dot is enough to say "there is a plan" without stealing
-            // the user's current workspace.
+            // If a plan exists while the dock is closed, this tiny mark says
+            // the task has structure without stealing the current workspace.
             Rectangle {
-                visible: !root.panelOpen && bridge && bridge.activity && bridge.activity.length >= 2
+                visible: !root.panelOpen && bridge && bridge.planSteps && bridge.planSteps.length >= 2
                 anchors.top: parent.top
                 anchors.right: parent.right
                 anchors.margins: 6
