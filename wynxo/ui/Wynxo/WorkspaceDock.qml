@@ -13,11 +13,17 @@ import QtQuick.Layouts
     Files and the file viewer share the column: the tree above, the open file
     below, because opening a file from a tree that then disappears is a worse
     tree.
+
+    Plan is a lightweight presentation surface over the conversation's real
+    agent actions. It may open itself once a run becomes genuinely multi-step,
+    but after the user chooses any workspace tab the dock stops moving itself.
 */
 Item {
     id: root
     property bool panelOpen: false
     property int panelWidth: 380
+    property bool planSelected: false
+    property bool userSelectedWorkspaceTab: false
     readonly property alias resizing: resizer.dragging
     signal widthChangeRequested(int value)
 
@@ -27,6 +33,7 @@ Item {
     implicitWidth: Theme.railWidth + (panelOpen ? panelWidth + 5 : 0)
 
     function focusPanel() {
+        if (planSelected) return;
         if (tab === "browser" && browserLoader.item) browserLoader.item.focusAddress();
         else if (tab === "terminal" && terminalLoader.item) terminalLoader.item.focusInput();
         else if (tab === "files" && filesLoader.item) filesLoader.item.focusFilter();
@@ -34,8 +41,52 @@ Item {
 
     function openFile(path) {
         if (!dock || !path) return;
+        planSelected = false;
         dock.openFile(path);
         dock.revealFile(path);
+    }
+
+    function pickWorkspaceTab(id) {
+        userSelectedWorkspaceTab = true;
+        if (!dock) return;
+        if (planSelected) {
+            // openTab would close the dock when id is already the backend tab.
+            // Leaving Plan therefore sets the tab directly and keeps the dock up.
+            planSelected = false;
+            dock.setTab(id);
+            if (!dock.visible) dock.setVisible(true);
+            return;
+        }
+        dock.openTab(id);
+    }
+
+    function pickPlan() {
+        userSelectedWorkspaceTab = true;
+        if (!dock) return;
+        if (planSelected && dock.visible) {
+            dock.setVisible(false);
+            return;
+        }
+        planSelected = true;
+        // A deliberate Plan click counts as choosing the workspace. Pin the
+        // underlying backend tab too so later suggestions cannot steal it.
+        dock.setTab(dock.tab);
+        if (!dock.visible) dock.setVisible(true);
+    }
+
+    Connections {
+        target: bridge
+        function onActivityChanged() {
+            if (!bridge || !root.dock || root.userSelectedWorkspaceTab)
+                return;
+            var steps = bridge.activity || [];
+            // One action is just activity. At two actions this has become a
+            // real multi-step task and Plan earns the right to appear once.
+            if (steps.length >= 2 && !root.dock.visible) {
+                root.planSelected = true;
+                root.dock.setVisible(true);
+            }
+        }
     }
 
     RowLayout {
@@ -86,11 +137,19 @@ Item {
 
             Rectangle { anchors.fill: parent; color: Theme.background }
 
+            Loader {
+                id: planLoader
+                anchors.fill: parent
+                visible: root.planSelected
+                active: visible
+                sourceComponent: PlanPanel {}
+            }
+
             // Files keeps the tree and the open file in one column.
             SplitView {
                 id: filesSplit
                 anchors.fill: parent
-                visible: root.tab === "files"
+                visible: !root.planSelected && root.tab === "files"
                 orientation: Qt.Vertical
                 handle: Rectangle {
                     implicitHeight: 5
@@ -107,7 +166,7 @@ Item {
                     id: filesLoader
                     SplitView.preferredHeight: Math.round(root.height * 0.42)
                     SplitView.minimumHeight: 120
-                    active: root.tab === "files"
+                    active: !root.planSelected && root.tab === "files"
                     sourceComponent: FileExplorer {
                         onOpenRequested: function(path) { root.openFile(path); }
                     }
@@ -116,7 +175,7 @@ Item {
                     id: viewerLoader
                     SplitView.fillHeight: true
                     SplitView.minimumHeight: 120
-                    active: root.tab === "files"
+                    active: !root.planSelected && root.tab === "files"
                     sourceComponent: FileViewer {
                         onClosed: if (root.dock) root.dock.closeFile()
                     }
@@ -126,7 +185,7 @@ Item {
             Loader {
                 id: terminalLoader
                 anchors.fill: parent
-                visible: root.tab === "terminal"
+                visible: !root.planSelected && root.tab === "terminal"
                 // Kept alive once opened: a shell that restarts because you
                 // looked at the diff is not a shell.
                 active: visible || item !== null
@@ -135,11 +194,12 @@ Item {
 
             Loader {
                 anchors.fill: parent
-                visible: root.tab === "changes"
+                visible: !root.planSelected && root.tab === "changes"
                 active: visible
                 sourceComponent: ChangesPanel {
                     onOpenRequested: function(path) {
                         if (!path || !root.dock) return;
+                        root.planSelected = false;
                         root.dock.setTab("files");
                         root.openFile(path);
                     }
@@ -149,14 +209,14 @@ Item {
 
             Loader {
                 anchors.fill: parent
-                visible: root.tab === "context"
+                visible: !root.planSelected && root.tab === "context"
                 active: visible
                 sourceComponent: ContextPanel {}
             }
 
             Loader {
                 anchors.fill: parent
-                visible: root.tab === "activity"
+                visible: !root.planSelected && root.tab === "activity"
                 active: visible
                 sourceComponent: ActivityPanel {}
             }
@@ -164,7 +224,7 @@ Item {
             Loader {
                 id: browserLoader
                 anchors.fill: parent
-                visible: root.tab === "browser"
+                visible: !root.planSelected && root.tab === "browser"
                 // A loaded page should survive a look at the terminal.
                 active: visible || item !== null
                 sourceComponent: BrowserPanel {}
@@ -172,7 +232,7 @@ Item {
 
             Loader {
                 anchors.fill: parent
-                visible: root.tab === "preview"
+                visible: !root.planSelected && root.tab === "preview"
                 active: visible
                 sourceComponent: PreviewPanel {}
             }
@@ -184,8 +244,13 @@ Item {
             Layout.fillHeight: true
             current: root.tab
             panelOpen: root.panelOpen
-            onPicked: function(id) { if (root.dock) root.dock.openTab(id); }
-            onToggleDock: if (root.dock) root.dock.toggle()
+            planSelected: root.planSelected
+            onPicked: function(id) { root.pickWorkspaceTab(id); }
+            onPickedPlan: root.pickPlan()
+            onToggleDock: {
+                root.userSelectedWorkspaceTab = true;
+                if (root.dock) root.dock.toggle();
+            }
         }
     }
 
