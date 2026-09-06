@@ -167,6 +167,11 @@ ApplicationWindow {
                 onOpenCommandPalette: palette.open()
                 onOpenShortcuts: shortcuts.open()
                 onClearRequested: clearSheet.open()
+                onModeRequested: function(mode) {
+                    if (!bridge || bridge.connecting) return;
+                    var wantsWork = mode === "work";
+                    if (wantsWork !== bridge.desktopEnabled) bridge.toggleDesktop();
+                }
             }
 
             ColumnLayout {
