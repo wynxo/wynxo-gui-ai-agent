@@ -21,8 +21,13 @@ engine.load(QUrl.fromLocalFile(str(ui / 'Main.qml')))
 window = engine.rootObjects()[0]
 result = []
 
+
 def record(label):
-    QTest.qWait(250)
+    # Sidebar/drawer transitions use the normal UI animation budget. Give Qt
+    # enough time to finish them before measuring the final layout; sampling at
+    # exactly 250 ms can catch the old drawer and the docked sidebar on the same
+    # transition frame on a busy CI runner.
+    QTest.qWait(500)
     controls = [item for item in window.findChildren(QObject)
                 if item.objectName() in {'headerSidebarToggle', 'sidebarCollapseButton'}
                 and item.property('visible')]
@@ -35,6 +40,7 @@ def record(label):
                     and position.x() + composer.width() <= window.width()
                     and position.y() + composer.height() <= window.height(),
                    'no_overlap': viewport_position.y() + viewport.height() <= position.y()})
+
 
 try:
     record('expanded')
