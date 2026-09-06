@@ -16,7 +16,8 @@ import QtQuick.Layouts
 
     Plan is the agent-authored execution outline for genuine multi-step work.
     It can reveal itself once when the agent publishes a plan, but after the
-    user chooses any workspace surface the dock never moves itself again.
+    user chooses any workspace surface for this task the dock never moves itself
+    again. That preference resets when the conversation changes.
 */
 Item {
     id: root
@@ -24,6 +25,7 @@ Item {
     property int panelWidth: 380
     property bool planSelected: false
     property bool userSelectedWorkspaceTab: false
+    property string observedTaskId: bridge ? bridge.taskId : ""
     readonly property alias resizing: resizer.dragging
     signal widthChangeRequested(int value)
 
@@ -76,6 +78,17 @@ Item {
 
     Connections {
         target: bridge
+
+        function onChanged() {
+            if (!bridge) return;
+            var taskId = bridge.taskId || "";
+            if (taskId !== root.observedTaskId) {
+                root.observedTaskId = taskId;
+                root.userSelectedWorkspaceTab = false;
+                root.planSelected = false;
+            }
+        }
+
         function onPlanChanged() {
             if (!bridge || !root.dock || root.userSelectedWorkspaceTab)
                 return;
