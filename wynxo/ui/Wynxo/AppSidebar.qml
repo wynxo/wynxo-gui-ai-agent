@@ -76,6 +76,9 @@ Item {
             iconName: "search"
             placeholderText: "Search chats"
             font.pixelSize: Theme.caption
+            // The docked sidebar and the drawer are separate instances; both
+            // start from whatever query is already active.
+            Component.onCompleted: text = bridge ? bridge.searchQuery : ""
             onTextChanged: bridge && bridge.setSearch(text)
             Keys.onEscapePressed: { text = ""; }
         }

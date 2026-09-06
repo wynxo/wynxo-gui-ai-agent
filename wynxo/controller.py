@@ -743,13 +743,23 @@ class Controller(QObject):
         return __version__
 
     # ------------------------------------------------------------- sidebar
-    def _grouped_tasks(self) -> list[dict]:
+    # A short query filters what is already loaded; a longer one is worth a
+    # round trip that also looks inside the messages themselves.
+    DEEP_SEARCH_LENGTH = 3
+
+    def _matching_tasks(self) -> list[dict]:
         needle = self._search.strip().lower()
+        if not needle:
+            return self._tasks
+        if len(needle) >= self.DEEP_SEARCH_LENGTH:
+            return self.store.search(needle)
+        return [task for task in self._tasks
+                if needle in str(task.get("title", "")).lower()
+                or needle in str(task.get("preview", "")).lower()]
+
+    def _grouped_tasks(self) -> list[dict]:
         buckets: dict[str, list] = {}
-        for task in self._tasks:
-            if needle and needle not in str(task.get("title", "")).lower() \
-                    and needle not in str(task.get("preview", "")).lower():
-                continue
+        for task in self._matching_tasks():
             name = "Pinned" if task.get("pinned") else group_for(task.get("updated_at", 0))
             buckets.setdefault(name, []).append(task)
         return [{"title": name, "items": buckets[name]} for name in GROUP_ORDER if buckets.get(name)]

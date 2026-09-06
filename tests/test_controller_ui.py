@@ -754,3 +754,30 @@ def pump_until(predicate, timeout=5.0):
             return True
         time.sleep(0.01)
     return False
+
+
+def test_search_looks_inside_messages_once_the_query_is_long_enough(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        notes = bridge.store.create_conversation("Notes")
+        other = bridge.store.create_conversation("Other")
+        bridge.store.set_messages(notes["id"], [
+            {"role": "user", "content": "remember the kubernetes migration"},
+            {"role": "assistant", "content": "noted"},
+        ])
+        bridge.store.set_messages(other["id"], [{"role": "user", "content": "unrelated"}])
+        bridge._refresh_tasks()
+
+        # A word that appears only in an older message still finds the chat.
+        bridge.setSearch("kubernetes")
+        found = [item["id"] for group in bridge.taskGroups for item in group["items"]]
+        assert found == [notes["id"]]
+
+        # Below the threshold the search stays local to titles and previews.
+        bridge.setSearch("ku")
+        assert [item["id"] for group in bridge.taskGroups for item in group["items"]] == []
+
+        bridge.setSearch("")
+        assert len([i for g in bridge.taskGroups for i in g["items"]]) == 2
+    finally:
+        bridge.shutdown()
