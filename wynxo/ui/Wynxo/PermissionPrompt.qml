@@ -11,7 +11,7 @@ import QtQuick.Layouts
 Popup {
     id: prompt
     anchors.centerIn: Overlay.overlay
-    width: Math.min(460, parent ? parent.width - Theme.s7 : 460)
+    width: Math.min(440, parent ? parent.width - Theme.s7 : 440)
     modal: true
     focus: true
     padding: 0
@@ -19,6 +19,7 @@ Popup {
     visible: bridge ? bridge.permissionPending : false
     property bool showDetails: false
     onVisibleChanged: if (!visible) showDetails = false
+    readonly property bool sensitive: bridge && bridge.permissionRisk === "sensitive"
 
     Overlay.modal: Rectangle { color: Theme.scrim }
 
@@ -26,58 +27,65 @@ Popup {
         radius: Theme.r4
         color: Theme.surface
         border.width: 1
-        border.color: bridge && bridge.permissionRisk === "sensitive" ? Theme.warning : Theme.borderStrong
+        border.color: prompt.sensitive ? Theme.warning : Theme.borderStrong
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.base }
-            NumberAnimation { property: "scale"; from: 0.96; to: 1; duration: Theme.base; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.base; easing.type: Theme.easing }
         }
     }
 
     contentItem: ColumnLayout {
         spacing: Theme.s4
+        Accessible.role: Accessible.Dialog
+        Accessible.name: "Allow this action? " + (bridge ? bridge.permissionSummary : "")
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: Theme.s6
+            Layout.margins: Theme.s5
             Layout.bottomMargin: 0
             spacing: Theme.s3
             Rectangle {
-                width: 36; height: 36; radius: Theme.r2
-                color: bridge && bridge.permissionRisk === "sensitive" ? Theme.warningMuted : Theme.surfaceHover
+                Layout.preferredWidth: 32; Layout.preferredHeight: 32
+                Layout.alignment: Qt.AlignTop
+                radius: Theme.r2
+                color: prompt.sensitive ? Theme.warningMuted : Theme.surfaceHover
                 Icon {
                     anchors.centerIn: parent
-                    name: bridge && bridge.permissionRisk === "sensitive" ? "warning" : "cursor"
-                    ink: bridge && bridge.permissionRisk === "sensitive" ? Theme.warning : Theme.textSecondary
-                    width: 19; height: 19
+                    name: prompt.sensitive ? "warning" : "cursor"
+                    ink: prompt.sensitive ? Theme.warning : Theme.textSecondary
+                    width: 17; height: 17
                 }
             }
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
                 Text {
+                    Layout.fillWidth: true
                     text: "Allow this action?"
                     color: Theme.textPrimary
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.title - 3
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.title - 2
                     font.weight: Font.DemiBold
                 }
                 Text {
-                    text: bridge && bridge.permissionRisk === "sensitive"
+                    Layout.fillWidth: true
+                    text: prompt.sensitive
                           ? "This can change or send something"
                           : "Wynxo wants to act on your desktop"
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    wrapMode: Text.WordWrap
                 }
             }
         }
 
         Rectangle {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.s6
-            Layout.rightMargin: Theme.s6
-            Layout.preferredHeight: summary.implicitHeight + Theme.s4 * 2
+            Layout.leftMargin: Theme.s5
+            Layout.rightMargin: Theme.s5
+            Layout.preferredHeight: summary.implicitHeight + Theme.s3 * 2
             radius: Theme.r2
             color: Theme.surfaceSunken
             border.width: 1
@@ -85,56 +93,55 @@ Popup {
             Text {
                 id: summary
                 anchors.fill: parent
-                anchors.margins: Theme.s4
+                anchors.margins: Theme.s3
                 text: bridge ? bridge.permissionSummary : ""
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                wrapMode: Text.WordWrap; lineHeight: 1.4
+                wrapMode: Text.WordWrap; lineHeight: 1.45
             }
         }
 
-        Item {
+        ColumnLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.s6
-            Layout.rightMargin: Theme.s6
-            Layout.preferredHeight: detailsRow.height + (prompt.showDetails ? detailText.height + Theme.s2 : 0)
+            Layout.leftMargin: Theme.s5
+            Layout.rightMargin: Theme.s5
+            spacing: Theme.s2
             visible: bridge && bridge.permissionDetail.length > 0
 
-            Item {
-                id: detailsRow
-                width: parent.width
-                height: 22
-                Row {
-                    id: detailsLabel
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
+            AbstractButton {
+                id: detailsToggle
+                Layout.preferredHeight: 24
+                Layout.preferredWidth: detailsRow.implicitWidth + Theme.s2 * 2
+                hoverEnabled: true
+                Accessible.name: detailsLabel.text
+                onClicked: prompt.showDetails = !prompt.showDetails
+                background: Rectangle {
+                    radius: Theme.r1
+                    color: detailsToggle.hovered ? Theme.surfaceHover : "transparent"
+                    border.width: detailsToggle.visualFocus ? 2 : 0
+                    border.color: Theme.accentEdge
+                }
+                contentItem: Row {
+                    id: detailsRow
                     spacing: Theme.s2
+                    leftPadding: Theme.s2
                     Icon {
                         name: prompt.showDetails ? "down" : "chevron"
-                        ink: Theme.textMuted; width: 12; height: 12
+                        ink: Theme.textMuted; width: 11; height: 11
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
+                        id: detailsLabel
                         anchors.verticalCenter: parent.verticalCenter
                         text: prompt.showDetails ? "Hide exact arguments" : "Show exact arguments"
                         color: Theme.textMuted
                         font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     }
                 }
-                MouseArea {
-                    anchors.left: parent.left
-                    anchors.top: parent.top
-                    anchors.bottom: parent.bottom
-                    width: detailsLabel.width + Theme.s2
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: prompt.showDetails = !prompt.showDetails
-                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
             }
             Text {
-                id: detailText
-                anchors.top: detailsRow.bottom
-                anchors.topMargin: Theme.s2
-                width: parent.width
+                Layout.fillWidth: true
                 visible: prompt.showDetails
                 text: bridge ? bridge.permissionDetail : ""
                 color: Theme.textMuted
@@ -147,20 +154,31 @@ Popup {
 
         RowLayout {
             Layout.fillWidth: true
-            Layout.margins: Theme.s6
+            Layout.margins: Theme.s5
             Layout.topMargin: 0
             spacing: Theme.s2
             WButton {
                 text: "Allow all in this task"
                 variant: "ghost"
                 compactPadding: true
-                onClicked: bridge && bridge.allowRestOfTask()
+                onClicked: if (bridge) bridge.allowRestOfTask()
                 ToolTip.visible: hovered
                 ToolTip.text: "Stop asking until this task finishes"
             }
             Item { Layout.fillWidth: true }
-            WButton { text: "Decline"; variant: "secondary"; onClicked: bridge && bridge.resolvePermission(false) }
-            WButton { text: "Allow"; variant: "primary"; onClicked: bridge && bridge.resolvePermission(true) }
+            WButton {
+                text: "Decline"
+                variant: "secondary"
+                onClicked: if (bridge) bridge.resolvePermission(false)
+                ToolTip.visible: hovered
+                ToolTip.text: "Decline · Esc"
+            }
+            WButton {
+                text: "Allow"
+                variant: "primary"
+                focus: true
+                onClicked: if (bridge) bridge.resolvePermission(true)
+            }
         }
     }
 

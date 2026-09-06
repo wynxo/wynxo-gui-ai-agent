@@ -67,7 +67,7 @@ def derive_title(text: str, limit: int = 52) -> str:
     """Name a chat from its first message, cutting on a word boundary."""
     cleaned = " ".join(str(text or "").split())
     if not cleaned:
-        return "New chat"
+        return "New task"
     if len(cleaned) <= limit:
         return cleaned.rstrip(" .,;:!?-")
     cut = cleaned[:limit]
@@ -108,23 +108,19 @@ TOOL_PRESENTATION = {
     "wait": ("clock", "Waiting"),
 }
 
-TEMPLATES = [
-    {"icon": "eye", "title": "Inspect my screen", "hint": "See what is open right now",
-     "prompt": "Look at my screen and summarise what is open and what I appear to be working on. Do not change anything."},
-    {"icon": "launch", "title": "Open an application", "hint": "Launch something for me",
-     "prompt": "List the applications installed on this computer, then ask me which one to open."},
-    {"icon": "code", "title": "Help me code", "hint": "Review, explain, or write code",
-     "prompt": "I need help with some code. Ask me what I am building and which language, then help me write it."},
-    {"icon": "image", "title": "Analyse a screenshot", "hint": "Read an image in detail",
-     "prompt": "I am going to attach a screenshot. Describe exactly what it shows and point out anything that looks wrong."},
-    {"icon": "file", "title": "Work with a file", "hint": "Summarise or refactor",
-     "prompt": "I am attaching a file. Summarise what it does, then suggest concrete improvements."},
-    {"icon": "map", "title": "Plan something", "hint": "Turn an idea into steps",
-     "prompt": "Help me plan a project. Ask me one clarifying question, then break it into practical steps."},
-    {"icon": "bug", "title": "Explain this error", "hint": "Diagnose a failure",
-     "prompt": "I will paste an error message. Explain what causes it and give me the most likely fix first."},
-    {"icon": "folder", "title": "Organise files", "hint": "Make sense of a folder",
-     "prompt": "I am attaching a folder listing. Suggest a clear structure and tell me exactly what to move where."},
+STARTERS = [
+    {"icon": "search", "title": "Explain this project",
+     "prompt": "Look at the folder I am working in and explain how it is organised: what the main "
+               "entry points are, what each top-level directory is for, and where I should start reading."},
+    {"icon": "bug", "title": "Debug a failure",
+     "prompt": "I will paste an error or a failing test. Work out the most likely cause first, "
+               "explain the reasoning briefly, then give me the smallest fix."},
+    {"icon": "code", "title": "Review a file",
+     "prompt": "I am attaching a file. Review it for correctness and clarity, list what you would "
+               "change in priority order, and show the diff for the first change."},
+    {"icon": "eye", "title": "Read my screen",
+     "prompt": "Look at my screen and summarise what is open and what I appear to be working on. "
+               "Do not change anything."},
 ]
 
 
@@ -422,6 +418,9 @@ class Controller(QObject):
         self._favorites = [str(m) for m in (setting("favorite_models", []) or []) if str(m)]
         self._recent_models = [str(m) for m in (setting("recent_models", []) or []) if str(m)]
         self._working_directory = str(setting("working_directory", "") or "")
+        self._recent_projects = [str(p) for p in (setting("recent_projects", []) or []) if str(p)]
+        self._sidebar_width = _bounded_int(setting("sidebar_width", 248), 200, 400, 248)
+        self._sidebar_collapsed = bool(setting("sidebar_collapsed", False))
         self._onboarded = bool(setting("onboarded", False))
         self._run_metrics = _blank_metrics()
         self._models: list[str] = []
@@ -446,7 +445,7 @@ class Controller(QObject):
         self._attachments: list[dict] = []
         self._history: list[dict] = []
         self._task_id = ""
-        self._task_title = "New chat"
+        self._task_title = "New task"
         self._token_rate = "—"
         self._think_started = 0.0
         self._think_seconds = 0.0
@@ -591,11 +590,6 @@ class Controller(QObject):
         if self._online:
             return "connected"
         return "error" if self._error else "offline"
-    @Property(str, notify=changed)
-    def connectionLabel(self):
-        return {"connecting": "Connecting", "downloading": "Downloading",
-                "connected": "Ollama", "offline": "Ollama offline",
-                "error": "Ollama offline"}[self.connectionState]
 
     @Property(str, notify=changed)
     def error(self): return self._error
@@ -666,7 +660,33 @@ class Controller(QObject):
     def themes(self):
         return [{"name": name, "color": color} for name, color in self.THEMES.items()]
     @Property("QVariantList", constant=True)
-    def templates(self): return TEMPLATES
+    def starters(self): return STARTERS
+
+    # ------------------------------------------------------- shell layout
+    # The shell remembers how the user left it. Nothing here ever moves on its
+    # own: these are read at startup and written only when the user acts.
+    @Property(int, notify=changed)
+    def sidebarWidth(self): return self._sidebar_width
+    @Property(bool, notify=changed)
+    def sidebarCollapsed(self): return self._sidebar_collapsed
+
+    @Slot(int)
+    def setSidebarWidth(self, width):
+        width = _bounded_int(width, 200, 400, self._sidebar_width)
+        if width == self._sidebar_width:
+            return
+        self._sidebar_width = width
+        self.store.set_setting("sidebar_width", width)
+        self.changed.emit()
+
+    @Slot(bool)
+    def setSidebarCollapsed(self, collapsed):
+        collapsed = bool(collapsed)
+        if collapsed == self._sidebar_collapsed:
+            return
+        self._sidebar_collapsed = collapsed
+        self.store.set_setting("sidebar_collapsed", collapsed)
+        self.changed.emit()
     @Property(int, notify=changed)
     def numCtx(self): return self._num_ctx
     @Property(float, notify=changed)
@@ -730,11 +750,29 @@ class Controller(QObject):
     def attachments(self): return self._attachments
     @Property(int, notify=attachmentsChanged)
     def attachmentCount(self): return len(self._attachments)
+    # --------------------------------------------------------- the project
+    # The folder Wynxo is working in is the first thing the interface states,
+    # so it gets a name, a short path, and a list of places to go back to.
     @Property(str, notify=changed)
-    def workingDirectory(self): return self._working_directory
+    def projectPath(self): return self._working_directory
     @Property(str, notify=changed)
-    def workingDirectoryLabel(self):
+    def projectName(self):
+        return Path(self._working_directory).name if self._working_directory else ""
+    @Property(str, notify=changed)
+    def projectLabel(self):
         return ctx.working_directory_label(self._working_directory)
+    @Property(str, notify=changed)
+    def projectParentLabel(self):
+        """Where the project sits, without repeating its own name."""
+        if not self._working_directory:
+            return ""
+        return ctx.working_directory_label(str(Path(self._working_directory).parent))
+    @Property("QVariantList", notify=changed)
+    def recentProjects(self):
+        return [{"path": path, "name": Path(path).name,
+                 "label": ctx.working_directory_label(path)}
+                for path in self._recent_projects if path != self._working_directory]
+
     @Property(str, constant=True)
     def dataLocation(self): return str(getattr(self.store, "path", ""))
     @Property(str, constant=True)
@@ -838,6 +876,10 @@ class Controller(QObject):
             entry["recent"] = entry["name"] in self._recent_models
             if entry["selected"]:
                 entry["capabilities"] = list(self._model_capabilities)
+            # An embedding-only model cannot hold a conversation, so the quick
+            # picker leaves it out; the manager still lists and deletes it.
+            capabilities = [str(c).lower() for c in entry.get("capabilities") or []]
+            entry["chat"] = not capabilities or capabilities != ["embedding"]
         recent = {name: index for index, name in enumerate(self._recent_models)}
         self._catalog.sort(key=lambda item: (not item["selected"], not item["favorite"],
                                              recent.get(item["name"], len(recent)),
@@ -860,6 +902,7 @@ class Controller(QObject):
             "loaded": False,
             "recent": False,
             "selected": False,
+            "chat": True,
         }
 
     @Slot()
@@ -1111,7 +1154,7 @@ class Controller(QObject):
             self.toast.emit("Stop the current task before starting another.")
             return
         self._task_id = ""
-        self._task_title = "New chat"
+        self._task_title = "New task"
         self._history = []
         self._history_tokens = 0
         self.messages.replace([])
@@ -1469,22 +1512,50 @@ class Controller(QObject):
     def activeWindowTitle(self):
         return str(self.desktop.active_window().get("title", ""))
 
-    @Slot()
-    def chooseWorkingDirectory(self):
-        from PySide6.QtWidgets import QFileDialog
-        start = self._working_directory or ctx.default_directory()
-        path = QFileDialog.getExistingDirectory(None, "Choose a working folder", start)
+    RECENT_PROJECT_LIMIT = 8
+
+    def _set_project(self, path: str):
+        """Move to a folder, remembering where we have been."""
+        path = str(path or "")
+        self._working_directory = path
+        self.store.set_setting("working_directory", path)
         if path:
-            self._working_directory = path
-            self.store.set_setting("working_directory", path)
-            self.changed.emit()
-            self.toast.emit(f"Working folder set to {ctx.working_directory_label(path)}")
+            self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
+            del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
+            self.store.set_setting("recent_projects", self._recent_projects)
+        self.changed.emit()
 
     @Slot()
-    def clearWorkingDirectory(self):
-        self._working_directory = ""
-        self.store.set_setting("working_directory", "")
-        self.changed.emit()
+    def chooseProject(self):
+        from PySide6.QtWidgets import QFileDialog
+        start = self._working_directory or ctx.default_directory()
+        path = QFileDialog.getExistingDirectory(None, "Choose a project folder", start)
+        if path:
+            self._set_project(path)
+            self.toast.emit(f"Working in {ctx.working_directory_label(path)}")
+
+    @Slot(str)
+    def openProject(self, path):
+        """Return to a folder from the recent list."""
+        path = str(path or "")
+        if not path or not Path(path).is_dir():
+            self._recent_projects = [p for p in self._recent_projects if p != path]
+            self.store.set_setting("recent_projects", self._recent_projects)
+            self.changed.emit()
+            self.toast.emit("That folder is no longer there.")
+            return
+        self._set_project(path)
+
+    @Slot()
+    def clearProject(self):
+        self._set_project("")
+
+    @Slot()
+    def copyProjectPath(self):
+        if self._working_directory:
+            self.copyText(self._working_directory)
+        else:
+            self.toast.emit("No project folder is set.")
 
     @Slot(str)
     def revealPath(self, path):
@@ -1517,12 +1588,12 @@ class Controller(QObject):
         model, enabled, think = self._model, self.desktopEnabled, self._think
         num_ctx, temperature = self._num_ctx, self._temperature
         keep_alive, max_steps = self._keep_alive, self._max_steps
-        mode = self._permission_mode
+        mode, project = self._permission_mode, self._working_directory
         self._run_job = self._job(
             lambda cancel, emit: engine.run(
                 list(history), model, enabled, cancel, emit, think=think, max_steps=max_steps,
                 num_ctx=num_ctx, temperature=temperature, keep_alive=keep_alive,
-                permission_mode=mode, confirm=self._confirm_action),
+                permission_mode=mode, project=project, confirm=self._confirm_action),
             self._run_done, self._run_failed, self._on_event,
         )
 
@@ -1705,7 +1776,7 @@ class Controller(QObject):
     def _maybe_notify(self, seconds: float):
         if not notify.should_notify(seconds, self._window_active, self._notifications):
             return
-        title = self._task_title if self._task_title != "New chat" else "Wynxo"
+        title = self._task_title if self._task_title != "New task" else "Wynxo"
         self._job(lambda cancel, emit: notify.send("Wynxo finished your task", title))
 
     @Slot(bool)

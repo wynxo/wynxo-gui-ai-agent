@@ -58,7 +58,7 @@ def test_empty_and_welcome_scenes():
     try:
         assert empty.hasMessages is False
         assert empty.onboarded is True
-        assert empty.taskTitle == "New chat"
+        assert empty.taskTitle == "New task"
     finally:
         empty.shutdown()
 
@@ -91,3 +91,33 @@ def test_every_declared_scene_can_be_built():
             assert bridge.appVersion
         finally:
             bridge.shutdown()
+
+
+def test_every_scene_names_a_project_so_the_hierarchy_is_visible():
+    """The redesign puts the project above the task list; a screenshot without
+    one shows an empty state that never happens after first run."""
+    for scene in ("conversation", "desktop", "context", "run"):
+        bridge = DemoController(scene)
+        try:
+            assert bridge.projectName == "wynxo-gui-ai-agent"
+            assert bridge.projectParentLabel.endswith("Projects")
+            assert len(bridge.recentProjects) >= 2
+        finally:
+            bridge.shutdown()
+
+
+def test_the_finished_run_scene_settles_every_step():
+    """The activity design ends with a summary line, which only appears when
+    nothing is still running or waiting."""
+    bridge = DemoController("run")
+    try:
+        steps = [step for item in bridge.messages.items if item["kind"] == "activity"
+                 for step in item["steps"]]
+        assert len(steps) > 4
+        assert {step["state"] for step in steps} == {"done"}
+        assert bridge.messages.items[-1]["kind"] == "assistant"
+        # The answer is rendered once: segmented blocks plus the open tail.
+        answer = bridge.messages.items[-1]
+        assert answer["body"].count("KolourPaint is open") == 1
+    finally:
+        bridge.shutdown()

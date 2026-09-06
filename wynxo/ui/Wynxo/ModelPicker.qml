@@ -2,251 +2,230 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-/*! Choosing a model is a real decision, so it gets a real screen. */
-Sheet {
-    id: sheet
-    title: "Models"
-    subtitle: "Installed locally with Ollama"
-    width: Math.min(700, parent ? parent.width - Theme.s7 : 700)
-    height: Math.min(600, parent ? parent.height - Theme.s7 : 600)
+/*!
+    Choosing what runs, and how fast — the only place either is set.
 
-    property string query: ""
-    onOpened: { query = ""; filter.text = ""; bridge && bridge.refreshModels(); filter.forceActiveFocus(); }
+    Everyday switching is a short list of what you actually use. Downloading,
+    deleting and inspecting models is a different job and lives in the model
+    manager, one click below.
+*/
+AbstractButton {
+    id: button
+    signal openModelManager()
+    // Set by the surface that hosts the button; it knows how much room it has.
+    property bool compact: false
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: Theme.s6
-        anchors.topMargin: 0
-        spacing: Theme.s4
+    // The handful worth showing without a search box: current, favourites,
+    // then recents, in the order the catalogue already ranks them.
+    readonly property int shortlistLength: 6
+    readonly property var shortlist: {
+        var catalog = bridge ? bridge.modelCatalog : [];
+        var out = [];
+        for (var i = 0; i < catalog.length && out.length < shortlistLength; i++)
+            if (catalog[i].chat) out.push(catalog[i]);
+        return out;
+    }
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: Theme.s2
-            Field {
-                id: filter
-                Layout.fillWidth: true
-                iconName: "search"
-                placeholderText: "Search installed models"
-                onTextChanged: sheet.query = text.toLowerCase()
-            }
-            IconButton {
-                iconName: "retry"; tooltip: "Refresh from Ollama"
-                onClicked: bridge && bridge.refreshModels()
-            }
+    implicitHeight: Theme.controlSmall
+    implicitWidth: row.implicitWidth + Theme.s2 * 2
+    hoverEnabled: true
+    Accessible.name: "Model: " + (bridge ? bridge.model : "none") + ". Change model and speed"
+    onClicked: popover.opened ? popover.close() : popover.open()
+    function showPicker() { popover.open(); }
+    ToolTip.visible: hovered && !popover.opened
+    ToolTip.text: bridge ? bridge.modelCapabilitySummary : ""
+    ToolTip.delay: 500
+
+    background: Rectangle {
+        radius: Theme.r2
+        color: button.hovered || popover.opened ? Theme.surfaceHover : "transparent"
+        border.width: button.visualFocus ? 2 : 0
+        border.color: Theme.accentEdge
+        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+    }
+
+    contentItem: Row {
+        id: row
+        anchors.centerIn: parent
+        spacing: Theme.s2
+        Text {
+            text: !bridge ? "No model"
+                : button.compact ? bridge.modelShortName : bridge.model
+            color: button.hovered || popover.opened ? Theme.textPrimary : Theme.textSecondary
+            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+            anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideMiddle
+            width: Math.min(implicitWidth, 190)
         }
-
-        ListView {
-            id: list
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            clip: true
-            spacing: Theme.s1
-            model: bridge ? bridge.modelCatalog : []
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-            delegate: Rectangle {
-                id: entry
-                required property var modelData
-                property bool matches: !sheet.query || modelData.name.toLowerCase().indexOf(sheet.query) !== -1
-                width: list.width
-                height: matches ? 62 : 0
-                visible: matches
-                radius: Theme.r2
-                color: modelData.selected ? Theme.surfaceSelected
-                     : rowMouse.containsMouse ? Theme.surfaceHover : "transparent"
-                Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: Theme.s4
-                    anchors.rightMargin: Theme.s2
-                    spacing: Theme.s3
-
-                    Icon {
-                        name: modelData.selected ? "check" : "layers"
-                        ink: modelData.selected ? Theme.accent : Theme.textMuted
-                        width: 17; height: 17
-                    }
-
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 3
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: Theme.s2
-                            Text {
-                                text: modelData.name
-                                color: Theme.textPrimary
-                                font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                                font.weight: modelData.selected ? Font.DemiBold : Font.Medium
-                                Layout.maximumWidth: 300
-                                elide: Text.ElideMiddle
-                            }
-                            Rectangle {
-                                visible: modelData.loaded
-                                width: loadedText.implicitWidth + Theme.s2; height: 17; radius: Theme.r1
-                                color: Theme.successMuted
-                                Text {
-                                    id: loadedText
-                                    anchors.centerIn: parent; text: "in memory"
-                                    color: Theme.success
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                                }
-                            }
-                            Rectangle {
-                                visible: modelData.recent && !modelData.selected
-                                width: recentText.implicitWidth + Theme.s2; height: 17; radius: Theme.r1
-                                color: Theme.surfaceHover
-                                Text {
-                                    id: recentText
-                                    anchors.centerIn: parent; text: "recent"
-                                    color: Theme.textMuted
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                                }
-                            }
-                            Item { Layout.fillWidth: true }
-                        }
-                        Text {
-                            Layout.fillWidth: true
-                            text: [modelData.parameters, modelData.quantization, modelData.sizeLabel,
-                                   modelData.selected && bridge ? bridge.modelContextLabel : "",
-                                   modelData.selected && bridge ? bridge.modelCapabilitySummary : ""]
-                                  .filter(function(p) { return !!p; }).join(" · ")
-                            color: modelData.selected ? Theme.textSecondary : Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    Row {
-                        spacing: 0
-                        opacity: rowMouse.containsMouse || modelData.favorite || modelData.selected ? 1 : 0
-                        visible: opacity > 0
-                        Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
-                        IconButton {
-                            width: 30; height: 30; iconSize: 15
-                            iconName: modelData.favorite ? "starFilled" : "star"
-                            tooltip: modelData.favorite ? "Remove favourite" : "Mark as favourite"
-                            activeTint: Theme.accent
-                            active: modelData.favorite
-                            onClicked: bridge && bridge.toggleFavoriteModel(entry.modelData.name)
-                        }
-                        IconButton {
-                            width: 30; height: 30; iconSize: 15
-                            iconName: "trash"; tooltip: "Delete from disk"
-                            enabled: !modelData.selected
-                            onClicked: { sheet.pendingDelete = entry.modelData.name; confirmDelete.open(); }
-                        }
-                    }
-                }
-
-                MouseArea {
-                    id: rowMouse
-                    anchors.fill: parent
-                    anchors.rightMargin: 64
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: { bridge && bridge.setModel(entry.modelData.name); sheet.close(); }
-                }
-            }
-
-            Column {
-                anchors.centerIn: parent
-                width: parent.width - Theme.s7
-                spacing: Theme.s2
-                visible: list.count === 0
-                Text {
-                    text: bridge && bridge.online ? "No models installed" : "Ollama is not connected"
-                    color: Theme.textSecondary
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                    anchors.horizontalCenter: parent.horizontalCenter
-                }
-                Text {
-                    width: parent.width
-                    text: bridge && bridge.online
-                          ? "Download one below — for example gemma3:4b for chat, or a vision model such as qwen2.5vl:7b for screen control."
-                          : "Start Ollama with “ollama serve”, then refresh."
-                    color: Theme.textMuted
-                    horizontalAlignment: Text.AlignHCenter
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                    wrapMode: Text.WordWrap; lineHeight: 1.4
-                }
-            }
-        }
-
-        Divider { Layout.fillWidth: true }
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: Theme.s2
-            Text {
-                text: "Download a model"
-                color: Theme.textSecondary
-                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: Theme.s2
-                Field {
-                    id: pullField
-                    Layout.fillWidth: true
-                    placeholderText: "Ollama model tag, e.g. gemma3:4b"
-                    mono: true
-                    enabled: bridge && !bridge.pulling
-                    onAccepted: if (bridge && !bridge.pulling) bridge.pullModel(text)
-                }
-                WButton {
-                    text: bridge && bridge.pulling ? "Stop" : "Download"
-                    iconName: bridge && bridge.pulling ? "stop" : "download"
-                    variant: bridge && bridge.pulling ? "secondary" : "primary"
-                    enabled: bridge && bridge.online && !bridge.busy && (bridge.pulling || pullField.text.trim().length > 0)
-                    onClicked: bridge && bridge.pulling ? bridge.cancelPull() : bridge.pullModel(pullField.text)
-                }
-            }
-            Meter {
-                Layout.fillWidth: true
-                visible: bridge && bridge.pulling
-                value: bridge ? bridge.pullPercent : 0
-            }
-            Text {
-                Layout.fillWidth: true
-                text: bridge && bridge.pullProgress
-                      ? bridge.pullProgress
-                      : "Downloads come straight from Ollama's registry to this computer."
-                color: Theme.textMuted
-                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                elide: Text.ElideRight
-            }
+        Icon {
+            name: "down"; ink: Theme.textMuted; width: 11; height: 11
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 
-    property string pendingDelete: ""
+    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
 
-    Sheet {
-        id: confirmDelete
-        title: "Delete this model?"
-        width: 420
-        height: 190
+    Popover {
+        id: popover
+        width: 320
+        preferredEdge: "above"
+        anchorX: -width + button.width
+        implicitHeight: column.implicitHeight + Theme.s4 * 2
+
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: Theme.s6
-            anchors.topMargin: 0
-            spacing: Theme.s4
+            id: column
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            spacing: Theme.s3
+
+            SectionLabel { Layout.fillWidth: true; text: "Model" }
+
             Text {
                 Layout.fillWidth: true
-                text: sheet.pendingDelete + " will be removed from disk. You can download it again later."
-                color: Theme.textSecondary
-                font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                visible: !(bridge && bridge.online)
+                text: "Ollama is not connected, so the installed models are unknown."
+                color: Theme.textMuted
+                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                 wrapMode: Text.WordWrap; lineHeight: 1.4
             }
+
+            Repeater {
+                model: button.shortlist
+                delegate: AbstractButton {
+                    id: entry
+                    required property var modelData
+                    Layout.fillWidth: true
+                    implicitHeight: 40
+                    hoverEnabled: true
+                    Accessible.name: modelData.name
+                    Accessible.checked: modelData.selected
+                    onClicked: { if (bridge) bridge.setModel(modelData.name); popover.close(); }
+
+                    background: Rectangle {
+                        radius: Theme.r2
+                        color: entry.hovered ? Theme.surfaceHover
+                             : modelData.selected ? Theme.surfaceSelected : "transparent"
+                        border.width: entry.visualFocus ? 2 : 0
+                        border.color: Theme.accentEdge
+                        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                    }
+                    contentItem: RowLayout {
+                        spacing: Theme.s3
+                        Icon {
+                            Layout.leftMargin: Theme.s2
+                            name: modelData.selected ? "check" : "layers"
+                            ink: modelData.selected ? Theme.accent : Theme.textMuted
+                            Layout.preferredWidth: 14; Layout.preferredHeight: 14
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 1
+                            Text {
+                                Layout.fillWidth: true
+                                text: modelData.name
+                                color: Theme.textPrimary
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                                font.weight: modelData.selected ? Font.DemiBold : Font.Normal
+                                elide: Text.ElideMiddle
+                            }
+                            Text {
+                                Layout.fillWidth: true
+                                text: [modelData.parameters, modelData.quantization, modelData.sizeLabel]
+                                      .filter(function(part) { return !!part; }).join(" · ")
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                                elide: Text.ElideRight
+                            }
+                        }
+                        Text {
+                            Layout.rightMargin: Theme.s2
+                            visible: modelData.loaded
+                            text: "loaded"
+                            color: Theme.success
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+                    }
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                }
+            }
+
+            // What the current model can do, so the choice is informed rather
+            // than a name whose properties you have to remember.
             RowLayout {
                 Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                WButton { text: "Cancel"; variant: "ghost"; onClicked: confirmDelete.close() }
-                WButton {
-                    text: "Delete"; variant: "danger"
-                    onClicked: { bridge && bridge.deleteModel(sheet.pendingDelete); confirmDelete.close(); }
+                Layout.leftMargin: Theme.s2
+                spacing: Theme.s2
+                visible: bridge && bridge.online
+                Text {
+                    visible: bridge && bridge.modelCapabilitiesLoading
+                    text: "Checking what this model can do…"
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
                 }
+                Repeater {
+                    model: !bridge || bridge.modelCapabilitiesLoading ? [] :
+                           ["Chat"].concat(bridge.modelSupportsTools ? ["Tools"] : [])
+                                   .concat(bridge.modelSupportsVision ? ["Vision"] : [])
+                                   .concat(bridge.modelSupportsThinking ? ["Thinking"] : [])
+                    delegate: Rectangle {
+                        required property string modelData
+                        implicitWidth: capability.implicitWidth + Theme.s2
+                        implicitHeight: 18
+                        radius: Theme.r1
+                        color: Theme.surfaceHover
+                        Text {
+                            id: capability
+                            anchors.centerIn: parent
+                            text: modelData
+                            color: Theme.textSecondary
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+                    }
+                }
+                Item { Layout.fillWidth: true }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: Theme.s2
+                visible: bridge && bridge.modelCapabilityHint !== ""
+                text: bridge ? bridge.modelCapabilityHint : ""
+                color: Theme.textMuted
+                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                wrapMode: Text.WordWrap; lineHeight: 1.4
+            }
+
+            WButton {
+                Layout.fillWidth: true
+                text: "Manage models…"
+                iconName: "layers"
+                variant: "ghost"
+                implicitHeight: Theme.controlSmall
+                onClicked: { popover.close(); button.openModelManager(); }
+                ToolTip.visible: hovered
+                ToolTip.text: "Download, delete and inspect · Ctrl+M"
+            }
+
+            Divider { Layout.fillWidth: true; Layout.topMargin: Theme.s1 }
+
+            SectionLabel { Layout.fillWidth: true; text: "Speed" }
+            Segmented {
+                Layout.fillWidth: true
+                implicitHeight: Theme.controlSmall
+                options: [
+                    { id: "Fast", label: "Fast", detail: "Short context, answers start sooner" },
+                    { id: "Balanced", label: "Balanced", detail: "The everyday default" },
+                    { id: "Deep", label: "Deep", detail: "Long context and a bigger action budget" },
+                ]
+                current: bridge ? bridge.runtimePreset : "Balanced"
+                onSelected: function(value) { if (bridge) bridge.applyRuntimePreset(value); }
+            }
+            Text {
+                Layout.fillWidth: true
+                text: bridge ? bridge.runtimeSummary : ""
+                color: Theme.textMuted
+                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
             }
         }
     }

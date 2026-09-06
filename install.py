@@ -235,7 +235,7 @@ def install(source: Path, root: Path | None = None, bin_dir: Path | None = None)
                 # way for an application to claim a global hotkey itself.
                 entry = (
                     "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Wynxo\n"
-                    "Comment=Your local AI desktop copilot\n"
+                    "Comment=Your local AI workbench\n"
                     f"Exec={desktop_argument(root / 'wynxo')}\n"
                     f"Icon={str(icon).replace(chr(92), chr(92) * 2)}\n"
                     "Terminal=false\nCategories=Utility;Development;\nKeywords=AI;Ollama;Assistant;Copilot;\n"

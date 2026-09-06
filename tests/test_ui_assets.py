@@ -14,6 +14,8 @@ MODULE = UI / "Wynxo"
 def declared_types():
     types = {}
     for line in (MODULE / "qmldir").read_text(encoding="utf-8").splitlines():
+        if line.lstrip().startswith("#"):
+            continue
         parts = line.split()
         if len(parts) == 4 and parts[0] == "singleton":
             types[parts[1]] = parts[3]
@@ -96,8 +98,9 @@ def test_interactive_components_carry_accessible_names():
     """A screen reader should not meet a wall of unnamed rectangles."""
     required = {
         "WButton.qml", "IconButton.qml", "Chip.qml", "Toggle.qml", "Segmented.qml",
-        "Composer.qml", "AppSidebar.qml", "UserMessage.qml", "AssistantMessage.qml",
-        "ToolActivity.qml", "Meter.qml",
+        "Composer.qml", "WorkspaceSidebar.qml", "TaskRow.qml", "TaskHeader.qml",
+        "UserMessage.qml", "AssistantMessage.qml", "RunActivity.qml", "Meter.qml",
+        "ModelPicker.qml", "TaskStart.qml",
     }
     for name in sorted(required):
         text = (MODULE / name).read_text(encoding="utf-8")
@@ -106,8 +109,8 @@ def test_interactive_components_carry_accessible_names():
 
 def test_status_is_never_carried_by_colour_alone():
     """Activity rows pair colour with an icon, a word and motion."""
-    text = (MODULE / "ToolActivity.qml").read_text(encoding="utf-8")
-    for word in ('"waiting for you"', '"declined"', "modelData.icon", "pulsing:"):
+    text = (MODULE / "RunActivity.qml").read_text(encoding="utf-8")
+    for word in ('"waiting for you"', '"declined"', '"failed"', "modelData.icon", "pulsing:"):
         assert word in text
 
 
@@ -126,3 +129,70 @@ def test_reduced_motion_gates_every_behaviour_and_looping_animation():
                 if "reducedMotion" not in window and "animate" not in window:
                     offenders.append(f"{path.name}:{number}")
     assert offenders == [], "ungated animation: " + ", ".join(offenders)
+
+
+# --------------------------------------------------------------- one home each
+# The redesign's central claim is that every important action has exactly one
+# obvious place. These tests fail when a concept starts leaking back into a
+# second surface.
+
+def components_using(needle: str) -> set[str]:
+    return {path.name for path in list(MODULE.glob("*.qml")) + [UI / "Main.qml"]
+            if needle in path.read_text(encoding="utf-8")}
+
+
+def test_the_model_is_chosen_in_one_place():
+    """Picking the current model belongs to the composer's picker; the manager
+    is where you install and delete. Nothing else sets a model."""
+    assert components_using("bridge.setModel(") == {"ModelPicker.qml", "ModelManager.qml"}
+
+
+def test_attachments_have_one_canonical_view():
+    """Context used to appear in the composer and again in the inspector. The
+    quick bar is a separate window, so it keeps its own compact list."""
+    assert components_using("bridge.attachments") == {"Composer.qml", "QuickBarContent.qml"}
+
+
+def test_screen_control_is_turned_on_in_one_place():
+    """The switch lives in Agent settings. The header and composer only report
+    that it is on; the palette routes to the same slot."""
+    assert components_using("bridge.toggleDesktop(") == {"SettingsSheet.qml", "Main.qml"}
+
+
+def test_the_runtime_preset_is_not_scattered():
+    assert components_using("bridge.applyRuntimePreset(") == {"ModelPicker.qml", "SettingsSheet.qml"}
+
+
+def test_the_permanent_inspector_is_gone():
+    """A third column of context, activity and model was the main thing the
+    redesign removed; it must not come back by accident."""
+    assert not (MODULE / "ContextPanel.qml").exists()
+    main = (UI / "Main.qml").read_text(encoding="utf-8")
+    assert "inspector" not in main.lower()
+
+
+def test_no_surface_chooses_its_own_visible_panel():
+    """State changes must never move the UI the user chose. The old inspector
+    picked its own tab from `bridge.busy`; nothing may do that again."""
+    for path in MODULE.glob("*.qml"):
+        text = path.read_text(encoding="utf-8")
+        assert "autoTab" not in text and "chosenTab" not in text, path.name
+
+
+def test_anchored_overlays_position_themselves_repeatably():
+    """A popover that adjusts its own `x` drifts a little further off-screen
+    every time it is opened; both surfaces derive it from `anchorX` instead."""
+    for name in ("WMenu.qml", "Popover.qml"):
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert "property real anchorX" in text
+        assert "var wanted = anchorX;" in text
+    for name in ("TaskHeader.qml", "TaskRow.qml", "ModelPicker.qml"):
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert "anchorX:" in text, f"{name} positions an overlay without anchorX"
+
+
+def test_the_composer_keeps_drag_and_drop_and_keyboard_send():
+    text = (MODULE / "Composer.qml").read_text(encoding="utf-8")
+    for feature in ("DropArea", "attachPath", "Keys.onReturnPressed",
+                    "Keys.onEnterPressed", "ShiftModifier", "pasteImage"):
+        assert feature in text

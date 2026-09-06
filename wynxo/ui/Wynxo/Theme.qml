@@ -15,17 +15,19 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    readonly property color background:      "#0c0c0d"
-    readonly property color backgroundSoft:  "#0f0f11"
-    readonly property color surface:         "#131315"
-    readonly property color surfaceRaised:   "#1a1a1d"
-    readonly property color surfaceHover:    "#212125"
-    readonly property color surfaceSelected: "#2a2a30"
-    readonly property color surfaceSunken:   "#0a0a0b"
-    readonly property color scrim:           "#c00a0a0b"
+    // Near-black canvas, graphite surfaces, one step between each level. The
+    // interface reads as one sheet of material with a few things raised on it.
+    readonly property color background:      "#0a0a0b"
+    readonly property color backgroundSoft:  "#0d0d0f"
+    readonly property color surface:         "#121214"
+    readonly property color surfaceRaised:   "#17171a"
+    readonly property color surfaceHover:    "#1e1e22"
+    readonly property color surfaceSelected: "#26262c"
+    readonly property color surfaceSunken:   "#08080a"
+    readonly property color scrim:           "#cc07070a"
 
-    readonly property color borderSubtle: "#232326"
-    readonly property color borderStrong: "#36363d"
+    readonly property color borderSubtle: "#202024"
+    readonly property color borderStrong: "#31313a"
 
     readonly property color textPrimary:   "#f4f2ee"
     readonly property color textSecondary: "#a5a29b"
@@ -34,8 +36,8 @@ QtObject {
 
     readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#e9e3d6"
     readonly property color accentHover: Qt.lighter(accent, 1.08)
-    readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.14)
-    readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.35)
+    readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.13)
+    readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.34)
     // Text placed on top of the accent, picked for contrast rather than guessed.
     readonly property color onAccent: (accent.r * 0.299 + accent.g * 0.587 + accent.b * 0.114) > 0.55
                                       ? "#101011" : "#f6f5f2"
@@ -44,9 +46,9 @@ QtObject {
     readonly property color warning: "#e6bb54"
     readonly property color danger:  "#e8796a"
     readonly property color info:    "#82a9e8"
-    readonly property color successMuted: "#1b2620"
-    readonly property color warningMuted: "#2a2519"
-    readonly property color dangerMuted:  "#2b1d1b"
+    readonly property color successMuted: "#17231c"
+    readonly property color warningMuted: "#262116"
+    readonly property color dangerMuted:  "#271a18"
 
     // Code colours are handed to the Python highlighter so both agree exactly.
     readonly property var codePalette: ({
@@ -57,7 +59,7 @@ QtObject {
 
     // -------------------------------------------------------------- rhythm
     readonly property bool compact: ready && bridge.density === "Compact"
-    readonly property real scale: compact ? 0.86 : 1.0
+    readonly property real scale: compact ? 0.92 : 1.0
 
     readonly property int s1: 4
     readonly property int s2: 8
@@ -68,37 +70,40 @@ QtObject {
     readonly property int s7: 32
     readonly property int s8: 48
 
-    readonly property int r1: 6
-    readonly property int r2: 10
-    readonly property int r3: 14
-    readonly property int r4: 18
+    // Small radii. A card should look cut, not inflated.
+    readonly property int r1: 4
+    readonly property int r2: 6
+    readonly property int r3: 10
+    readonly property int r4: 14
     readonly property int rPill: 999
 
-    // Minimum hit target, kept above 32px even in compact density.
-    readonly property int control: compact ? 32 : 36
-    readonly property int controlSmall: compact ? 28 : 32
-    readonly property int rowHeight: compact ? 34 : 40
+    // Minimum hit target, kept at or above 32px even in compact density.
+    readonly property int control: compact ? 32 : 34
+    readonly property int controlSmall: compact ? 28 : 30
+    readonly property int rowHeight: compact ? 30 : 34
     readonly property int gutter: compact ? 16 : 24
-    readonly property int readingWidth: 760
+    readonly property int readingWidth: 780
 
     // ---------------------------------------------------------- typography
     readonly property string sansFamily: ready && bridge.systemFont ? systemSans : "Inter"
     readonly property string monoFamily: "JetBrains Mono"
     property string systemSans: "Inter"
 
-    readonly property int display: Math.round(34 * scale)
-    readonly property int title:   Math.round(21 * scale)
+    readonly property int display: Math.round(26 * scale)
+    readonly property int title:   Math.round(19 * scale)
     readonly property int heading: Math.round(15 * scale)
     readonly property int body:    Math.round(14 * scale)
     readonly property int label:   Math.round(13 * scale)
-    readonly property int caption: Math.round(11.5 * scale)
-    readonly property int micro:   Math.round(10 * scale)
+    readonly property int caption: Math.round(12 * scale)
+    readonly property int micro:   Math.round(10.5 * scale)
 
     // ------------------------------------------------------------- motion
+    // Motion reports state changes and nothing else: no ambient animation, no
+    // easing long enough to be waited on.
     readonly property bool reducedMotion: ready && bridge.reducedMotion
     readonly property int fast: reducedMotion ? 0 : 120
-    readonly property int base: reducedMotion ? 0 : 170
-    readonly property int slow: reducedMotion ? 0 : 220
+    readonly property int base: reducedMotion ? 0 : 160
+    readonly property int slow: reducedMotion ? 0 : 200
     readonly property int easing: Easing.OutCubic
 
     function stateColor(name) {

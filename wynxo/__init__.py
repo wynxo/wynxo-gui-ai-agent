@@ -1,3 +1,3 @@
-"""Wynxo — a local desktop copilot for Linux."""
+"""Wynxo — a local AI workbench for Linux."""
 
 __version__ = "1.0.0"

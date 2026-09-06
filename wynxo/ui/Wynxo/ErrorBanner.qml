@@ -8,23 +8,25 @@ Item {
     signal actionInvoked(string action)
     visible: bridge && bridge.error.length > 0
     implicitHeight: visible ? card.height : 0
+    Accessible.role: Accessible.AlertMessage
+    Accessible.name: bridge ? bridge.errorTitle + ". " + bridge.error : ""
 
     Rectangle {
         id: card
         width: parent.width
-        height: layout.implicitHeight + Theme.s4 * 2
-        radius: Theme.r3
+        height: layout.implicitHeight + Theme.s3 * 2
+        radius: Theme.r2
         color: Theme.dangerMuted
         border.width: 1
-        border.color: Theme.alpha(Theme.danger, 0.45)
+        border.color: Theme.alpha(Theme.danger, 0.4)
 
         RowLayout {
             id: layout
             anchors.fill: parent
-            anchors.margins: Theme.s4
+            anchors.margins: Theme.s3
             spacing: Theme.s3
 
-            Icon { name: "warning"; ink: Theme.danger; width: 17; height: 17; Layout.alignment: Qt.AlignTop }
+            Icon { name: "warning"; ink: Theme.danger; width: 15; height: 15; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
 
             ColumnLayout {
                 Layout.fillWidth: true
@@ -45,7 +47,7 @@ Item {
                     wrapMode: Text.WordWrap
                     maximumLineCount: 4
                     elide: Text.ElideRight
-                    lineHeight: 1.4
+                    lineHeight: 1.45
                 }
                 Row {
                     spacing: Theme.s2
@@ -68,8 +70,8 @@ Item {
             IconButton {
                 iconName: "close"; tooltip: "Dismiss"
                 Layout.alignment: Qt.AlignTop
-                width: 28; height: 28; iconSize: 14
-                onClicked: bridge && bridge.clearError()
+                width: 26; height: 26; iconSize: 13
+                onClicked: if (bridge) bridge.clearError()
             }
         }
     }

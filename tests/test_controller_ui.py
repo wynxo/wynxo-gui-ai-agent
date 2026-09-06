@@ -331,12 +331,11 @@ def test_selecting_a_model_records_it_as_recent(tmp_path):
     bridge.shutdown()
 
 
-def test_connection_state_drives_the_status_pill(tmp_path):
+def test_connection_state_reports_what_the_header_needs(tmp_path):
     bridge = controller(tmp_path)
     assert bridge.connectionState == "offline"
     bridge._online = True
     assert bridge.connectionState == "connected"
-    assert bridge.connectionLabel == "Ollama"
     bridge._pulling = True
     assert bridge.connectionState == "downloading"
     bridge._pulling = False
@@ -663,7 +662,7 @@ def test_recently_used_models_rank_above_the_rest(tmp_path):
     ("Fix the retry loop", "Fix the retry loop"),
     ("What's wrong here?", "What's wrong here"),
     ("   spaced   out   words  ", "spaced out words"),
-    ("", "New chat"),
+    ("", "New task"),
 ])
 def test_short_prompts_become_their_own_title(text, expected):
     assert derive_title(text) == expected
@@ -779,5 +778,131 @@ def test_search_looks_inside_messages_once_the_query_is_long_enough(tmp_path):
 
         bridge.setSearch("")
         assert len([i for g in bridge.taskGroups for i in g["items"]]) == 2
+    finally:
+        bridge.shutdown()
+
+
+# ------------------------------------------------------------------- project
+# The working folder was buried in the inspector; it is now the first thing the
+# interface states, so it needs a name, a place and a way back.
+
+def test_the_project_exposes_a_name_a_path_and_its_parent(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        project = tmp_path / "code" / "wynxo-gui-ai-agent"
+        project.mkdir(parents=True)
+        bridge._set_project(str(project))
+
+        assert bridge.projectName == "wynxo-gui-ai-agent"
+        assert bridge.projectPath == str(project)
+        assert bridge.projectLabel.endswith("code/wynxo-gui-ai-agent")
+        # The parent line must not repeat the name shown above it.
+        assert bridge.projectParentLabel.endswith("/code")
+        assert "wynxo-gui-ai-agent" not in bridge.projectParentLabel
+
+        bridge.clearProject()
+        assert bridge.projectName == "" and bridge.projectLabel == ""
+        assert bridge.projectParentLabel == ""
+    finally:
+        bridge.shutdown()
+
+
+def test_recent_projects_are_remembered_most_recent_first(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        first, second = tmp_path / "one", tmp_path / "two"
+        first.mkdir()
+        second.mkdir()
+        bridge._set_project(str(first))
+        bridge._set_project(str(second))
+
+        # The folder you are in is not offered as somewhere to go.
+        assert [entry["path"] for entry in bridge.recentProjects] == [str(first)]
+        assert bridge.store.get_setting("recent_projects") == [str(second), str(first)]
+
+        bridge.openProject(str(first))
+        assert bridge.projectPath == str(first)
+        assert [entry["name"] for entry in bridge.recentProjects] == ["two"]
+    finally:
+        bridge.shutdown()
+
+
+def test_a_recent_project_that_moved_is_dropped_rather_than_opened(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        gone = tmp_path / "gone"
+        gone.mkdir()
+        bridge._set_project(str(gone))
+        bridge.clearProject()
+        gone.rmdir()
+
+        toasts = []
+        bridge.toast.connect(toasts.append)
+        bridge.openProject(str(gone))
+
+        assert bridge.projectPath == ""
+        assert bridge.store.get_setting("recent_projects") == []
+        assert toasts and "no longer there" in toasts[0]
+    finally:
+        bridge.shutdown()
+
+
+def test_the_recent_project_list_is_bounded(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        for index in range(bridge.RECENT_PROJECT_LIMIT + 4):
+            folder = tmp_path / f"p{index}"
+            folder.mkdir()
+            bridge._set_project(str(folder))
+        assert len(bridge.store.get_setting("recent_projects")) == bridge.RECENT_PROJECT_LIMIT
+    finally:
+        bridge.shutdown()
+
+
+# -------------------------------------------------------------- shell layout
+def test_the_shell_remembers_how_it_was_left(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    bridge = Controller(store=store, desktop=IdleDesktop(), autoconnect=False)
+    try:
+        bridge.setSidebarWidth(320)
+        bridge.setSidebarCollapsed(True)
+        assert store.get_setting("sidebar_width") == 320
+        assert store.get_setting("sidebar_collapsed") is True
+    finally:
+        bridge.shutdown()
+
+    reopened = Controller(store=store, desktop=IdleDesktop(), autoconnect=False)
+    try:
+        assert reopened.sidebarWidth == 320
+        assert reopened.sidebarCollapsed is True
+    finally:
+        reopened.shutdown()
+
+
+def test_a_sidebar_width_outside_the_usable_range_is_clamped(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        bridge.setSidebarWidth(10_000)
+        assert bridge.sidebarWidth == 400
+        bridge.setSidebarWidth(20)
+        assert bridge.sidebarWidth == 200
+        bridge.setSidebarWidth("not a number")
+        assert bridge.sidebarWidth == 200
+    finally:
+        bridge.shutdown()
+
+
+def test_embedding_only_models_are_flagged_out_of_the_quick_picker(tmp_path):
+    """The composer's picker shows models you can talk to; the manager still
+    lists everything Ollama has on disk."""
+    bridge = controller(tmp_path)
+    try:
+        bridge._catalog = [Controller._catalog_entry({"name": name, "size": 1})
+                           for name in ("chatty", "embedder")]
+        bridge._catalog[1]["capabilities"] = ["embedding"]
+        bridge._decorate_catalog()
+        by_name = {entry["name"]: entry for entry in bridge.modelCatalog}
+        assert by_name["chatty"]["chat"] is True
+        assert by_name["embedder"]["chat"] is False
     finally:
         bridge.shutdown()

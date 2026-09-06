@@ -2,24 +2,34 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-/*! Settings, organised by what you are trying to change rather than by module. */
+/*!
+    Five sections, each answering one question.
+
+    Anything with a home in the interface itself is not repeated here: models
+    are chosen in the composer, the project is chosen in the sidebar, and
+    shortcuts are a reference sheet rather than a settings page.
+*/
 Sheet {
     id: sheet
     title: "Settings"
-    width: Math.min(860, parent ? parent.width - Theme.s6 : 860)
-    height: Math.min(660, parent ? parent.height - Theme.s6 : 660)
-    signal openModelPicker()
+    width: Math.min(820, parent ? parent.width - Theme.s6 : 820)
+    height: Math.min(620, parent ? parent.height - Theme.s6 : 620)
+    signal openModelManager()
+
+    // Named so callers do not depend on the order of the rail.
+    readonly property int generalPage: 0
+    readonly property int modelPage: 1
+    readonly property int agentPage: 2
+    readonly property int appearancePage: 3
+    readonly property int advancedPage: 4
 
     property int page: 0
-    property var pages: [
+    readonly property var pages: [
         { label: "General", icon: "sliders" },
+        { label: "Model & runtime", icon: "layers" },
+        { label: "Agent", icon: "cursor" },
         { label: "Appearance", icon: "sun" },
-        { label: "Models", icon: "layers" },
-        { label: "AI runtime", icon: "bolt" },
-        { label: "Screen control", icon: "cursor" },
-        { label: "Privacy", icon: "shield" },
-        { label: "Keyboard", icon: "keyboard" },
-        { label: "About", icon: "info" },
+        { label: "Advanced", icon: "shield" },
     ]
 
     function show(index) { page = index; open(); }
@@ -35,40 +45,48 @@ Sheet {
 
     RowLayout {
         anchors.fill: parent
-        anchors.topMargin: 0
         spacing: 0
 
         // ------------------------------------------------------ page rail
         Rectangle {
-            Layout.preferredWidth: 196
+            Layout.preferredWidth: 186
             Layout.fillHeight: true
             color: Theme.backgroundSoft
             bottomLeftRadius: Theme.r4
             Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.borderSubtle }
+
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: Theme.s3
+                anchors.margins: Theme.s2
                 spacing: 1
                 Repeater {
                     model: sheet.pages
-                    delegate: Rectangle {
+                    delegate: AbstractButton {
+                        id: pageButton
                         required property var modelData
                         required property int index
                         Layout.fillWidth: true
                         Layout.preferredHeight: Theme.rowHeight
-                        radius: Theme.r2
-                        color: sheet.page === index ? Theme.surfaceSelected
-                             : pageMouse.containsMouse ? Theme.surfaceHover : "transparent"
-                        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                        Row {
-                            anchors.left: parent.left
-                            anchors.leftMargin: Theme.s3
-                            anchors.verticalCenter: parent.verticalCenter
+                        hoverEnabled: true
+                        Accessible.name: modelData.label
+                        Accessible.checked: sheet.page === index
+                        onClicked: sheet.page = index
+
+                        background: Rectangle {
+                            radius: Theme.r2
+                            color: sheet.page === index ? Theme.surfaceSelected
+                                 : pageButton.hovered ? Theme.surfaceHover : "transparent"
+                            border.width: pageButton.visualFocus ? 2 : 0
+                            border.color: Theme.accentEdge
+                            Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                        }
+                        contentItem: Row {
+                            leftPadding: Theme.s3
                             spacing: Theme.s3
                             Icon {
                                 name: modelData.icon
                                 ink: sheet.page === index ? Theme.accent : Theme.textMuted
-                                width: 15; height: 15
+                                width: 14; height: 14
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                             Text {
@@ -78,13 +96,7 @@ Sheet {
                                 anchors.verticalCenter: parent.verticalCenter
                             }
                         }
-                        MouseArea {
-                            id: pageMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: sheet.page = index
-                        }
+                        MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
                     }
                 }
                 Item { Layout.fillHeight: true }
@@ -105,548 +117,481 @@ Sheet {
             Layout.fillHeight: true
             clip: true
             contentWidth: availableWidth
+            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-            // A wrapper gives the scroll view a content height that includes
+            // The wrapper gives the scroll view a content height that includes
             // padding, so the last control never sits flush against the edge.
             Item {
-                width: sheet.width - 196
-                implicitHeight: pages.implicitHeight + Theme.s5 + Theme.s7
-                height: implicitHeight
+                width: sheet.width - 186
+                // The page on screen sets the scroll height; a short page must
+                // not inherit the scroll range of the tallest one.
+                readonly property Item current: stack.children[sheet.page] || null
+                implicitHeight: (current ? current.implicitHeight : 0) + Theme.s5 + Theme.s7
 
-            StackLayout {
-                id: pages
-                width: parent.width - Theme.s6 * 2
-                x: Theme.s6
-                y: Theme.s5
-                currentIndex: sheet.page
+                StackLayout {
+                    id: stack
+                    width: parent.width - Theme.s6 * 2
+                    x: Theme.s6
+                    y: Theme.s5
+                    currentIndex: sheet.page
 
-                // ------------------------------------------------- GENERAL
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Connection"
-                        description: "Wynxo talks to Ollama on this computer. No account, no API key, no cloud."
-                        Field {
-                            id: endpointField
-                            width: parent.width
-                            mono: true
-                            placeholderText: "http://127.0.0.1:11434"
-                        }
-                        Row {
-                            spacing: Theme.s2
-                            WButton {
-                                text: "Save and reconnect"
-                                variant: "primary"
-                                onClicked: bridge && bridge.setEndpoint(endpointField.text)
-                            }
-                            WButton { text: "Reconnect"; iconName: "retry"; variant: "ghost"; onClicked: bridge && bridge.refreshModels() }
-                        }
-                        Text {
-                            width: parent.width
-                            text: bridge && bridge.online
-                                  ? bridge.models.length + " local models available"
-                                  : "Not connected"
-                            color: bridge && bridge.online ? Theme.success : Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                        }
-                    }
-                    Group {
-                        title: "Behaviour"
-                        Toggle {
-                            width: parent.width
-                            text: "Let the model think before answering"
-                            description: "Uses the model's reasoning mode where Ollama reports support for it."
-                            checked: bridge ? bridge.thinking : false
-                            onToggled: function(value) { bridge && bridge.setFlag("think", value); }
-                        }
-                        Toggle {
-                            width: parent.width
-                            text: "Desktop notifications"
-                            description: "Tell me when a long task finishes and Wynxo is not focused."
-                            checked: bridge ? bridge.notificationsEnabled : true
-                            onToggled: function(value) { bridge && bridge.setFlag("notifications", value); }
-                        }
-                        Toggle {
-                            width: parent.width
-                            text: "System tray icon"
-                            description: "Keep Wynxo reachable from the tray. Takes effect on restart."
-                            checked: bridge ? bridge.trayEnabled : false
-                            onToggled: function(value) { bridge && bridge.setFlag("tray", value); }
-                        }
-                    }
-                }
-
-                // ---------------------------------------------- APPEARANCE
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Accent"
-                        description: "One restrained highlight colour, used sparingly across the app."
-                        Flow {
-                            width: parent.width
-                            spacing: Theme.s2
-                            Repeater {
-                                model: bridge ? bridge.themes : []
-                                delegate: Rectangle {
-                                    required property var modelData
-                                    width: 108; height: 56
-                                    radius: Theme.r2
-                                    color: swatchMouse.containsMouse ? Theme.surfaceHover : Theme.surface
-                                    border.width: 1
-                                    border.color: bridge && bridge.theme === modelData.name ? Theme.accentEdge : Theme.borderSubtle
-                                    Column {
-                                        anchors.centerIn: parent
-                                        spacing: Theme.s2
-                                        Rectangle {
-                                            width: 26; height: 26; radius: 13
-                                            color: modelData.color
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                        }
-                                        Text {
-                                            text: modelData.name
-                                            color: Theme.textSecondary
-                                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                                            anchors.horizontalCenter: parent.horizontalCenter
-                                        }
-                                    }
-                                    MouseArea {
-                                        id: swatchMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: { bridge && bridge.setTheme(modelData.name); accentField.text = modelData.color; }
-                                    }
+                    // ------------------------------------------------ GENERAL
+                    Column {
+                        spacing: Theme.s6
+                        Group {
+                            title: "Ollama"
+                            description: "Wynxo talks to Ollama on this computer. No account, no API key, no cloud."
+                            Row {
+                                width: parent.width
+                                spacing: Theme.s2
+                                Field {
+                                    id: endpointField
+                                    width: parent.width - saveEndpoint.width - Theme.s2
+                                    mono: true
+                                    placeholderText: "http://127.0.0.1:11434"
+                                    onAccepted: if (bridge) bridge.setEndpoint(text)
+                                }
+                                WButton {
+                                    id: saveEndpoint
+                                    text: "Save and reconnect"
+                                    variant: "primary"
+                                    onClicked: if (bridge) bridge.setEndpoint(endpointField.text)
                                 }
                             }
-                        }
-                        Row {
-                            spacing: Theme.s2
-                            width: parent.width
-                            Field {
-                                id: accentField
-                                width: parent.width - 130
-                                mono: true
-                                placeholderText: "#e9e3d6"
-                            }
-                            WButton { text: "Apply"; onClicked: bridge && bridge.setAccent(accentField.text) }
-                        }
-                    }
-                    Group {
-                        title: "Layout"
-                        Segmented {
-                            width: 260
-                            options: [{ id: "Comfortable", label: "Comfortable" }, { id: "Compact", label: "Compact" }]
-                            current: bridge ? bridge.density : "Comfortable"
-                            onSelected: function(value) { bridge && bridge.setDensity(value); }
-                        }
-                        Toggle {
-                            width: parent.width
-                            text: "Use the system font"
-                            description: "Match your desktop's interface font instead of the bundled Inter."
-                            checked: bridge ? bridge.systemFont : false
-                            onToggled: function(value) { bridge && bridge.setFlag("system_font", value); }
-                        }
-                        Toggle {
-                            width: parent.width
-                            text: "Reduce motion"
-                            description: "Turn off transitions and looping animations."
-                            checked: bridge ? bridge.reducedMotion : false
-                            onToggled: function(value) { bridge && bridge.setFlag("reduced_motion", value); }
-                        }
-                        Toggle {
-                            width: parent.width
-                            text: "Solid dark canvas"
-                            description: "A flat background instead of the layered one."
-                            checked: bridge ? bridge.solidBackground : true
-                            onToggled: function(value) { bridge && bridge.setFlag("solid_background", value); }
-                        }
-                    }
-                }
-
-                // -------------------------------------------------- MODELS
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Model manager"
-                        description: "Browse, favourite, download and delete the models installed with Ollama."
-                        Text {
-                            width: parent.width
-                            text: bridge ? "Default model: " + bridge.model : ""
-                            color: Theme.textSecondary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                        }
-                        Text {
-                            width: parent.width
-                            text: bridge ? bridge.modelCapabilityHint : ""
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WordWrap; lineHeight: 1.4
-                        }
-                        WButton {
-                            text: "Open model manager"
-                            iconName: "layers"
-                            variant: "primary"
-                            onClicked: { sheet.close(); sheet.openModelPicker(); }
-                        }
-                    }
-                    Group {
-                        title: "What each capability unlocks"
-                        Repeater {
-                            model: [
-                                { name: "Chat", detail: "Streamed answers, saved locally." },
-                                { name: "Tools", detail: "Discover and launch installed applications." },
-                                { name: "Vision", detail: "Read screenshots and images you attach." },
-                                { name: "Vision + tools", detail: "Full screen control: click, type, scroll, drag." },
-                                { name: "Thinking", detail: "Show the model's reasoning before its answer." },
-                            ]
-                            delegate: RowLayout {
-                                required property var modelData
-                                width: parent.width
-                                spacing: Theme.s3
-                                Rectangle {
-                                    Layout.preferredWidth: 104; Layout.preferredHeight: 22
-                                    radius: Theme.r1; color: Theme.surfaceHover
-                                    Text {
-                                        anchors.centerIn: parent; text: modelData.name
-                                        color: Theme.textSecondary
-                                        font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                                    }
+                            Row {
+                                spacing: Theme.s2
+                                StatusDot {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    tone: bridge && bridge.online ? Theme.success : Theme.danger
                                 }
                                 Text {
-                                    Layout.fillWidth: true
-                                    text: modelData.detail; color: Theme.textMuted
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: bridge && bridge.online
+                                          ? bridge.models.length + " local model" + (bridge.models.length === 1 ? "" : "s") + " available"
+                                          : "Not connected"
+                                    color: bridge && bridge.online ? Theme.textSecondary : Theme.textMuted
                                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                                    wrapMode: Text.WordWrap
+                                }
+                                WButton {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Reconnect"; iconName: "retry"; variant: "ghost"
+                                    compactPadding: true
+                                    implicitHeight: Theme.controlSmall
+                                    onClicked: if (bridge) bridge.refreshModels()
                                 }
                             }
                         }
-                    }
-                }
-
-                // ------------------------------------------------- RUNTIME
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Preset"
-                        description: bridge ? bridge.runtimeHint : ""
-                        Segmented {
-                            width: 380
-                            options: [
-                                { id: "Fast", label: "Fast", detail: "Low latency" },
-                                { id: "Balanced", label: "Balanced", detail: "Everyday default" },
-                                { id: "Deep", label: "Deep", detail: "More context and reasoning" },
-                                { id: "Custom", label: "Custom", detail: "Your own values" },
-                            ]
-                            current: bridge ? bridge.runtimePreset : "Balanced"
-                            onSelected: function(value) {
-                                if (value === "Custom" || !bridge) return;
-                                bridge.applyRuntimePreset(value);
-                                ctxField.text = bridge.numCtx; tempField.text = bridge.temperature;
-                                keepField.text = bridge.keepAlive; stepsField.text = bridge.maxSteps;
-                            }
-                        }
-                    }
-                    Group {
-                        title: "Advanced"
-                        description: "Ollama generation options. Saving these switches the preset to Custom."
-                        Grid {
-                            id: advancedGrid
-                            width: parent.width
-                            columns: 2
-                            columnSpacing: Theme.s3
-                            rowSpacing: Theme.s3
-                            property real cellWidth: (width - columnSpacing) / 2
-
-                            Column {
-                                width: advancedGrid.cellWidth
-                                spacing: Theme.s2
-                                Text { text: "Context tokens"; color: Theme.textSecondary; font.family: Theme.sansFamily; font.pixelSize: Theme.caption }
-                                Field { id: ctxField; width: parent.width; inputMethodHints: Qt.ImhDigitsOnly }
-                            }
-                            Column {
-                                width: advancedGrid.cellWidth
-                                spacing: Theme.s2
-                                Text { text: "Temperature"; color: Theme.textSecondary; font.family: Theme.sansFamily; font.pixelSize: Theme.caption }
-                                Field { id: tempField; width: parent.width }
-                            }
-                            Column {
-                                width: advancedGrid.cellWidth
-                                spacing: Theme.s2
-                                Text { text: "Keep model loaded"; color: Theme.textSecondary; font.family: Theme.sansFamily; font.pixelSize: Theme.caption }
-                                Field { id: keepField; width: parent.width; placeholderText: "5m" }
-                            }
-                            Column {
-                                width: advancedGrid.cellWidth
-                                spacing: Theme.s2
-                                Text { text: "Desktop action budget"; color: Theme.textSecondary; font.family: Theme.sansFamily; font.pixelSize: Theme.caption }
-                                Field { id: stepsField; width: parent.width; inputMethodHints: Qt.ImhDigitsOnly }
-                            }
-                        }
-                        WButton {
-                            text: "Save runtime settings"
-                            variant: "primary"
-                            enabled: bridge && !bridge.busy
-                            onClicked: bridge && bridge.saveRuntimeSettings(ctxField.text, tempField.text, keepField.text, stepsField.text)
-                        }
-                    }
-                }
-
-                // ------------------------------------------ SCREEN CONTROL
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Permission mode"
-                        description: "How much Wynxo may do on your desktop without asking first."
-                        Repeater {
-                            model: bridge ? bridge.permissionModes : []
-                            delegate: Rectangle {
-                                required property var modelData
+                        Group {
+                            title: "Behaviour"
+                            Toggle {
                                 width: parent.width
-                                height: 60
-                                radius: Theme.r2
-                                color: bridge && bridge.permissionMode === modelData.id ? Theme.surfaceSelected
-                                     : modeMouse.containsMouse ? Theme.surfaceHover : Theme.surface
-                                border.width: 1
-                                border.color: bridge && bridge.permissionMode === modelData.id ? Theme.accentEdge : Theme.borderSubtle
-                                Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                                Row {
-                                    anchors.fill: parent
-                                    anchors.margins: Theme.s4
-                                    spacing: Theme.s3
-                                    Icon {
-                                        name: bridge && bridge.permissionMode === modelData.id ? "check" : "shield"
-                                        ink: bridge && bridge.permissionMode === modelData.id ? Theme.accent : Theme.textMuted
-                                        width: 17; height: 17
-                                        anchors.verticalCenter: parent.verticalCenter
-                                    }
-                                    Column {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 3
-                                        Text {
-                                            text: modelData.label; color: Theme.textPrimary
-                                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                                            font.weight: Font.Medium
-                                        }
-                                        Text {
-                                            text: modelData.detail; color: Theme.textMuted
-                                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                                        }
-                                    }
-                                }
-                                MouseArea {
-                                    id: modeMouse
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: bridge && bridge.setPermissionMode(modelData.id)
-                                }
+                                text: "Desktop notifications"
+                                description: "Tell me when a long task finishes and Wynxo is not focused."
+                                checked: bridge ? bridge.notificationsEnabled : true
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("notifications", value); }
                             }
-                        }
-                    }
-                    Group {
-                        title: "Session"
-                        Row {
-                            spacing: Theme.s2
-                            StatusDot { tone: bridge && bridge.desktopEnabled ? Theme.accent : Theme.textMuted; anchors.verticalCenter: parent.verticalCenter }
-                            Text {
-                                text: bridge && bridge.desktopEnabled ? "Screen control is on" : "Screen control is off"
-                                color: Theme.textSecondary
-                                font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
-                        }
-                        WButton {
-                            text: !(bridge && bridge.desktopAvailable) ? "Screen control is unavailable here"
-                                : bridge && bridge.desktopEnabled ? "Turn off screen control"
-                                : "Turn on screen control"
-                            iconName: "cursor"
-                            variant: bridge && bridge.desktopEnabled ? "secondary" : "primary"
-                            enabled: bridge && !bridge.connecting && bridge.desktopAvailable
-                            onClicked: bridge && bridge.toggleDesktop()
-                        }
-                        Text {
-                            width: parent.width
-                            text: (bridge ? bridge.desktopBackend + " — " + bridge.desktopDetail : "")
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WordWrap; lineHeight: 1.4
-                        }
-                        Text {
-                            width: parent.width
-                            text: "Screen control starts off every time Wynxo opens. Escape stops any running task immediately."
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WordWrap; lineHeight: 1.4
-                        }
-                    }
-                }
-
-                // ------------------------------------------------- PRIVACY
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "What stays on this computer"
-                        Repeater {
-                            model: [
-                                { icon: "layers", line: "Inference runs through your local Ollama server." },
-                                { icon: "chat", line: "Conversations are stored in a private SQLite file." },
-                                { icon: "camera", line: "Screenshots are sent to your local model and never saved to history." },
-                                { icon: "lock", line: "No account, no API key, no telemetry, no hosted backend." },
-                                { icon: "shield", line: "Only loopback Ollama addresses are accepted; redirects are refused." },
-                            ]
-                            delegate: RowLayout {
-                                required property var modelData
+                            Toggle {
                                 width: parent.width
+                                text: "System tray icon"
+                                description: "Keep Wynxo reachable from the tray. Takes effect on restart."
+                                checked: bridge ? bridge.trayEnabled : false
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("tray", value); }
+                            }
+                        }
+                    }
+
+                    // ----------------------------------------- MODEL & RUNTIME
+                    Column {
+                        spacing: Theme.s6
+                        Group {
+                            title: "Default model"
+                            description: "The model a new task starts with. Switching for one task is quicker from the composer."
+                            Row {
                                 spacing: Theme.s3
-                                Icon { name: modelData.icon; ink: Theme.textMuted; width: 15; height: 15; Layout.alignment: Qt.AlignTop }
                                 Text {
-                                    Layout.fillWidth: true
-                                    text: modelData.line; color: Theme.textSecondary
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                                    wrapMode: Text.WordWrap; lineHeight: 1.4
-                                }
-                            }
-                        }
-                    }
-                    Group {
-                        title: "Local data"
-                        Text {
-                            width: parent.width
-                            text: bridge ? bridge.dataLocation : ""
-                            color: Theme.textSecondary
-                            font.family: Theme.monoFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WrapAnywhere
-                        }
-                        Row {
-                            spacing: Theme.s2
-                            WButton {
-                                text: "Open data folder"
-                                iconName: "folder"
-                                onClicked: bridge && bridge.revealPath(bridge.dataLocation.replace(/\/[^/]*$/, ""))
-                            }
-                            WButton {
-                                text: "Replay the welcome tour"
-                                iconName: "spark"
-                                variant: "ghost"
-                                onClicked: { bridge && bridge.resetOnboarding(); sheet.close(); }
-                            }
-                        }
-                    }
-                }
-
-                // ------------------------------------------------ KEYBOARD
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Shortcuts"
-                        description: "Window shortcuts, active while Wynxo has keyboard focus."
-                        Repeater {
-                            model: [
-                                { keys: "Enter", label: "Send message" },
-                                { keys: "Shift + Enter", label: "New line" },
-                                { keys: "Escape", label: "Stop generation and desktop actions" },
-                                { keys: "Ctrl + N", label: "New chat" },
-                                { keys: "Ctrl + K", label: "Search chats" },
-                                { keys: "Alt + Up / Down", label: "Previous / next chat" },
-                                { keys: "Ctrl + Shift + P", label: "Command palette" },
-                                { keys: "Ctrl + Space", label: "Quick bar" },
-                                { keys: "Ctrl + M", label: "Model manager" },
-                                { keys: "Ctrl + B", label: "Toggle sidebar" },
-                                { keys: "Ctrl + I", label: "Toggle inspector" },
-                                { keys: "Ctrl + R", label: "Regenerate" },
-                                { keys: "Ctrl + D", label: "Duplicate chat" },
-                                { keys: "Ctrl + Shift + V", label: "Paste an image as context" },
-                                { keys: "Ctrl + ,", label: "Settings" },
-                            ]
-                            delegate: RowLayout {
-                                required property var modelData
-                                width: parent.width
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: modelData.label; color: Theme.textSecondary
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                                }
-                                Rectangle {
-                                    width: keyLabel.implicitWidth + Theme.s3; height: 22; radius: Theme.r1
-                                    color: Theme.surfaceSunken
-                                    border.width: 1; border.color: Theme.borderSubtle
-                                    Text {
-                                        id: keyLabel
-                                        anchors.centerIn: parent
-                                        text: modelData.keys; color: Theme.textMuted
-                                        font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Group {
-                        title: "Global quick bar"
-                        description: "Linux does not offer applications a system-wide hotkey. Bind your desktop's custom shortcut to the command below and Ctrl+Space will reach Wynxo from anywhere."
-                        Rectangle {
-                            width: parent.width; height: 40; radius: Theme.r2
-                            color: Theme.surfaceSunken
-                            border.width: 1; border.color: Theme.borderSubtle
-                            Text {
-                                anchors.left: parent.left; anchors.leftMargin: Theme.s3
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: "wynxo --quick"
-                                color: Theme.textSecondary
-                                font.family: Theme.monoFamily; font.pixelSize: Theme.caption
-                            }
-                            IconButton {
-                                anchors.right: parent.right; anchors.rightMargin: Theme.s1
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 30; height: 30; iconSize: 15
-                                iconName: "copy"; tooltip: "Copy command"
-                                onClicked: bridge && bridge.copyText("wynxo --quick")
-                            }
-                        }
-                    }
-                }
-
-                // --------------------------------------------------- ABOUT
-                Column {
-                    spacing: Theme.s5
-                    Group {
-                        title: "Wynxo"
-                        description: "A local desktop copilot for Linux, powered entirely by Ollama."
-                        Row {
-                            spacing: Theme.s4
-                            Orb { width: 56; height: 56; animate: !Theme.reducedMotion }
-                            Column {
-                                anchors.verticalCenter: parent.verticalCenter
-                                spacing: 4
-                                Text {
-                                    text: "Version " + (bridge ? bridge.appVersion : "")
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: bridge ? bridge.model : ""
                                     color: Theme.textPrimary
                                     font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                                    font.weight: Font.Medium
                                 }
-                                Text {
-                                    text: "Local by design · no cloud AI, no API keys"
-                                    color: Theme.textMuted
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                WButton {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "Manage models"
+                                    iconName: "layers"
+                                    onClicked: { sheet.close(); sheet.openModelManager(); }
                                 }
-                                Text {
-                                    text: bridge ? "Desktop backend: " + bridge.desktopBackend : ""
-                                    color: Theme.textMuted
-                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                            }
+                            Text {
+                                width: parent.width
+                                text: bridge ? bridge.modelCapabilityHint : ""
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                        }
+                        Group {
+                            title: "Speed"
+                            description: bridge ? bridge.runtimeHint : ""
+                            Segmented {
+                                width: Math.min(parent.width, 400)
+                                options: [
+                                    { id: "Fast", label: "Fast", detail: "Low latency" },
+                                    { id: "Balanced", label: "Balanced", detail: "Everyday default" },
+                                    { id: "Deep", label: "Deep", detail: "More context and reasoning" },
+                                    { id: "Custom", label: "Custom", detail: "Your own values" },
+                                ]
+                                current: bridge ? bridge.runtimePreset : "Balanced"
+                                onSelected: function(value) {
+                                    if (value === "Custom" || !bridge) return;
+                                    bridge.applyRuntimePreset(value);
+                                    ctxField.text = bridge.numCtx; tempField.text = bridge.temperature;
+                                    keepField.text = bridge.keepAlive; stepsField.text = bridge.maxSteps;
                                 }
+                            }
+                            Toggle {
+                                width: parent.width
+                                text: "Let the model think before answering"
+                                description: "Uses the model's reasoning mode where Ollama reports support for it."
+                                checked: bridge ? bridge.thinking : false
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("think", value); }
+                            }
+                        }
+                        Disclosure {
+                            width: parent.width
+                            title: "Advanced generation options"
+                            hint: "Ollama options. Saving these switches the preset to Custom."
+                            Grid {
+                                id: advancedGrid
+                                width: parent.width
+                                columns: width > 460 ? 2 : 1
+                                columnSpacing: Theme.s3
+                                rowSpacing: Theme.s3
+                                property real cellWidth: columns === 2 ? (width - columnSpacing) / 2 : width
+
+                                Column {
+                                    width: advancedGrid.cellWidth
+                                    spacing: Theme.s2
+                                    FieldLabel { text: "Context tokens" }
+                                    Field { id: ctxField; width: parent.width; inputMethodHints: Qt.ImhDigitsOnly }
+                                }
+                                Column {
+                                    width: advancedGrid.cellWidth
+                                    spacing: Theme.s2
+                                    FieldLabel { text: "Temperature" }
+                                    Field { id: tempField; width: parent.width }
+                                }
+                                Column {
+                                    width: advancedGrid.cellWidth
+                                    spacing: Theme.s2
+                                    FieldLabel { text: "Keep model loaded" }
+                                    Field { id: keepField; width: parent.width; placeholderText: "5m" }
+                                }
+                                Column {
+                                    width: advancedGrid.cellWidth
+                                    spacing: Theme.s2
+                                    FieldLabel { text: "Desktop action budget" }
+                                    Field { id: stepsField; width: parent.width; inputMethodHints: Qt.ImhDigitsOnly }
+                                }
+                            }
+                            WButton {
+                                text: "Save runtime settings"
+                                variant: "primary"
+                                enabled: bridge && !bridge.busy
+                                onClicked: if (bridge) bridge.saveRuntimeSettings(ctxField.text, tempField.text,
+                                                                                 keepField.text, stepsField.text)
                             }
                         }
                     }
-                    Group {
-                        title: "Credits"
-                        Text {
-                            width: parent.width
-                            text: "Interface type is Inter; code is set in JetBrains Mono. Both are used under the SIL Open Font License. Wynxo is an independent project and is not affiliated with Ollama or any AI vendor."
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WordWrap; lineHeight: 1.5
+
+                    // -------------------------------------------------- AGENT
+                    Column {
+                        spacing: Theme.s6
+                        Group {
+                            title: "Screen control"
+                            description: "Wynxo can see your screen and use your mouse and keyboard. It starts off every time Wynxo opens, and Escape stops any running task immediately."
+                            Row {
+                                spacing: Theme.s3
+                                WButton {
+                                    text: !(bridge && bridge.desktopAvailable) ? "Unavailable here"
+                                        : bridge && bridge.desktopEnabled ? "Turn off screen control"
+                                        : "Turn on screen control"
+                                    iconName: "cursor"
+                                    variant: bridge && bridge.desktopEnabled ? "secondary" : "primary"
+                                    enabled: bridge && !bridge.connecting && bridge.desktopAvailable
+                                    onClicked: if (bridge) bridge.toggleDesktop()
+                                }
+                                Row {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Theme.s2
+                                    StatusDot {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        tone: bridge && bridge.desktopEnabled ? Theme.accent : Theme.textMuted
+                                        pulsing: bridge && bridge.desktopEnabled && bridge.busy
+                                    }
+                                    Text {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: bridge && bridge.desktopEnabled ? "On" : "Off"
+                                        color: Theme.textSecondary
+                                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                    }
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                text: bridge ? bridge.desktopBackend + " — " + bridge.desktopDetail : ""
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                        }
+                        Group {
+                            title: "Permission"
+                            description: "How much Wynxo may do on your desktop without asking first."
+                            Repeater {
+                                model: bridge ? bridge.permissionModes : []
+                                delegate: AbstractButton {
+                                    id: mode
+                                    required property var modelData
+                                    readonly property bool current: bridge && bridge.permissionMode === modelData.id
+                                    width: parent.width
+                                    implicitHeight: 54
+                                    hoverEnabled: true
+                                    Accessible.name: modelData.label
+                                    Accessible.description: modelData.detail
+                                    Accessible.checked: current
+                                    onClicked: if (bridge) bridge.setPermissionMode(modelData.id)
+
+                                    background: Rectangle {
+                                        radius: Theme.r2
+                                        color: mode.current ? Theme.surfaceSelected
+                                             : mode.hovered ? Theme.surfaceHover : "transparent"
+                                        border.width: mode.current || mode.visualFocus ? 1 : 0
+                                        border.color: Theme.accentEdge
+                                        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                                    }
+                                    contentItem: Row {
+                                        leftPadding: Theme.s4
+                                        spacing: Theme.s3
+                                        Icon {
+                                            name: mode.current ? "check" : "shield"
+                                            ink: mode.current ? Theme.accent : Theme.textMuted
+                                            width: 16; height: 16
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Column {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            spacing: 2
+                                            Text {
+                                                text: modelData.label; color: Theme.textPrimary
+                                                font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                                                font.weight: Font.Medium
+                                            }
+                                            Text {
+                                                text: modelData.detail; color: Theme.textMuted
+                                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                            }
+                                        }
+                                    }
+                                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Reading the screen and moving the pointer never prompt — they change nothing. Every run also has an action budget, set under Model & runtime."
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                        }
+                    }
+
+                    // --------------------------------------------- APPEARANCE
+                    Column {
+                        spacing: Theme.s6
+                        Group {
+                            title: "Accent"
+                            description: "One restrained highlight colour, used sparingly across the app."
+                            Flow {
+                                width: parent.width
+                                spacing: Theme.s2
+                                Repeater {
+                                    model: bridge ? bridge.themes : []
+                                    delegate: AbstractButton {
+                                        id: swatch
+                                        required property var modelData
+                                        readonly property bool current: bridge && bridge.theme === modelData.name
+                                        width: 96; height: 52
+                                        hoverEnabled: true
+                                        Accessible.name: modelData.name
+                                        Accessible.checked: current
+                                        onClicked: { if (bridge) bridge.setTheme(modelData.name); accentField.text = modelData.color; }
+                                        background: Rectangle {
+                                            radius: Theme.r2
+                                            color: swatch.hovered ? Theme.surfaceHover : Theme.surface
+                                            border.width: 1
+                                            border.color: swatch.current || swatch.visualFocus ? Theme.accentEdge : Theme.borderSubtle
+                                            Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                                        }
+                                        contentItem: Column {
+                                            spacing: Theme.s2
+                                            topPadding: Theme.s2
+                                            Rectangle {
+                                                width: 22; height: 22; radius: 11
+                                                color: modelData.color
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                                Icon {
+                                                    anchors.centerIn: parent
+                                                    visible: swatch.current
+                                                    name: "check"; ink: Theme.textInverse
+                                                    width: 13; height: 13
+                                                }
+                                            }
+                                            Text {
+                                                text: modelData.name
+                                                color: swatch.current ? Theme.textPrimary : Theme.textSecondary
+                                                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                                                anchors.horizontalCenter: parent.horizontalCenter
+                                            }
+                                        }
+                                        MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                                    }
+                                }
+                            }
+                            Row {
+                                spacing: Theme.s2
+                                width: parent.width
+                                Field {
+                                    id: accentField
+                                    width: Math.min(200, parent.width - 100)
+                                    mono: true
+                                    placeholderText: "#e9e3d6"
+                                    onAccepted: if (bridge) bridge.setAccent(text)
+                                }
+                                WButton { text: "Apply"; onClicked: if (bridge) bridge.setAccent(accentField.text) }
+                            }
+                        }
+                        Group {
+                            title: "Density and motion"
+                            Segmented {
+                                width: 240
+                                options: [{ id: "Comfortable", label: "Comfortable" }, { id: "Compact", label: "Compact" }]
+                                current: bridge ? bridge.density : "Comfortable"
+                                onSelected: function(value) { if (bridge) bridge.setDensity(value); }
+                            }
+                            Toggle {
+                                width: parent.width
+                                text: "Reduce motion"
+                                description: "Turn off transitions and looping animations."
+                                checked: bridge ? bridge.reducedMotion : false
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("reduced_motion", value); }
+                            }
+                            Toggle {
+                                width: parent.width
+                                text: "Use the system font"
+                                description: "Match your desktop's interface font instead of the bundled Inter."
+                                checked: bridge ? bridge.systemFont : false
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("system_font", value); }
+                            }
+                            Toggle {
+                                width: parent.width
+                                text: "Solid dark canvas"
+                                description: "A flat background instead of the layered one."
+                                checked: bridge ? bridge.solidBackground : true
+                                onSwitched: function(value) { if (bridge) bridge.setFlag("solid_background", value); }
+                            }
+                        }
+                    }
+
+                    // ----------------------------------------------- ADVANCED
+                    Column {
+                        spacing: Theme.s6
+                        Group {
+                            title: "What stays on this computer"
+                            Repeater {
+                                model: [
+                                    { icon: "layers", line: "Inference runs through your local Ollama server." },
+                                    { icon: "chat", line: "Tasks are stored in a private SQLite file." },
+                                    { icon: "camera", line: "Screenshots go to your local model and are never saved to history." },
+                                    { icon: "lock", line: "No account, no API key, no telemetry, no hosted backend." },
+                                    { icon: "shield", line: "Only loopback Ollama addresses are accepted; redirects are refused." },
+                                ]
+                                delegate: RowLayout {
+                                    required property var modelData
+                                    width: parent.width
+                                    spacing: Theme.s3
+                                    Icon { name: modelData.icon; ink: Theme.textMuted; width: 14; height: 14; Layout.alignment: Qt.AlignTop }
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: modelData.line; color: Theme.textSecondary
+                                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                        wrapMode: Text.WordWrap; lineHeight: 1.45
+                                    }
+                                }
+                            }
+                        }
+                        Group {
+                            title: "Local data"
+                            Text {
+                                width: parent.width
+                                text: bridge ? bridge.dataLocation : ""
+                                color: Theme.textSecondary
+                                font.family: Theme.monoFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WrapAnywhere
+                            }
+                            Row {
+                                spacing: Theme.s2
+                                WButton {
+                                    text: "Open data folder"
+                                    iconName: "folder"
+                                    onClicked: if (bridge) bridge.revealPath(bridge.dataLocation.replace(/\/[^/]*$/, ""))
+                                }
+                                WButton {
+                                    text: "Replay the welcome"
+                                    iconName: "retry"
+                                    variant: "ghost"
+                                    onClicked: { if (bridge) bridge.resetOnboarding(); sheet.close(); }
+                                }
+                            }
+                        }
+                        Group {
+                            title: "Global quick bar"
+                            description: "Linux gives applications no system-wide hotkey. Bind your desktop's custom shortcut to this command and the quick bar will open from anywhere."
+                            Rectangle {
+                                width: parent.width; height: 38; radius: Theme.r2
+                                color: Theme.surfaceSunken
+                                border.width: 1; border.color: Theme.borderSubtle
+                                Text {
+                                    anchors.left: parent.left; anchors.leftMargin: Theme.s3
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: "wynxo --quick"
+                                    color: Theme.textSecondary
+                                    font.family: Theme.monoFamily; font.pixelSize: Theme.caption
+                                }
+                                IconButton {
+                                    anchors.right: parent.right; anchors.rightMargin: Theme.s1
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    width: 30; height: 30; iconSize: 14
+                                    iconName: "copy"; tooltip: "Copy command"
+                                    onClicked: if (bridge) bridge.copyText("wynxo --quick")
+                                }
+                            }
+                        }
+                        Group {
+                            title: "About"
+                            Text {
+                                width: parent.width
+                                text: "Wynxo " + (bridge ? bridge.appVersion : "") + " — a local copilot for the Linux desktop, "
+                                      + "powered entirely by Ollama. Desktop backend: " + (bridge ? bridge.desktopBackend : "") + ".\n\n"
+                                      + "Interface type is Inter; code is set in JetBrains Mono, both under the SIL Open Font "
+                                      + "License. Wynxo is an independent project and is not affiliated with Ollama or any AI vendor."
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.5
+                            }
                         }
                     }
                 }
-            }
             }
         }
     }
@@ -670,7 +615,8 @@ Sheet {
             text: parent.description
             color: Theme.textMuted
             font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-            wrapMode: Text.WordWrap; lineHeight: 1.45
+            wrapMode: Text.WordWrap; lineHeight: 1.5
+            bottomPadding: Theme.s1
         }
         Column {
             id: holder
@@ -679,4 +625,66 @@ Sheet {
         }
     }
 
+    // Settings that most people never open should not take up room by default.
+    component Disclosure: Column {
+        id: disclosure
+        property string title: ""
+        property string hint: ""
+        property bool expanded: false
+        default property alias disclosureBody: inner.data
+        width: parent ? parent.width : 400
+        spacing: Theme.s3
+
+        AbstractButton {
+            id: toggle
+            width: parent.width
+            implicitHeight: Theme.control
+            hoverEnabled: true
+            Accessible.name: disclosure.title
+            onClicked: disclosure.expanded = !disclosure.expanded
+            background: Rectangle {
+                radius: Theme.r2
+                color: toggle.hovered ? Theme.surfaceHover : "transparent"
+                border.width: toggle.visualFocus ? 2 : 0
+                border.color: Theme.accentEdge
+            }
+            contentItem: Row {
+                spacing: Theme.s2
+                Icon {
+                    name: disclosure.expanded ? "down" : "chevron"
+                    ink: Theme.textSecondary; width: 13; height: 13
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: disclosure.title
+                    color: Theme.textPrimary
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.heading
+                    font.weight: Font.DemiBold
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+        }
+        Text {
+            width: parent.width
+            visible: disclosure.expanded && disclosure.hint !== ""
+            text: disclosure.hint
+            color: Theme.textMuted
+            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+            wrapMode: Text.WordWrap; lineHeight: 1.5
+        }
+        Column {
+            id: inner
+            width: parent.width
+            spacing: Theme.s3
+            visible: disclosure.expanded
+            height: visible ? implicitHeight : 0
+        }
+    }
+
+    component FieldLabel: Text {
+        color: Theme.textSecondary
+        font.family: Theme.sansFamily
+        font.pixelSize: Theme.caption
+    }
 }

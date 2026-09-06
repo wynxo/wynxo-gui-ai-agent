@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Segmented selector with a sliding indicator. Model entries: {id,label}. */
+/*! Segmented selector with a sliding indicator. Model entries: {id,label,detail}. */
 Item {
     id: root
     property var options: []
@@ -10,12 +10,14 @@ Item {
 
     implicitHeight: Theme.control
     implicitWidth: row.implicitWidth + 6
+    Accessible.role: Accessible.Grouping
 
     readonly property int currentIndex: {
         for (var i = 0; i < options.length; i++)
             if (options[i].id === current) return i;
         return 0;
     }
+    readonly property real segmentWidth: repeater.count > 0 ? (width - 6) / repeater.count : 0
 
     Rectangle {
         anchors.fill: parent
@@ -26,12 +28,11 @@ Item {
     }
 
     Rectangle {
-        id: indicator
         y: 3; height: parent.height - 6
         radius: Theme.r1
         color: Theme.surfaceSelected
-        width: repeater.count > 0 ? (root.width - 6) / repeater.count : 0
-        x: 3 + width * root.currentIndex
+        width: root.segmentWidth
+        x: 3 + root.segmentWidth * root.currentIndex
         Behavior on x { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.base; easing.type: Theme.easing } }
     }
 
@@ -42,32 +43,44 @@ Item {
         Repeater {
             id: repeater
             model: root.options
-            delegate: Item {
+            delegate: AbstractButton {
                 required property var modelData
                 required property int index
-                width: root.width > 0 ? (root.width - 6) / repeater.count : label.implicitWidth + Theme.s5
+                width: root.width > 0 ? root.segmentWidth : implicitWidth
                 height: parent.height
-                Text {
-                    id: label
-                    anchors.centerIn: parent
-                    text: modelData.label
-                    color: index === root.currentIndex ? Theme.textPrimary : Theme.textMuted
-                    font.family: Theme.sansFamily
-                    font.pixelSize: Theme.caption
-                    font.weight: index === root.currentIndex ? Font.DemiBold : Font.Medium
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                }
+                hoverEnabled: true
+                text: modelData.label
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: modelData.label
                 Accessible.checked: index === root.currentIndex
+                onClicked: root.selected(modelData.id)
+                ToolTip.visible: hovered && !!modelData.detail
+                ToolTip.text: modelData.detail || ""
+                ToolTip.delay: 600
+
+                background: Rectangle {
+                    radius: Theme.r1
+                    color: "transparent"
+                    border.width: parent.visualFocus ? 2 : 0
+                    border.color: Theme.accentEdge
+                }
+                contentItem: Text {
+                    text: modelData.label
+                    color: index === root.currentIndex ? Theme.textPrimary
+                         : parent.hovered ? Theme.textSecondary : Theme.textMuted
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
+                    font.weight: index === root.currentIndex ? Font.DemiBold : Font.Medium
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                }
+
                 MouseArea {
                     anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.selected(modelData.id)
-                    hoverEnabled: true
-                    ToolTip.visible: containsMouse && !!modelData.detail
-                    ToolTip.text: modelData.detail || ""
-                    ToolTip.delay: 500
                 }
             }
         }

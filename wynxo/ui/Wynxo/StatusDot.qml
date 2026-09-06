@@ -5,21 +5,22 @@ Item {
     id: root
     property color tone: Theme.success
     property bool pulsing: false
-    implicitWidth: 8
-    implicitHeight: 8
+    implicitWidth: 7
+    implicitHeight: 7
+    Accessible.ignored: true   // The label beside it carries the state in words.
 
     Rectangle {
         id: halo
         anchors.centerIn: parent
-        width: parent.width * 2.4; height: width; radius: width / 2
-        color: Theme.alpha(root.tone, 0.18)
+        width: parent.width * 2.6; height: width; radius: width / 2
+        color: Theme.alpha(root.tone, 0.16)
         opacity: root.pulsing ? 1 : 0
         visible: opacity > 0
         SequentialAnimation on scale {
             running: root.pulsing && !Theme.reducedMotion
             loops: Animation.Infinite
-            NumberAnimation { from: 0.7; to: 1.15; duration: 900; easing.type: Easing.InOutQuad }
-            NumberAnimation { from: 1.15; to: 0.7; duration: 900; easing.type: Easing.InOutQuad }
+            NumberAnimation { from: 0.75; to: 1.1; duration: 1100; easing.type: Easing.InOutQuad }
+            NumberAnimation { from: 1.1; to: 0.75; duration: 1100; easing.type: Easing.InOutQuad }
         }
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.base } }
     }

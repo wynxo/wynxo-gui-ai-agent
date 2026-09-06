@@ -422,7 +422,7 @@ class AgentEngine:
     def run(self, messages: list[dict], model: str, desktop_enabled: bool, cancel,
             emit: Callable[[dict], None], think: bool = False, max_steps: int = 20,
             num_ctx: int = 16384, temperature: float = 0.7, keep_alive: str = "5m",
-            permission_mode: str = AUTO,
+            permission_mode: str = AUTO, project: str = "",
             confirm: Callable[[str, dict, str], bool] | None = None) -> list[dict]:
         # Capture fresh screen context for each request. A later chat-only/nonvisual
         # model must not inherit screenshots from an earlier desktop task.
@@ -515,6 +515,12 @@ class AgentEngine:
                 system = _SYSTEM + f"\nDesktop tools are enabled. {gate}"
             else:
                 system = _SYSTEM + "\nDesktop tools are unavailable or disabled. You can only chat and explain; do not pretend to perform actions."
+            if project:
+                # Naming the folder saves the user repeating it every turn. It is
+                # a location, not a grant: Wynxo still has no filesystem tool.
+                system += (f"\nThe user is working in the folder {project}. Assume paths they "
+                           "mention are relative to it, and refer to it when it helps. You cannot "
+                           "read it yourself — ask them to attach a file or folder for its contents.")
             if desktop_enabled and not tools_enabled:
                 reason = "This model does not advertise tool calling." if "tools" not in capabilities else "Desktop permission is not connected."
                 event("status", text=reason + " Chat remains available.")

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! The user's turn: a quiet card, right-aligned, editable in place. */
+/*! What you asked for: a quiet card, right-aligned, editable in place. */
 Item {
     id: root
     property string body: ""
@@ -16,12 +16,14 @@ Item {
     Rectangle {
         id: card
         anchors.right: parent.right
-        width: root.editing ? parent.width : Math.min(parent.width * 0.82, text.implicitWidth + Theme.s5 * 2)
-        height: (root.editing ? editor.implicitHeight + Theme.s4 * 2 + 44 : text.implicitHeight + Theme.s4 * 2)
+        width: root.editing ? parent.width
+                            : Math.min(parent.width * 0.84, text.implicitWidth + Theme.s4 * 2)
+        height: root.editing ? editColumn.implicitHeight + Theme.s3 * 2
+                             : text.implicitHeight + Theme.s3 * 2
         radius: Theme.r3
         color: Theme.surfaceRaised
-        border.width: root.editing ? 1 : 0
-        border.color: Theme.accentEdge
+        border.width: 1
+        border.color: root.editing ? Theme.accentEdge : Theme.borderSubtle
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
         TextEdit {
@@ -29,9 +31,9 @@ Item {
             visible: !root.editing
             anchors.left: parent.left; anchors.right: parent.right
             anchors.top: parent.top
-            anchors.margins: Theme.s4
-            anchors.leftMargin: Theme.s5
-            anchors.rightMargin: Theme.s5
+            anchors.margins: Theme.s3
+            anchors.leftMargin: Theme.s4
+            anchors.rightMargin: Theme.s4
             text: root.body
             readOnly: true
             selectByMouse: true
@@ -44,9 +46,11 @@ Item {
         }
 
         Column {
+            id: editColumn
             visible: root.editing
-            anchors.fill: parent
-            anchors.margins: Theme.s4
+            anchors.left: parent.left; anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: Theme.s3
             spacing: Theme.s3
             TextArea {
                 id: editor
@@ -54,10 +58,13 @@ Item {
                 wrapMode: TextEdit.Wrap
                 color: Theme.textPrimary
                 selectionColor: Theme.accent
+                selectedTextColor: Theme.onAccent
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.body
                 padding: 0
                 background: Item {}
+                Accessible.name: "Edit your message"
+                Keys.onEscapePressed: root.editing = false
             }
             Row {
                 spacing: Theme.s2
@@ -76,18 +83,17 @@ Item {
         anchors.right: card.left
         anchors.rightMargin: Theme.s2
         anchors.top: card.top
-        anchors.topMargin: Theme.s1
         spacing: 0
         opacity: hover.hovered && !root.editing ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
         IconButton {
-            width: 28; height: 28; iconSize: 14; iconName: "edit"; tooltip: "Edit and resend"
+            width: 28; height: 28; iconSize: 13; iconName: "edit"; tooltip: "Edit and resend"
             onClicked: { editor.text = root.body; root.editing = true; editor.forceActiveFocus(); }
         }
         IconButton {
-            width: 28; height: 28; iconSize: 14; iconName: "copy"; tooltip: "Copy"
-            onClicked: bridge && bridge.copyText(root.body)
+            width: 28; height: 28; iconSize: 13; iconName: "copy"; tooltip: "Copy"
+            onClicked: if (bridge) bridge.copyText(root.body)
         }
     }
 

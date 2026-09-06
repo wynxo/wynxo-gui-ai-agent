@@ -64,14 +64,14 @@ def _build_tray(app, window, controller):
         return None
     icon = UI / "wynxo.svg"
     tray = QSystemTrayIcon(QIcon(str(icon)) if icon.exists() else app.windowIcon(), app)
-    tray.setToolTip("Wynxo — local desktop copilot")
+    tray.setToolTip("Wynxo — local AI workbench")
     menu = QMenu()
     show = QAction("Open Wynxo", menu)
     show.triggered.connect(lambda: (window.show(), window.raise_() if hasattr(window, "raise_") else None,
                                     window.requestActivate()))
     quick = QAction("Quick bar", menu)
     quick.triggered.connect(controller.quickBarRequested.emit)
-    fresh = QAction("New chat", menu)
+    fresh = QAction("New task", menu)
     fresh.triggered.connect(controller.newTask)
     stop = QAction("Stop current task", menu)
     stop.triggered.connect(controller.stop)
@@ -90,13 +90,13 @@ def _build_tray(app, window, controller):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Wynxo — local desktop copilot")
+    parser = argparse.ArgumentParser(description="Wynxo — local AI workbench")
     parser.add_argument("--version", action="store_true")
     parser.add_argument("--quick", action="store_true",
                         help="Open the floating quick bar, reusing a running Wynxo if there is one")
     parser.add_argument("--ui-preview", metavar="SCENE", nargs="?", const="conversation",
                         help="Run the interface with fixed demo state "
-                             "(empty, conversation, context, desktop, welcome)")
+                             "(empty, conversation, context, run, desktop, welcome)")
     parser.add_argument("--snapshot", metavar="DIR",
                         help="Render the demo scenes to PNG files in DIR and exit")
     parser.add_argument("--size", metavar="WxH",

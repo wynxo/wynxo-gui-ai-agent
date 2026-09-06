@@ -1,12 +1,21 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! A styled dropdown. Items: {id, label, icon, shortcut, detail, danger, disabled}. */
+/*!
+    A styled dropdown. Items: {id, label, icon, shortcut, danger, disabled,
+    separator, hidden}.
+
+    It flips above or beside its anchor rather than opening off-screen, and
+    arrow keys walk it, so a menu is never a mouse-only surface.
+*/
 Popup {
     id: menu
     property var items: []
-    property int itemHeight: 34
+    property int itemHeight: 32
     property int menuWidth: 232
+    // "below" or "above": the preferred side; the menu flips if there is no room.
+    property string preferredEdge: "below"
+    property int gap: Theme.s1
     signal picked(string id)
 
     padding: Theme.s1
@@ -15,6 +24,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent | Popup.CloseOnPressOutside
     width: menuWidth
     implicitHeight: listHeight + Theme.s1 * 2
+
     readonly property int listHeight: {
         var total = 0;
         for (var i = 0; i < items.length; i++) {
@@ -23,6 +33,36 @@ Popup {
         }
         return total;
     }
+    readonly property var visibleItems: {
+        var out = [];
+        for (var i = 0; i < items.length; i++)
+            if (!items[i].hidden && !items[i].separator && !items[i].disabled) out.push(items[i].id);
+        return out;
+    }
+    property string highlighted: ""
+
+    // Keep the surface inside the window: flip vertically, and pull back
+    // horizontally, instead of drawing half of it outside the frame.
+    // Everything is derived from `anchorX` rather than from the current `x`,
+    // so opening the same menu twice puts it in the same place.
+    property real anchorX: 0
+    function place() {
+        if (!parent || !Overlay.overlay) return;
+        var below = parent.mapToItem(Overlay.overlay, 0, parent.height + gap);
+        var above = parent.mapToItem(Overlay.overlay, 0, -implicitHeight - gap);
+        var wantAbove = preferredEdge === "above";
+        if (wantAbove && above.y < 0 && below.y + implicitHeight <= Overlay.overlay.height) wantAbove = false;
+        else if (!wantAbove && below.y + implicitHeight > Overlay.overlay.height && above.y >= 0) wantAbove = true;
+        y = wantAbove ? -implicitHeight - gap : parent.height + gap;
+
+        var left = parent.mapToItem(Overlay.overlay, 0, 0).x;
+        var wanted = anchorX;
+        var overflow = left + wanted + width - Overlay.overlay.width + Theme.s2;
+        if (overflow > 0) wanted -= overflow;
+        x = Math.max(-left + Theme.s2, wanted);
+    }
+
+    onAboutToShow: { highlighted = ""; place(); }
 
     background: Rectangle {
         radius: Theme.r3
@@ -34,18 +74,30 @@ Popup {
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.fast }
-            NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.fast; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.fast; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }
 
+    function step(delta) {
+        var order = visibleItems;
+        if (!order.length) return;
+        var at = order.indexOf(highlighted);
+        highlighted = order[Math.max(0, Math.min(order.length - 1, at < 0 ? 0 : at + delta))];
+    }
+
     contentItem: Column {
         spacing: 0
+        focus: true
+        Keys.onDownPressed: menu.step(1)
+        Keys.onUpPressed: menu.step(-1)
+        Keys.onReturnPressed: if (menu.highlighted) { menu.picked(menu.highlighted); menu.close(); }
+        Keys.onEnterPressed: if (menu.highlighted) { menu.picked(menu.highlighted); menu.close(); }
         Repeater {
             model: menu.items
             delegate: Loader {
                 required property var modelData
-                width: menu.width - Theme.s1 * 2
+                width: menu.menuWidth - Theme.s1 * 2
                 active: !modelData.hidden
                 sourceComponent: modelData.separator ? separatorItem : entryItem
                 onLoaded: if (!modelData.separator) item.entry = modelData
@@ -69,35 +121,34 @@ Popup {
         id: entryItem
         Rectangle {
             property var entry: ({})
+            readonly property bool on: area.containsMouse || menu.highlighted === entry.id
             height: menu.itemHeight
             radius: Theme.r1
-            color: area.containsMouse && !entry.disabled ? Theme.surfaceHover : "transparent"
+            color: on && !entry.disabled ? Theme.surfaceHover : "transparent"
             opacity: entry.disabled ? 0.4 : 1
-            Row {
-                anchors.fill: parent
-                anchors.leftMargin: Theme.s3
-                anchors.rightMargin: Theme.s3
-                spacing: Theme.s3
-                Icon {
-                    visible: !!entry.icon
-                    name: entry.icon || "chat"
-                    ink: entry.danger ? Theme.danger : Theme.textSecondary
-                    width: 15; height: 15
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: entry.label || ""
-                    color: entry.danger ? Theme.danger : Theme.textPrimary
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+
+            Icon {
+                visible: !!entry.icon
+                x: Theme.s3
+                anchors.verticalCenter: parent.verticalCenter
+                name: entry.icon || "chat"
+                ink: entry.danger ? Theme.danger : Theme.textSecondary
+                width: 14; height: 14
             }
             Text {
-                anchors.right: parent.right; anchors.rightMargin: Theme.s3
+                x: entry.icon ? Theme.s3 + 14 + Theme.s3 : Theme.s3
                 anchors.verticalCenter: parent.verticalCenter
-                text: entry.shortcut || ""
-                color: Theme.textMuted
-                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                width: parent.width - x - (keys.visible ? keys.width + Theme.s3 * 2 : Theme.s3)
+                text: entry.label || ""
+                color: entry.danger ? Theme.danger : Theme.textPrimary
+                font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                elide: Text.ElideRight
+            }
+            KeyHint {
+                id: keys
+                anchors.right: parent.right; anchors.rightMargin: Theme.s2
+                anchors.verticalCenter: parent.verticalCenter
+                keys: entry.shortcut || ""
             }
             MouseArea {
                 id: area
@@ -107,6 +158,8 @@ Popup {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: { menu.picked(entry.id); menu.close(); }
             }
+            Accessible.role: Accessible.MenuItem
+            Accessible.name: entry.label || ""
         }
     }
 }

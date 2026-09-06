@@ -1,16 +1,16 @@
 # Wynxo
 
-**A local desktop copilot for Linux, powered entirely by Ollama.**
+**A local AI workbench for Linux, powered entirely by Ollama.**
 
-Wynxo is a native Python + Qt Quick application. Chat with a model running on
-your own machine, attach files, folders and screenshots as context, and — when
-you turn it on — let a capable model see your screen and drive your mouse and
-keyboard.
+Wynxo is a native Python + Qt Quick application. Choose the folder you are
+working in, describe a task, and watch it run: a model on your own machine
+answers, reads the files, folders and screenshots you attach, and — when you
+turn it on — sees your screen and drives your mouse and keyboard.
 
 No browser, no Node.js, no account, no API key, no cloud AI. Ollama does the
 inference; Wynxo is the interface.
 
-![Wynxo, mid-conversation](docs/screenshots/02-conversation.png)
+![Wynxo, mid-task](docs/screenshots/02-task.png)
 
 ---
 
@@ -34,6 +34,12 @@ inference; Wynxo is the interface.
 
 ## What it does
 
+**The workspace**
+Two columns and nothing else: the project you are in with its recent tasks on
+the left, the task itself on the right. Context, model, speed and run details
+each have exactly one home, and appear when you go to them rather than sitting
+on screen all day. Nothing rearranges itself because state changed.
+
 **Conversation**
 Streamed replies with real Markdown: headings, tables, quotes, lists and links
 set in the app's own type scale. Fenced code becomes a card with syntax
@@ -43,14 +49,16 @@ single line — *Thought for 8.2s* — instead of burying the answer.
 **Local context**
 Attach files, folders, images, the clipboard, a whole screen, a screen region
 you drag out, or the active window. Everything appears as a removable chip
-above the composer and as a preview in the inspector, so you always know
-exactly what the model can see. Drag and drop works too. Capturing for context
-uses the screenshot path only — it never asks for control of your input.
+above the composer — one place, never duplicated — so you always know exactly
+what the model can see. Image chips open a preview. Drag and drop works too.
+Capturing for context uses the screenshot path only; it never asks for control
+of your input.
 
 **Screen control**
 When enabled, a model with vision and tool calling can open applications,
-click, type, scroll and drag. Every action appears in an inline timeline with
-its status, duration and result. Escape stops everything, instantly.
+click, type, scroll and drag. Every action appears inline with the task that
+asked for it — one row each, with its state and duration, closing on a summary
+line you can read in a second. Escape stops everything, instantly.
 
 **Permission modes**
 Screen control is not a single switch:
@@ -73,15 +81,22 @@ guessing from names, and warns you *before* you send if the model cannot do
 what you are asking — no vision for the image you attached, no tool calling for
 the desktop task, or a conversation that has nearly filled the context window.
 
+**The project**
+The folder you work in is named at the top of the sidebar, carried into the
+breadcrumb, offered back to you as a recent-projects list, and given to the
+model as context so you do not have to repeat it every turn. Reveal it, open a
+terminal in it, or copy its path from the same menu.
+
 **Quick bar**
 A floating command bar (`Ctrl+Space`) that sits above other windows for a fast
 question, a screen capture, or a jump back into the full app.
 
 **Everything else**
-Command palette, conversation search, pin, rename, duplicate, branch from any
-message, edit and resend, export to Markdown, runtime presets, generation
-metrics, desktop notifications for long unattended runs, an optional tray icon,
-five accent themes, a compact density, and a reduced-motion setting.
+Command palette, full-text task search, pin, rename, duplicate, branch from any
+message, edit and resend, export to Markdown, speed presets, generation metrics
+on the answer they describe, desktop notifications for long unattended runs, an
+optional tray icon, a resizable sidebar that remembers where you left it, five
+accent themes, a compact density, and a reduced-motion setting.
 
 ---
 
@@ -92,10 +107,11 @@ Every image below is a real capture of the running Qt application, produced by
 
 | | |
 | --- | --- |
-| **New chat** — useful immediately, no marketing copy<br>![](docs/screenshots/01-new-chat.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/09-context.png) |
-| **Screen control** — inline activity timeline and a permission prompt<br>![](docs/screenshots/03-desktop-control.png) | **Settings** — eight pages, organised by intent<br>![](docs/screenshots/04-settings.png) |
-| **Models** — capabilities, size, favourites, downloads<br>![](docs/screenshots/05-model-picker.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/06-command-palette.png) |
-| **First run** — four steps, then out of your way<br>![](docs/screenshots/07-welcome.png) | **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/08-quick-bar.png) |
+| **A new task** — where you are, and what you were doing<br>![](docs/screenshots/01-new-task.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/05-context.png) |
+| **An agent run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) | **Permission** — the exact action, before it runs<br>![](docs/screenshots/04-permission.png) |
+| **Model** — switch and set the speed in one place<br>![](docs/screenshots/06-models.png) | **Model manager** — capabilities, size, favourites, downloads<br>![](docs/screenshots/07-model-manager.png) |
+| **Settings** — five sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
+| **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/10-quick-bar.png) | **First run** — four steps, then out of your way<br>![](docs/screenshots/11-welcome.png) |
 
 ---
 
@@ -170,8 +186,8 @@ Start with something small:
 
 > Open KolourPaint and draw a simple smiley face in the middle of a new canvas.
 
-Turn on **Screen control** first, from the inspector, the composer, or
-**Settings → Screen control**. On Wayland, allow the screen-sharing and input
+Turn it on first, under **Settings → Agent** — the one place it is switched.
+The header says so while it is on. On Wayland, allow the screen-sharing and input
 permissions your desktop asks for. Install the application you want it to use
 first — Wynxo discovers apps through their desktop entries and never runs a
 shell command.
@@ -232,19 +248,20 @@ specific compositor and version.
 | --- | --- |
 | Enter / Shift+Enter | Send / new line |
 | Escape | Stop generation and desktop actions |
-| Ctrl+N | New chat |
-| Ctrl+K | Search chats |
+| Ctrl+N | New task |
+| Ctrl+K | Search tasks |
 | Ctrl+Shift+P | Command palette |
 | Ctrl+Space | Quick bar |
 | Ctrl+M | Model manager |
-| Ctrl+B / Ctrl+I | Toggle sidebar / inspector |
+| Ctrl+B | Show or hide the sidebar |
 | Ctrl+R | Regenerate |
-| Ctrl+D | Duplicate chat |
-| Alt+Up / Alt+Down | Previous / next chat |
+| Ctrl+D | Duplicate task |
+| Alt+Up / Alt+Down | Previous / next task |
 | Ctrl+Shift+V | Paste an image as context |
 | Ctrl+, | Settings |
 
-These are window shortcuts, active while Wynxo has keyboard focus. Linux gives
+The same list is in the app under **Keyboard**, from the command palette or the
+overflow menu. These are window shortcuts, active while Wynxo has keyboard focus. Linux gives
 applications no portable way to claim a system-wide hotkey, so for a real
 global quick bar, bind your desktop's custom shortcut to:
 
@@ -275,7 +292,7 @@ off every transition and looping animation rather than just shortening them.
 - Conversations live in a private SQLite file at
   `~/.local/share/wynxo/history.sqlite3` (or `$XDG_DATA_HOME/wynxo`), created
   with `0600` permissions.
-- Screenshots go to your local model and are **not** written into chat history.
+- Screenshots go to your local model and are **not** written into task history.
   The Wayland portal may create its own temporary capture files.
 - No account, no API key, no telemetry, no hosted backend.
 
@@ -294,8 +311,8 @@ Layout:
 
 | Path | Responsibility |
 | --- | --- |
-| `wynxo/ui/Main.qml` | The application shell: layout, shortcuts, overlays |
-| `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~30 components |
+| `wynxo/ui/Main.qml` | The application shell: two columns, shortcuts, overlays |
+| `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~40 components |
 | `wynxo/controller.py` | Qt bridge; owns UI, Ollama, task and desktop state |
 | `wynxo/engine.py` | Ollama transport and the bounded desktop tool loop |
 | `wynxo/desktop.py` | Wayland portal and X11 backends |
@@ -321,9 +338,11 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software .venv/bin/python -m wynxo --
 To see the interface without any real history, Ollama, or desktop access:
 
 ```bash
-.venv/bin/python -m wynxo --ui-preview              # a full conversation
+.venv/bin/python -m wynxo --ui-preview              # a task with an answer
+.venv/bin/python -m wynxo --ui-preview empty        # a new task
 .venv/bin/python -m wynxo --ui-preview context      # attachments
-.venv/bin/python -m wynxo --ui-preview desktop      # screen control mid-task
+.venv/bin/python -m wynxo --ui-preview run          # a finished agent run
+.venv/bin/python -m wynxo --ui-preview desktop      # mid-run, waiting for approval
 .venv/bin/python -m wynxo --ui-preview welcome      # first run
 ```
 

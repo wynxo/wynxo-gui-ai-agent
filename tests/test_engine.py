@@ -333,3 +333,33 @@ def test_describe_still_refuses_a_remote_model(monkeypatch):
     monkeypatch.setattr(client, "_json", lambda *a, **k: {"remote_host": "https://example.com"})
     with pytest.raises(OllamaError, match="remote server"):
         client.describe("local:test")
+
+
+# ------------------------------------------------------------------ project
+# The interface makes the working folder the first thing you see, so the model
+# is told where it is rather than making the user repeat it every turn.
+
+def test_the_project_folder_reaches_the_model_as_context():
+    client = FakeClient([response("Reading it now.")])
+    run(client, project="/home/me/code/wynxo")
+    system = next(m for m in client.requests[0]["messages"] if m["role"] == "system")["content"]
+    assert "/home/me/code/wynxo" in system
+    # A location, not a grant: Wynxo still has no filesystem tool.
+    assert "cannot read it yourself" in system
+
+
+def test_no_project_folder_adds_nothing_to_the_prompt():
+    client = FakeClient([response("Sure.")])
+    run(client)
+    system = next(m for m in client.requests[0]["messages"] if m["role"] == "system")["content"]
+    assert "working in the folder" not in system
+
+
+def test_the_project_folder_is_not_a_new_tool():
+    """Naming the folder must not change what the model is allowed to do."""
+    with_project = FakeClient([response("ok")])
+    without = FakeClient([response("ok")])
+    run(with_project, project="/home/me/code")
+    run(without)
+    names = lambda client: {t["function"]["name"] for t in client.requests[0]["tools"]}
+    assert names(with_project) == names(without)

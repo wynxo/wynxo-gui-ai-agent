@@ -1,18 +1,27 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! The conversation. One column, one comfortable reading measure. */
+/*!
+    The task: one column, one comfortable reading measure.
+
+    Auto-scroll follows the newest output only while you are already at the
+    bottom. Scroll up and it stops, immediately and for good, until you come
+    back down or ask to jump — reading earlier output is never interrupted.
+*/
 ListView {
     id: list
     property bool following: true
     signal linkClicked(string link)
 
     clip: true
-    spacing: Theme.s7
-    topMargin: Theme.s6
-    bottomMargin: Theme.s6
+    spacing: Theme.s6
+    topMargin: Theme.s5
+    bottomMargin: Theme.s5
     boundsBehavior: Flickable.StopAtBounds
-    cacheBuffer: 800
+    cacheBuffer: 1200
+    reuseItems: true
+
+    readonly property bool atBottom: atYEnd || contentHeight + topMargin + bottomMargin <= height
 
     ScrollBar.vertical: ScrollBar {
         policy: ScrollBar.AsNeeded
@@ -23,9 +32,9 @@ ListView {
     }
 
     onMovementStarted: following = false
-    onMovementEnded: following = atYEnd
+    onMovementEnded: following = atBottom
     onContentHeightChanged: if (following) positionViewAtEnd()
-    onCountChanged: { following = true; positionViewAtEnd(); }
+    onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
 
     function jumpToEnd() { following = true; positionViewAtEnd(); }
 
@@ -61,7 +70,7 @@ ListView {
             UserMessage {
                 body: rowItem.body
                 row: rowItem.index
-                onEdited: function(text) { bridge && bridge.editMessage(rowItem.index, text); }
+                onEdited: function(text) { if (bridge) bridge.editMessage(rowItem.index, text); }
             }
         }
         Component {
@@ -77,14 +86,15 @@ ListView {
                 streaming: rowItem.streaming
                 thinkSeconds: rowItem.thinkSeconds
                 thinkDone: rowItem.thinkDone
+                latest: rowItem.index === list.count - 1
                 row: rowItem.index
                 onLinkClicked: function(link) { list.linkClicked(link); }
-                onBranched: bridge && bridge.branchFrom(rowItem.index)
+                onBranched: if (bridge) bridge.branchFrom(rowItem.index)
             }
         }
         Component {
             id: activityTurn
-            ToolActivity {
+            RunActivity {
                 steps: rowItem.steps
                 live: bridge && bridge.busy && rowItem.index === list.count - 1
             }
@@ -93,9 +103,6 @@ ListView {
 
     add: Transition {
         enabled: !Theme.reducedMotion
-        ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.base; easing.type: Theme.easing }
-            NumberAnimation { property: "y"; from: 12; duration: Theme.base; easing.type: Theme.easing }
-        }
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.base; easing.type: Theme.easing }
     }
 }

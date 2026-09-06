@@ -13,16 +13,16 @@ TextField {
     selectedTextColor: Theme.onAccent
     font.family: mono ? Theme.monoFamily : Theme.sansFamily
     font.pixelSize: Theme.label
-    leftPadding: iconName ? Theme.s7 : Theme.s3
+    leftPadding: iconName ? Theme.s3 + 21 : Theme.s3
     rightPadding: Theme.s3
     selectByMouse: true
+    Accessible.name: placeholderText
 
     background: Rectangle {
         radius: Theme.r2
-        color: field.activeFocus ? Theme.surfaceHover : Theme.surface
+        color: Theme.surface
         border.width: 1
         border.color: field.activeFocus ? Theme.accentEdge : Theme.borderSubtle
-        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
     }
 
@@ -30,8 +30,9 @@ TextField {
         visible: field.iconName !== ""
         name: field.iconName
         ink: field.activeFocus ? Theme.textSecondary : Theme.textMuted
-        width: 15; height: 15
+        width: 14; height: 14
         x: Theme.s3
         anchors.verticalCenter: parent.verticalCenter
+        Behavior on ink { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
     }
 }

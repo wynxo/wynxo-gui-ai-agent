@@ -189,6 +189,10 @@ class DemoController(Controller):
         self._apply_catalog()
         self._refresh_tasks()
 
+        self._working_directory = str(Path.home() / "Projects" / "wynxo-gui-ai-agent")
+        self._recent_projects = [self._working_directory,
+                                 str(Path.home() / "Projects" / "portal-bridge"),
+                                 str(Path.home() / "Projects" / "notes")]
         self._task_id = created[0]["id"]
         self._task_title = created[0]["title"]
         self._num_ctx = 16384
@@ -198,13 +202,13 @@ class DemoController(Controller):
 
         if self.scene == "welcome":
             self._task_id = ""
-            self._task_title = "New chat"
+            self._task_title = "New task"
             self._onboarded = False
             self.changed.emit()
             return
         if self.scene == "empty":
             self._task_id = ""
-            self._task_title = "New chat"
+            self._task_title = "New task"
             self.changed.emit()
             return
         if self.scene == "context":
@@ -214,6 +218,9 @@ class DemoController(Controller):
         self.messages.append_message("user", "What's on my screen? Can you help me fix it?")
         if self.scene == "desktop":
             self._seed_desktop_scene()
+            return
+        if self.scene == "run":
+            self._seed_finished_run()
             return
         self.messages.append_activity(STEPS[0])
         self.messages.update_last_step(**{k: STEPS[0][k] for k in ("state", "ms", "output")})
@@ -230,10 +237,33 @@ class DemoController(Controller):
         item["blocks"] = md.segment(ANSWER)
         self.messages._emit(row, list(Messages_roles()))
 
+    def _seed_finished_run(self):
+        """A run that is over: every step settled, one summary line."""
+        self._task_title = "Draw a mountain scene in KolourPaint"
+        finished = []
+        for step in STEPS:
+            done = dict(step)
+            if done["state"] in ("waiting", "running"):
+                done["state"] = "done"
+                done["ms"] = 240
+            finished.append(done)
+        finished[-1]["output"] = "Saved as mountains.png"
+        for step in finished:
+            self.messages.append_activity(step)
+        self._activity = [dict(step) for step in finished]
+        self.messages.append_message(
+            "assistant",
+            "Done. KolourPaint is open with a mountain scene on a 1024 × 768 canvas, "
+            "saved to **mountains.png** in your pictures folder.\n\n"
+            "The ridge line is a single drag through 24 points; the sun is a filled "
+            "ellipse. Say the word if you want the colours changed.")
+        self.activityChanged.emit()
+        self.changed.emit()
+
     def _seed_context_scene(self):
         """A new message with local context attached, ready to send."""
         self._task_id = ""
-        self._task_title = "New chat"
+        self._task_title = "New task"
         self._attachments = [
             ctx.from_capture({"ok": True, "image": _SWATCH, "width": 2560, "height": 1440},
                              ctx.SCREENSHOT, title="Screen", detail="Full screen"),
@@ -242,7 +272,6 @@ class DemoController(Controller):
             ctx.make(ctx.FOLDER, "wynxo", path="/home/you/wynxo",
                      text="ui/\ncontroller.py\nengine.py", subtitle="12 items"),
         ]
-        self._working_directory = str(Path.home() / "projects" / "wynxo")
         self.attachmentsChanged.emit()
         self.changed.emit()
 
@@ -278,13 +307,15 @@ def Messages_roles():
 
 # Scenes captured by --snapshot, in the order the README presents them.
 SCENES = [
-    ("01-new-chat", "empty", ""),
-    ("02-conversation", "conversation", ""),
-    ("03-desktop-control", "desktop", ""),
-    ("04-settings", "conversation", "settings"),
-    ("05-model-picker", "conversation", "models"),
-    ("06-command-palette", "conversation", "palette"),
-    ("07-welcome", "welcome", "welcome"),
-    ("08-quick-bar", "empty", "quickbar"),
-    ("09-context", "context", ""),
+    ("01-new-task", "empty", ""),
+    ("02-task", "conversation", ""),
+    ("03-agent-run", "run", ""),
+    ("04-permission", "desktop", ""),
+    ("05-context", "context", ""),
+    ("06-models", "conversation", "modelPicker"),
+    ("07-model-manager", "conversation", "models"),
+    ("08-settings", "conversation", "settings"),
+    ("09-command-palette", "conversation", "palette"),
+    ("10-quick-bar", "empty", "quickbar"),
+    ("11-welcome", "welcome", "welcome"),
 ]
