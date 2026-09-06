@@ -622,7 +622,7 @@ def test_a_nearly_full_context_window_is_flagged(tmp_path):
     bridge._history_tokens = 2000
     assert "nearly fills" in bridge.capabilityWarning
     bridge._history_tokens = 100
-    assert bridge.capabilityWarning == ""
+    assert "Choose a tool-capable model" in bridge.capabilityWarning
     bridge.shutdown()
 
 
@@ -972,3 +972,32 @@ def test_a_desktop_without_those_features_reports_nothing_rather_than_guessing(t
         assert bridge.desktopStopShortcut == ""
     finally:
         bridge.shutdown()
+
+
+def test_regenerate_cannot_repeat_a_local_command(tmp_path):
+    bridge = controller(tmp_path)
+    bridge._online = True
+    task = bridge.store.create_conversation("Command", bridge.model)
+    bridge._task_id = task["id"]
+    bridge._history = [
+        {"role": "user", "content": "Run a command"},
+        {"role": "assistant", "tool_calls": [{"function": {"name": "run_command", "arguments": {"command": "echo hi"}}}]},
+        {"role": "tool", "tool_name": "run_command", "content": "ok"},
+        {"role": "assistant", "content": "Done"},
+    ]
+    assert bridge.canRegenerate is False
+    before = list(bridge._history)
+    bridge.regenerate()
+    assert bridge._history == before and not bridge.busy
+    bridge.shutdown()
+
+
+def test_reopening_chat_keeps_command_output():
+    from wynxo.controller import Messages
+    import json
+    model = Messages()
+    model.replace([{"role": "tool", "tool_name": "run_command", "content": json.dumps({
+        "ok": True, "command": "printf hello", "exit_code": 0, "output": "hello"})}])
+    step = model.items[0]["steps"][0]
+    assert step["summary"] == "Run printf hello"
+    assert step["output"] == "hello"

@@ -17,17 +17,17 @@ QtObject {
     // ---------------------------------------------------------- foundation
     // Charcoal canvas, graphite surfaces, one step between each level. The
     // interface reads as one sheet of material with a few things raised on it.
-    readonly property color background:      "#171719"
-    readonly property color backgroundSoft:  "#131315"
-    readonly property color surface:         "#202023"
-    readonly property color surfaceRaised:   "#252529"
-    readonly property color surfaceHover:    "#2b2b30"
-    readonly property color surfaceSelected: "#323238"
+    readonly property color background:      "#212121"
+    readonly property color backgroundSoft:  "#171717"
+    readonly property color surface:         "#282828"
+    readonly property color surfaceRaised:   "#303030"
+    readonly property color surfaceHover:    "#343434"
+    readonly property color surfaceSelected: "#3b3b3b"
     readonly property color surfaceSunken:   "#08080a"
     readonly property color scrim:           "#cc07070a"
 
-    readonly property color borderSubtle: "#333338"
-    readonly property color borderStrong: "#46464f"
+    readonly property color borderSubtle: "#3b3b3b"
+    readonly property color borderStrong: "#515151"
 
     readonly property color textPrimary:   "#f4f2ee"
     readonly property color textSecondary: "#bbb8b1"
@@ -44,7 +44,7 @@ QtObject {
 
     readonly property color success: "#7bd69b"
     readonly property color warning: "#e6bb54"
-    readonly property color danger:  "#e8796a"
+    readonly property color danger:  "#ef8476"
     readonly property color info:    "#82a9e8"
     readonly property color successMuted: "#17231c"
     readonly property color warningMuted: "#262116"
@@ -80,7 +80,7 @@ QtObject {
     // Minimum hit target, kept at or above 32px even in compact density.
     readonly property int control: compact ? 32 : 34
     readonly property int controlSmall: compact ? 28 : 30
-    readonly property int rowHeight: compact ? 30 : 34
+    readonly property int rowHeight: compact ? 34 : 40
     readonly property int gutter: compact ? 16 : 24
     readonly property int readingWidth: 780
 
@@ -92,7 +92,7 @@ QtObject {
     readonly property int display: Math.round(34 * scale)
     readonly property int title:   Math.round(19 * scale)
     readonly property int heading: Math.round(15 * scale)
-    readonly property int body:    Math.round(14 * scale)
+    readonly property int body:    Math.round(15 * scale)
     readonly property int label:   Math.round(13 * scale)
     readonly property int caption: Math.round(12 * scale)
     readonly property int micro:   Math.round(10.5 * scale)

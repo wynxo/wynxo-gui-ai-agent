@@ -12,6 +12,7 @@ import QtQuick.Layouts
 Item {
     id: root
     property bool sidebarCollapsed: false
+    property bool drawerOpen: false
     signal toggleSidebar()
     signal renameRequested()
     signal openSettings()
@@ -28,7 +29,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.background
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.borderSubtle }
+
     }
 
     RowLayout {
@@ -38,6 +39,8 @@ Item {
         spacing: Theme.s1
 
         IconButton {
+            objectName: "headerSidebarToggle"
+            visible: root.sidebarCollapsed && !root.drawerOpen
             iconName: root.sidebarCollapsed ? "panel" : "panelLeft"
             tooltip: root.sidebarCollapsed ? "Show sidebar" : "Hide sidebar"
             shortcut: "Ctrl+B"
@@ -49,23 +52,6 @@ Item {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s2
             spacing: Theme.s2
-
-            Text {
-                visible: !!(bridge && bridge.projectName) && root.width > 620
-                text: bridge ? bridge.projectName : ""
-                color: Theme.textMuted
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.label
-                Layout.maximumWidth: Math.max(80, root.width * 0.18)
-                elide: Text.ElideMiddle
-            }
-            Text {
-                visible: !!(bridge && bridge.projectName) && root.width > 620
-                text: "/"
-                color: Theme.borderStrong
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.label
-            }
 
             AbstractButton {
                 id: titleButton
@@ -91,7 +77,7 @@ Item {
                 }
                 contentItem: Text {
                     id: titleText
-                    text: bridge ? bridge.taskTitle : "Wynxo"
+                    text: bridge && bridge.hasMessages ? bridge.taskTitle : "Wynxo"
                     color: Theme.textPrimary
                     font.family: Theme.sansFamily
                     font.pixelSize: Theme.heading

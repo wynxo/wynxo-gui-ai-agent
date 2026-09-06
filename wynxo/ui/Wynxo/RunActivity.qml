@@ -136,6 +136,7 @@ Item {
                         width: parent.width
                         visible: text !== ""
                         text: modelData.output || ""
+                        textFormat: Text.PlainText
                         color: modelData.state === "failed" ? Theme.danger : Theme.textMuted
                         font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                         wrapMode: Text.WordWrap
@@ -148,6 +149,7 @@ Item {
                         width: parent.width
                         visible: step.expanded && !!modelData.detail
                         text: modelData.detail || ""
+                        textFormat: Text.PlainText
                         color: Theme.textMuted
                         font.family: Theme.monoFamily; font.pixelSize: Theme.micro
                         wrapMode: Text.WrapAnywhere

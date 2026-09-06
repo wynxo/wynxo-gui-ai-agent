@@ -23,7 +23,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.backgroundSoft
-        Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.borderSubtle }
+
     }
 
     // ------------------------------------------------------------ expanded
@@ -40,13 +40,13 @@ Item {
             Layout.leftMargin: Theme.s2
             Layout.bottomMargin: Theme.s1
             spacing: Theme.s2
-            Mark { Layout.preferredWidth: 16; Layout.preferredHeight: 16 }
+            Mark { Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
             Text {
                 Layout.fillWidth: true
                 text: "Wynxo"
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
-                font.pixelSize: Theme.label
+                font.pixelSize: Theme.heading
                 font.weight: Font.DemiBold
                 font.letterSpacing: 0.2
                 elide: Text.ElideRight
@@ -54,13 +54,42 @@ Item {
             IconButton {
                 Layout.preferredWidth: 28; Layout.preferredHeight: 28
                 iconSize: 14
+                objectName: "sidebarCollapseButton"
                 iconName: "panelLeft"; tooltip: "Collapse sidebar"; shortcut: "Ctrl+B"
                 onClicked: root.collapseRequested(true)
             }
         }
 
+        // ------------------------------------------------------ new + find
+        WButton {
+            Layout.fillWidth: true
+            Layout.topMargin: Theme.s1
+            text: "New chat"
+            iconName: "edit"
+            variant: "ghost"
+            onClicked: root.newTask()
+            ToolTip.visible: hovered
+            ToolTip.text: "New task · Ctrl+N"
+        }
+
+        Field {
+            id: search
+            Layout.fillWidth: true
+            iconName: "search"
+            placeholderText: "Search chats"
+            font.pixelSize: Theme.caption
+            // The docked sidebar and the drawer are separate instances; both
+            // start from whatever query is already active.
+            Component.onCompleted: text = bridge ? bridge.searchQuery : ""
+            onTextChanged: if (bridge) bridge.setSearch(text)
+            Keys.onEscapePressed: function(event) {
+                if (text.length) { text = ""; event.accepted = true; }
+                else event.accepted = false;
+            }
+        }
+
         // ---------------------------------------------------------- project
-        SectionLabel { Layout.fillWidth: true; Layout.leftMargin: Theme.s2; text: "Project" }
+        SectionLabel { Layout.fillWidth: true; Layout.leftMargin: Theme.s2; text: "Workspace" }
 
         Rectangle {
             id: projectCard
@@ -164,33 +193,6 @@ Item {
             }
         }
 
-        // ------------------------------------------------------ new + find
-        WButton {
-            Layout.fillWidth: true
-            Layout.topMargin: Theme.s1
-            text: "New task"
-            iconName: "plus"
-            onClicked: root.newTask()
-            ToolTip.visible: hovered
-            ToolTip.text: "New task · Ctrl+N"
-        }
-
-        Field {
-            id: search
-            Layout.fillWidth: true
-            iconName: "search"
-            placeholderText: "Search tasks"
-            font.pixelSize: Theme.caption
-            // The docked sidebar and the drawer are separate instances; both
-            // start from whatever query is already active.
-            Component.onCompleted: text = bridge ? bridge.searchQuery : ""
-            onTextChanged: if (bridge) bridge.setSearch(text)
-            Keys.onEscapePressed: function(event) {
-                if (text.length) { text = ""; event.accepted = true; }
-                else event.accepted = false;
-            }
-        }
-
         // ----------------------------------------------------------- tasks
         ListView {
             id: groups
@@ -240,7 +242,7 @@ Item {
                 visible: groups.count === 0
                 Text {
                     width: parent.width
-                    text: bridge && bridge.searchQuery ? "Nothing matches" : "No tasks yet"
+                    text: bridge && bridge.searchQuery ? "Nothing matches" : "Your chats appear here"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                 }
@@ -330,10 +332,6 @@ Item {
             iconName: "sliders"; tooltip: "Settings"; shortcut: "Ctrl+,"
             onClicked: root.openSettings()
         }
-        IconButton {
-            Layout.alignment: Qt.AlignHCenter
-            iconName: "panel"; tooltip: "Expand sidebar"; shortcut: "Ctrl+B"
-            onClicked: root.collapseRequested(false)
-        }
+
     }
 }

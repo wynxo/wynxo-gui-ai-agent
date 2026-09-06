@@ -23,6 +23,7 @@ ApplicationWindow {
     // ------------------------------------------------------------ layout
     // One threshold, one rule: there is room for the sidebar, or there is not.
     readonly property bool roomForSidebar: width >= 900
+    onRoomForSidebarChanged: if (roomForSidebar && sidebarDrawer) sidebarDrawer.close()
     readonly property bool sidebarCollapsed: bridge ? bridge.sidebarCollapsed : false
     readonly property bool sidebarDocked: roomForSidebar
     // The width the user chose. QML owns it while the handle is being dragged
@@ -173,6 +174,7 @@ ApplicationWindow {
             TaskHeader {
                 Layout.fillWidth: true
                 sidebarCollapsed: !window.sidebarDocked || window.sidebarCollapsed
+                drawerOpen: sidebarDrawer.opened
                 onToggleSidebar: window.toggleSidebar()
                 onRenameRequested: if (bridge && bridge.taskId) renameSheet.ask(bridge.taskId, bridge.taskTitle)
                 onOpenSettings: settings.show(settings.generalPage)
@@ -190,10 +192,14 @@ ApplicationWindow {
                 Layout.bottomMargin: Theme.s4
                 spacing: Theme.s3
 
+                Item { Layout.fillHeight: true; visible: bridge && !bridge.hasMessages }
+
                 TaskView {
                     id: taskView
+                    objectName: "conversationViewport"
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.fillHeight: bridge && bridge.hasMessages
+                    Layout.preferredHeight: bridge && !bridge.hasMessages ? 120 : -1
                     onLinkClicked: function(link) { linkSheet.ask(link); }
                     onStarterChosen: function(prompt) { composer.insert(prompt); }
                 }
@@ -236,12 +242,53 @@ ApplicationWindow {
 
                 Composer {
                     id: composer
+                    objectName: "mainComposer"
                     Layout.fillWidth: true
                     Layout.maximumWidth: Theme.readingWidth
                     Layout.alignment: Qt.AlignHCenter
                     onSubmitted: function(text) { if (bridge) bridge.send(text); }
                     onOpenModelManager: models.open()
                 }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 570
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.topMargin: Theme.s2
+                    visible: bridge && !bridge.hasMessages
+                    columns: width < 560 ? 2 : 4
+                    columnSpacing: Theme.s2; rowSpacing: Theme.s2
+                    Repeater {
+                        model: bridge ? bridge.starters : []
+                        delegate: Chip {
+                            required property var modelData
+                            text: modelData.title
+                            iconName: modelData.icon
+                            Layout.fillWidth: true
+                            implicitHeight: 36
+                            background: Rectangle {
+                                radius: Theme.rPill
+                                color: parent.hovered ? Theme.surfaceHover : "transparent"
+                                border.width: 1
+                                border.color: parent.visualFocus ? Theme.accent : Theme.borderSubtle
+                            }
+                            onClicked: composer.insert(modelData.prompt)
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.alignment: Qt.AlignHCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    text: bridge && bridge.projectPath ? "Working in " + bridge.projectName
+                          : "Local AI · Commands, apps, and everyday questions"
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    elide: Text.ElideMiddle
+                }
+                Item { Layout.fillHeight: true; visible: bridge && !bridge.hasMessages }
             }
         }
     }

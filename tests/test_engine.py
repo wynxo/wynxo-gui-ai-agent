@@ -185,11 +185,11 @@ def test_tool_roundtrip_preserves_thinking_calls_and_image():
     assert all("image" not in e.get("result", {}) for e in events)
 
 
-def test_desktop_off_never_exposes_or_executes_tools():
+def test_desktop_off_exposes_local_tools_without_screen_access():
     client = FakeClient([response("I can help explain.")])
     history, events, desktop = run(client, desktop_enabled=False)
     assert desktop.calls == []
-    assert "tools" not in client.requests[0]
+    assert {t["function"]["name"] for t in client.requests[0]["tools"]} == {"open_app", "list_apps", "wait", "run_command"}
     assert not any(m.get("images") for m in history)
 
 
@@ -197,7 +197,7 @@ def test_nonvision_model_can_only_launch_apps():
     client = FakeClient([response("App launching only.")], ["tools"])
     _, _, desktop = run(client)
     assert desktop.calls == []
-    assert {t["function"]["name"] for t in client.requests[0]["tools"]} == {"open_app", "list_apps", "wait"}
+    assert {t["function"]["name"] for t in client.requests[0]["tools"]} == {"open_app", "list_apps", "wait", "run_command"}
 
 
 def test_screenshot_failure_removes_visual_tools():
@@ -344,8 +344,7 @@ def test_the_project_folder_reaches_the_model_as_context():
     run(client, project="/home/me/code/wynxo")
     system = next(m for m in client.requests[0]["messages"] if m["role"] == "system")["content"]
     assert "/home/me/code/wynxo" in system
-    # A location, not a grant: Wynxo still has no filesystem tool.
-    assert "cannot read it yourself" in system
+    assert "run_command defaults to this working directory" in system
 
 
 def test_no_project_folder_adds_nothing_to_the_prompt():
@@ -363,3 +362,41 @@ def test_the_project_folder_is_not_a_new_tool():
     run(without)
     names = lambda client: {t["function"]["name"] for t in client.requests[0]["tools"]}
     assert names(with_project) == names(without)
+
+
+def test_local_app_launch_works_with_screen_control_disconnected():
+    client = FakeClient([response(calls=[("open_app", {"app": "org.kde.kcalc.desktop"})]), response("Launched.")])
+    desktop = FakeDesktop()
+    desktop.connected = False
+    history, events, desktop = run(client, desktop, desktop_enabled=False)
+    assert desktop.calls == [("open_app", {"app": "org.kde.kcalc.desktop"})]
+    assert history[-1]["content"] == "Launched."
+    assert not any(m.get("images") for m in history)
+
+
+def test_command_output_returns_to_the_model_without_screen_control(tmp_path):
+    client = FakeClient([response(calls=[("run_command", {"command": "printf copilot; pwd"})]), response("Done.")])
+    desktop = FakeDesktop()
+    desktop.connected = False
+    history, _, _ = run(client, desktop, desktop_enabled=False, project=str(tmp_path))
+    result = json.loads(next(m for m in history if m["role"] == "tool")["content"])
+    assert result["ok"] and result["exit_code"] == 0
+    assert "copilot" in result["output"] and str(tmp_path) in result["output"]
+    assert desktop.calls == []
+
+
+def test_model_without_tools_gets_no_execution_tools():
+    client = FakeClient([response("Hello.")], ["completion"])
+    _, _, desktop = run(client, desktop_enabled=False)
+    assert "tools" not in client.requests[0]
+    assert desktop.calls == []
+
+
+def test_declined_command_never_creates_file(tmp_path):
+    target = tmp_path / "should-not-exist"
+    client = FakeClient([response(calls=[("run_command", {"command": "touch should-not-exist"})]), response("Declined.")])
+    history, _, _ = run(client, desktop_enabled=False, project=str(tmp_path),
+                        permission_mode="ask", confirm=lambda *args: False)
+    assert not target.exists()
+    result = json.loads(next(m for m in history if m["role"] == "tool")["content"])
+    assert result["declined"] is True

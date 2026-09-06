@@ -4,9 +4,9 @@ import QtQuick
 Text {
     color: Theme.textMuted
     font.family: Theme.sansFamily
-    font.pixelSize: Theme.micro
+    font.pixelSize: Theme.caption
     font.weight: Font.Medium
-    font.letterSpacing: 0.9
-    font.capitalization: Font.AllUppercase
+    font.letterSpacing: 0
+    font.capitalization: Font.MixedCase
     elide: Text.ElideRight
 }

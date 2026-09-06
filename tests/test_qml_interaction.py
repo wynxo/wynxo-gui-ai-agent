@@ -66,3 +66,18 @@ def test_long_messages_leave_room_for_accessible_actions(measured):
     assert measured["message_height"] > 100
     assert measured["message_actions_left"] >= 0
     assert measured["message_actions_visible"] is True
+
+
+def test_shell_has_one_sidebar_toggle_and_no_composer_overlap():
+    environment = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"}
+    result = subprocess.run([sys.executable, str(PROBE.with_name("shell_probe.py"))],
+                            capture_output=True, text=True, timeout=30, env=environment)
+    assert result.returncode == 0, result.stderr
+    assert "ReferenceError" not in result.stderr, result.stderr
+    assert "Binding loop" not in result.stderr, result.stderr
+    states = json.loads(result.stdout.strip().splitlines()[-1])
+    assert len(states) == 6
+    for state in states:
+        assert state["toggles"] == 1, state
+        assert state["composer_inside"], state
+        assert state["no_overlap"], state

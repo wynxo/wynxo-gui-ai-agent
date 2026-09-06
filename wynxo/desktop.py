@@ -321,6 +321,12 @@ class DesktopController:
             if name == "list_apps":
                 apps = [{k: v for k, v in a.items() if k != "path"} for a in _application_inventory()]
                 return {"ok": True, "apps": apps}
+            if name == "open_app":
+                self._open_app(args, cancel)
+                return {"ok": True, "action": name, "app": args["app"]}
+            if name == "wait":
+                _pause(_number(args.get("seconds", 1), "seconds", 0, 5), cancel)
+                return {"ok": True, "action": name}
             self._permission(cancel)
             if name == "screenshot":
                 picture = self._backend.screenshot(cancel)
@@ -331,12 +337,7 @@ class DesktopController:
                     self._pointer = None
                 self._size = picture.size
                 return _png_result(picture, self._backend.name)
-            if name == "wait":
-                seconds = _number(args.get("seconds", 1), "seconds", 0, 10)
-                _pause(seconds, cancel)
-            elif name == "open_app":
-                self._open_app(args, cancel)
-            elif name == "move_pointer":
+            if name == "move_pointer":
                 self._glide(*self._point(args), cancel=cancel)
             elif name == "click":
                 point = self._point(args)
@@ -437,7 +438,7 @@ class DesktopController:
         launcher = shutil.which("gio")
         if not launcher:
             raise DesktopError("Install libglib2.0-bin (gio) to launch applications.")
-        self._permission(cancel)
+        _check(cancel)
         # gio interprets the installed desktop entry; model text never becomes
         # an executable, a shell expression, a file path, or a command argument.
         process = subprocess.run([launcher, "launch", matches[0]["path"]],

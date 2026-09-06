@@ -141,8 +141,8 @@ class DesktopTests(unittest.TestCase):
                 self.desktop.execute(name, args, self.cancel)
         self.assertEqual(self.backend.events, [])
 
-    def test_launches_only_inventory_entry_without_a_shell(self):
-        self.enabled()
+    def test_launches_only_inventory_entry_without_screen_control_or_shell(self):
+        self.assertFalse(self.desktop.status()["connected"])
         inventory = [{"id": "org.kde.kolourpaint.desktop", "name": "KolourPaint",
                       "description": "Paint", "path": "/usr/share/applications/org.kde.kolourpaint.desktop"}]
         with patch("wynxo.desktop._application_inventory", return_value=inventory), \

@@ -99,6 +99,7 @@ TOOL_PRESENTATION = {
     "screenshot": ("eye", "Inspecting the screen"),
     "list_apps": ("grid", "Listing installed apps"),
     "open_app": ("launch", "Opening an application"),
+    "run_command": ("terminal", "Running a command"),
     "click": ("cursor", "Clicking"),
     "move_pointer": ("cursor", "Moving the pointer"),
     "drag": ("paint", "Dragging"),
@@ -109,18 +110,10 @@ TOOL_PRESENTATION = {
 }
 
 STARTERS = [
-    {"icon": "search", "title": "Explain this project",
-     "prompt": "Look at the folder I am working in and explain how it is organised: what the main "
-               "entry points are, what each top-level directory is for, and where I should start reading."},
-    {"icon": "bug", "title": "Debug a failure",
-     "prompt": "I will paste an error or a failing test. Work out the most likely cause first, "
-               "explain the reasoning briefly, then give me the smallest fix."},
-    {"icon": "code", "title": "Review a file",
-     "prompt": "I am attaching a file. Review it for correctness and clarity, list what you would "
-               "change in priority order, and show the diff for the first change."},
-    {"icon": "eye", "title": "Read my screen",
-     "prompt": "Look at my screen and summarise what is open and what I appear to be working on. "
-               "Do not change anything."},
+    {"title": "Open an app", "icon": "launch", "prompt": "Open KCalc for me."},
+    {"title": "Run a command", "icon": "terminal", "prompt": "Check my disk space and explain what you find."},
+    {"title": "Help me code", "icon": "code", "prompt": "Inspect this project and help me understand how it works."},
+    {"title": "Read my screen", "icon": "eye", "prompt": "What is on my screen? Help me with it."},
 ]
 
 
@@ -224,11 +217,14 @@ class Messages(QAbstractListModel):
             result = json.loads(message.get("content", "{}"))
         except (ValueError, TypeError):
             result = {}
+        if not isinstance(result, dict):
+            result = {}
         failed = bool(result.get("error")) or result.get("ok") is False
-        return {"name": name, "icon": icon, "label": label, "summary": "",
+        summary = action_summary(name, result) if name in {"run_command", "open_app"} else ""
+        return {"name": name, "icon": icon, "label": label, "summary": summary,
                 "detail": str(result.get("error") or "")[:200],
                 "state": "declined" if result.get("declined") else ("failed" if failed else "done"),
-                "ms": 0, "output": ""}
+                "ms": 0, "output": str(result.get("output") or result.get("error") or "")[:32000]}
 
     def append_message(self, kind: str, body: str = "", thought: str = "", streaming: bool = False) -> int:
         row = len(self.items)
@@ -572,7 +568,7 @@ class Controller(QObject):
         if tools and vision:
             return "Ready for visual desktop control: this model advertises both tools and vision."
         if tools:
-            return "This model can use non-visual desktop tools, but mouse and keyboard control needs vision too."
+            return "Local commands and app launching are ready. Screen interaction also needs vision."
         return "Chat is available, but this model does not advertise desktop tool calling."
 
     @Property(str, notify=changed)
@@ -582,15 +578,15 @@ class Controller(QObject):
             return ""
         if ctx.needs_vision(self._attachments) and "vision" not in self._model_capabilities:
             return f"{self._model} cannot read images. Attached pictures will be ignored — pick a vision model to use them."
-        if self.desktopEnabled and "tools" not in self._model_capabilities:
-            return f"{self._model} does not advertise tool calling, so it cannot control your desktop. Chat still works."
+        if self.contextFraction > 0.92:
+            return ("This conversation nearly fills the model's context window. Start a new chat, "
+                    "or switch to the Deep runtime preset for more room.")
+        if "tools" not in self._model_capabilities:
+            return f"{self._model} does not advertise tool calling. Choose a tool-capable model to run commands or open apps."
         if self.desktopEnabled and "vision" not in self._model_capabilities:
             return f"{self._model} has no vision, so it can open apps but cannot click or type based on what is on screen."
         if self._think and "thinking" not in self._model_capabilities:
             return f"{self._model} does not support thinking, so that setting is ignored for this model."
-        if self.contextFraction > 0.92:
-            return ("This conversation nearly fills the model's context window. Start a new chat, "
-                    "or switch to the Deep runtime preset for more room.")
         return ""
 
     @Property(bool, notify=changed)
@@ -646,9 +642,9 @@ class Controller(QObject):
     @Property("QVariantList", constant=True)
     def permissionModes(self):
         return [
-            {"id": ASK, "label": "Ask", "detail": "Approve every desktop action before it runs."},
-            {"id": SAFE, "label": "Safe auto", "detail": "Run low-risk actions; confirm typing and key presses."},
-            {"id": AUTO, "label": "Auto", "detail": "Run desktop actions without interrupting you."},
+            {"id": ASK, "label": "Ask", "detail": "Approve commands and desktop actions before they run."},
+            {"id": SAFE, "label": "Safe auto", "detail": "Open apps directly; confirm commands, typing and key presses."},
+            {"id": AUTO, "label": "Auto", "detail": "Run commands and desktop actions without interrupting you."},
         ]
     @Property(bool, notify=permissionChanged)
     def permissionPending(self): return self._pending_permission is not None
@@ -766,9 +762,17 @@ class Controller(QObject):
         return f"{used / 1000:.1f}K / {self._num_ctx // 1024}K context" if used > 999 else \
                f"{used} / {self._num_ctx // 1024}K context"
 
+    def _last_turn_used_tools(self):
+        for message in reversed(self._history):
+            if message.get("role") == "user":
+                return False
+            if message.get("tool_calls") or message.get("role") == "tool":
+                return True
+        return False
+
     @Property(bool, notify=changed)
     def canRegenerate(self):
-        return bool(self._task_id and self._history and not self._busy and self._online and not self.desktopEnabled)
+        return bool(self._task_id and self._history and not self._busy and self._online and not self.desktopEnabled and not self._last_turn_used_tools())
     @Property(bool, notify=changed)
     def taskPinned(self):
         return any(item.get("id") == self._task_id and bool(item.get("pinned")) for item in self._tasks)
@@ -1381,6 +1385,9 @@ class Controller(QObject):
         if self.desktopEnabled:
             self.toast.emit("Turn off screen control before regenerating so actions are not repeated.")
             return
+        if self._last_turn_used_tools():
+            self.toast.emit("This reply ran actions. Send a follow-up to avoid repeating them accidentally.")
+            return
         history = list(self._history)
         while history and history[-1].get("role") != "user":
             history.pop()
@@ -1709,7 +1716,7 @@ class Controller(QObject):
         self._permission_answer = False
         self._pending_permission = {
             "tool": name, "risk": risk, "summary": action_summary(name, args),
-            "detail": json.dumps(args, ensure_ascii=False)[:240] if args else "",
+            "detail": json.dumps(args, ensure_ascii=False) if args else "",
         }
         self.permissionChanged.emit()
         allowed = self._permission_event.wait(self.PERMISSION_TIMEOUT)
@@ -1789,11 +1796,13 @@ class Controller(QObject):
             failed = bool(result.get("error")) or result.get("ok") is False
             state = "declined" if event.get("declined") else ("failed" if failed else "done")
             output = str(result.get("error") or "")
+            if result.get("output"):
+                output = str(result["output"]) + ("\n" + output if output else "")
             if not output and result.get("apps"):
                 output = f"{len(result['apps'])} applications found"
             elif not output and result.get("width"):
                 output = f"Captured {result['width']} × {result['height']} pixels"
-            patch = {"state": state, "ms": int(event.get("ms", 0) or 0), "output": output[:300]}
+            patch = {"state": state, "ms": int(event.get("ms", 0) or 0), "output": output[:32000]}
             self.messages.update_last_step(**patch)
             if self._activity:
                 self._activity[-1] = {**self._activity[-1], **patch}

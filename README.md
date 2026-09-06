@@ -35,10 +35,10 @@ inference; Wynxo is the interface.
 ## What it does
 
 **The workspace**
-Two columns and nothing else: the project you are in with its recent tasks on
-the left, the task itself on the right. Context, model, speed and run details
-each have exactly one home, and appear when you go to them rather than sitting
-on screen all day. Nothing rearranges itself because state changed.
+A chat-first layout: conversations and the optional workspace folder on the
+left, a centered composer for new chats, and a readable conversation on the
+right. One sidebar toggle stays visible across expanded, collapsed and narrow
+window layouts. Context and model controls live in the composer.
 
 The charcoal interface uses softer conversation cards, a spacious composer,
 and a welcome screen with responsive task starters. Copy and edit actions stay
@@ -58,6 +58,14 @@ what the model can see. Image chips open a preview. Drag and drop works too.
 Capturing for context uses the screenshot path only; it never asks for control
 of your input.
 
+**Local copilot**
+Ask “Open KCalc” or “Check my disk space”. A tool-capable model can discover
+and launch installed apps, run Bash commands, inspect files and help with code
+without screen-control permission. Commands return their output and exit code,
+run in the selected workspace (or home folder), and stop on cancellation or
+timeout. Output is capped at 32 KB; commands default to 60 seconds, with a
+maximum of 300 seconds. There is no interactive stdin or automatic elevation.
+
 **Screen control**
 When enabled, a model with vision and tool calling can open applications,
 click, type, scroll and drag. Every action appears inline with the task that
@@ -66,16 +74,16 @@ line you can read in a second. The pointer travels rather than teleporting,
 so you can see what it is about to do — and Escape stops it.
 
 **Permission modes**
-Screen control is not a single switch:
+Local commands and screen actions share the selected approval mode:
 
 | Mode | Behaviour |
 | --- | --- |
-| Ask | Approve every desktop action before it runs |
-| Safe auto *(default)* | Run low-risk actions; confirm typing and key presses |
-| Auto | Run desktop actions without interrupting you |
+| Ask | Approve commands and non-observation desktop actions |
+| Safe auto *(default)* | Open apps directly; confirm commands, typing and key presses |
+| Auto | Run commands and desktop actions without interrupting you |
 
 Reading the screen and moving the pointer never prompt — they change nothing.
-Typing and key chords can save, send or delete in whatever has focus, so they
+Commands, typing and key chords can save, send or delete in whatever has focus, so they
 stay behind a prompt unless you choose Auto.
 
 **Models**
@@ -87,9 +95,9 @@ what you are asking — no vision for the image you attached, no tool calling fo
 the desktop task, or a conversation that has nearly filled the context window.
 
 **The project**
-The folder you work in is named at the top of the sidebar, carried into the
-breadcrumb, offered back to you as a recent-projects list, and given to the
-model as context so you do not have to repeat it every turn. Reveal it, open a
+The workspace folder is available in the sidebar and below the composer,
+offered back to you as a recent-projects list, and used as the default working
+directory for commands so you do not have to repeat it every turn. Reveal it, open a
 terminal in it, or copy its path from the same menu.
 
 **Quick bar**
@@ -168,7 +176,7 @@ What a model can do depends on the capabilities Ollama reports for it:
 | Capability | What Wynxo can do |
 | --- | --- |
 | Chat | Stream answers and save conversations |
-| Tools | Discover and launch installed applications |
+| Tools | Run local commands, work with files, discover and launch apps |
 | Vision | Read screenshots and images you attach |
 | Vision + tools | Full screen control: click, type, scroll, drag |
 | Thinking | Show the model's reasoning before its answer |
@@ -196,7 +204,7 @@ The header says so while it is on. On Wayland, allow the screen-sharing and inpu
 permissions your desktop asks for; Wynxo asks the portal to remember them, so a
 desktop that supports session persistence will not ask again. Install the
 application you want it to use first — Wynxo discovers apps through their
-desktop entries and never runs a shell command.
+desktop entries. App launching works independently of screen control.
 
 While it works, the actions appear inline with the task, each with its state
 and duration. The pointer travels to where it is going rather than teleporting,
@@ -211,7 +219,7 @@ different key from the one requested; whichever it assigns is shown under
 **Settings → Agent**. On a desktop without that portal, screen control still
 works and Escape in the Wynxo window still stops it.
 
-Safety, unchanged from earlier releases and extended in this one:
+Execution behavior:
 
 - Screen control starts **off** every time Wynxo opens, remembered permission
   or not: persistence removes the prompt, never the switch.
@@ -221,8 +229,11 @@ Safety, unchanged from earlier releases and extended in this one:
   the UI, even while an action is in flight.
 - Every run has an action budget (20 by default); Wynxo stops and asks rather
   than running indefinitely.
-- The model is never given a shell. Applications are launched through `gio`
-  from their installed desktop entry.
+- Commands use a dedicated Bash runner with captured output and process-group
+  cancellation. They follow the selected approval mode. GUI applications use
+  `gio` with their installed desktop entry.
+- Regenerate is disabled for replies that ran tools, to avoid repeating actions
+  accidentally; send a follow-up when you want another run.
 - Screen text and tool results are treated as untrusted data, never as
   instructions.
 - A permission prompt that times out, is dismissed, or is interrupted by
@@ -343,6 +354,7 @@ Layout:
 | `wynxo/ui/Main.qml` | The application shell: two columns, shortcuts, overlays |
 | `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~40 components |
 | `wynxo/controller.py` | Qt bridge; owns UI, Ollama, task and desktop state |
+| `wynxo/commands.py` | Local Bash execution, bounded output, timeout and cancellation |
 | `wynxo/engine.py` | Ollama transport and the bounded desktop tool loop |
 | `wynxo/desktop.py` | Wayland portal and X11 backends |
 | `wynxo/markdown.py` | Message segmentation, highlighting, Markdown rendering |

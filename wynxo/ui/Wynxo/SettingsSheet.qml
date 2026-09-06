@@ -308,6 +308,10 @@ Sheet {
                     Column {
                         spacing: Theme.s6
                         Group {
+                            title: "Local copilot"
+                            description: "Ask Wynxo to open apps, run commands, inspect files or help with code. Local tools work without screen control. Commands run in your workspace folder, or your home folder when none is selected. Choose how actions are approved below."
+                        }
+                        Group {
                             title: "Screen control"
                             description: "Wynxo can see your screen and use your mouse and keyboard. It starts off every time Wynxo opens."
                             Row {

@@ -140,15 +140,23 @@ Popup {
                 }
                 MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
             }
-            Text {
+            ScrollView {
                 Layout.fillWidth: true
+                Layout.preferredHeight: 100
                 visible: prompt.showDetails
-                text: bridge ? bridge.permissionDetail : ""
-                color: Theme.textMuted
-                font.family: Theme.monoFamily; font.pixelSize: Theme.micro
-                wrapMode: Text.WrapAnywhere
-                maximumLineCount: 5
-                elide: Text.ElideRight
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                TextArea {
+                    text: bridge ? bridge.permissionDetail : ""
+                    readOnly: true
+                    selectByMouse: true
+                    textFormat: TextEdit.PlainText
+                    color: Theme.textSecondary
+                    font.family: Theme.monoFamily; font.pixelSize: Theme.caption
+                    wrapMode: TextEdit.WrapAnywhere
+                    background: Item {}
+                    Accessible.name: "Exact action arguments"
+                }
             }
         }
 

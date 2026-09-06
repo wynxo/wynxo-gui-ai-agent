@@ -53,7 +53,7 @@ def run(script, mode, confirm, capabilities=("completion", "tools", "vision")):
     ("screenshot", "low"), ("move_pointer", "low"), ("scroll", "low"),
     ("list_apps", "low"), ("wait", "low"),
     ("click", "normal"), ("drag", "normal"), ("open_app", "normal"),
-    ("type_text", "sensitive"), ("press_key", "sensitive"),
+    ("type_text", "sensitive"), ("press_key", "sensitive"), ("run_command", "sensitive"),
 ])
 def test_every_tool_has_a_deliberate_risk_level(name, risk):
     assert action_risk(name) == risk
@@ -179,3 +179,9 @@ def test_session_event_reports_the_active_mode():
     session = next(event for event in events if event["type"] == "session")
     assert session["permission_mode"] == SAFE
     assert session["visual"] is True
+
+
+def test_commands_follow_the_selected_approval_mode():
+    assert needs_confirmation("run_command", ASK)
+    assert needs_confirmation("run_command", SAFE)
+    assert not needs_confirmation("run_command", AUTO)

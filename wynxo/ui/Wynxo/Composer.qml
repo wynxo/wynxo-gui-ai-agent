@@ -51,10 +51,10 @@ Item {
         id: shell
         width: parent.width
         height: content.implicitHeight + Theme.s3 * 2
-        radius: Theme.r4
-        color: Theme.surface
+        radius: 26
+        color: Theme.surfaceRaised
         border.width: 1
-        border.color: input.activeFocus ? Theme.accentEdge : Theme.borderStrong
+        border.color: input.activeFocus ? Theme.borderStrong : Theme.borderSubtle
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.base } }
 
         ColumnLayout {
@@ -127,7 +127,7 @@ Item {
                     onTextChanged: if (bridge) bridge.setDraft(text)
                     placeholderText: bridge && bridge.desktopEnabled
                                      ? "Describe what to do on your screen…"
-                                     : "Ask anything, or describe a task…"
+                                     : "Ask anything"
                     placeholderTextColor: Theme.textMuted
                     color: Theme.textPrimary
                     selectionColor: Theme.accent
@@ -315,7 +315,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             visible: parent.containsDrag
-            radius: Theme.r4
+            radius: 26
             color: Theme.accentMuted
             border.width: 1
             border.color: Theme.accentEdge
