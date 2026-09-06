@@ -130,3 +130,35 @@ def test_search_matches_titles_and_message_bodies(tmp_path):
     assert len(store.search("")) == 2
     assert store.search("nothing here") == []
     store.close()
+
+
+def test_search_reads_text_not_the_encoding_that_holds_it(tmp_path):
+    """The scan used to run LIKE over the stored JSON, so the encoding's own
+    keys were findable and a `%` in the query matched every conversation."""
+    store = Store(tmp_path / "history.sqlite3")
+    for index in range(5):
+        store.create_conversation(f"Matching title {index}")
+    assert len(store.search("Matching", limit=2)) == 2
+    assert store.search("Matching", limit=0) == []
+    assert store.search("", limit=-1) == []
+
+    special = store.create_conversation("Other")
+    store.set_messages(special["id"], [
+        {"role": "user", "content": "100% a_b Straße ПРИВЕТ"},
+        {"role": "assistant", "content": "Later reply"},
+    ])
+    # Literal characters, not SQL wildcards; case folding, not ASCII lowering.
+    for query in ("%", "a_b", "STRASSE", "привет"):
+        assert [item["id"] for item in store.search(query)] == [special["id"]], query
+    # A JSON key is not content.
+    assert store.search("role") == []
+    store.close()
+
+
+def test_a_payload_that_is_not_an_object_does_not_break_the_preview(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    task = store.create_conversation("Odd")
+    with store._lock, store._db:
+        store._db.execute("INSERT INTO messages VALUES (?,?,?)", (task["id"], 0, '"just a string"'))
+    assert store.list_conversations()[0]["preview"] == ""
+    store.close()

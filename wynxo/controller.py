@@ -349,6 +349,7 @@ class Controller(QObject):
     tasksChanged = Signal()
     activityChanged = Signal()
     attachmentsChanged = Signal()
+    draftChanged = Signal()
     regionChanged = Signal()
     paletteChanged = Signal()
     catalogChanged = Signal()
@@ -443,6 +444,9 @@ class Controller(QObject):
         self._error_actions: list[dict] = []
         self._activity: list[dict] = []
         self._attachments: list[dict] = []
+        # What you had typed, per task, so moving between them loses nothing.
+        self._draft_text = ""
+        self._drafts: dict[str, tuple[str, list[dict]]] = {}
         self._history: list[dict] = []
         self._task_id = ""
         self._task_title = "New task"
@@ -786,14 +790,14 @@ class Controller(QObject):
     DEEP_SEARCH_LENGTH = 3
 
     def _matching_tasks(self) -> list[dict]:
-        needle = self._search.strip().lower()
+        needle = self._search.strip().casefold()
         if not needle:
             return self._tasks
         if len(needle) >= self.DEEP_SEARCH_LENGTH:
-            return self.store.search(needle)
+            return self.store.search(needle, limit=max(1, len(self._tasks)))
         return [task for task in self._tasks
-                if needle in str(task.get("title", "")).lower()
-                or needle in str(task.get("preview", "")).lower()]
+                if needle in str(task.get("title", "")).casefold()
+                or needle in str(task.get("preview", "")).casefold()]
 
     def _grouped_tasks(self) -> list[dict]:
         buckets: dict[str, list] = {}
@@ -1148,11 +1152,33 @@ class Controller(QObject):
         self._run_metrics = _blank_metrics()
         self._status = "Ready when you are"
 
+    @Property(str, notify=draftChanged)
+    def draftText(self): return self._draft_text
+
+    @Slot(str)
+    def setDraft(self, text):
+        self._draft_text = str(text)
+
+    def _save_draft(self):
+        """Park what is in the composer against the task being left."""
+        if self._draft_text or self._attachments:
+            self._drafts[self._task_id] = (self._draft_text, list(self._attachments))
+        else:
+            self._drafts.pop(self._task_id, None)
+
+    def _restore_draft(self):
+        text, attachments = self._drafts.pop(self._task_id, ("", []))
+        self._draft_text = text
+        self._attachments = attachments
+        self.draftChanged.emit()
+        self.attachmentsChanged.emit()
+
     @Slot()
     def newTask(self):
         if self._busy:
             self.toast.emit("Stop the current task before starting another.")
             return
+        self._save_draft()
         self._task_id = ""
         self._task_title = "New task"
         self._history = []
@@ -1160,7 +1186,8 @@ class Controller(QObject):
         self.messages.replace([])
         self._reset_run_state()
         self._clear_error()
-        self.clearAttachments()
+        self.cancelRegion()
+        self._restore_draft()
         self.activityChanged.emit()
         self.changed.emit()
         self.focusComposer.emit()
@@ -1173,8 +1200,17 @@ class Controller(QObject):
         task = self.store.get_conversation(task_id)
         if not task:
             return
+        # Moving to another task must not carry the last one's draft, half-made
+        # region capture or error banner with it.
+        switching = task_id != self._task_id
+        if switching:
+            self._save_draft()
+            self.cancelRegion()
+        self._clear_error()
         self._task_id = task_id
         self._task_title = task["title"]
+        if switching:
+            self._restore_draft()
         self._history = self.store.get_messages(task_id)
         self.messages.replace(self._history)
         self._recount_history_tokens()
@@ -1188,7 +1224,10 @@ class Controller(QObject):
         if self._busy:
             return
         self.store.delete_conversation(task_id)
+        self._drafts.pop(task_id, None)
         if task_id == self._task_id:
+            self._draft_text = ""
+            self.clearAttachments()
             self.newTask()
         self._refresh_tasks()
         self.toast.emit("Chat deleted")
@@ -1199,7 +1238,7 @@ class Controller(QObject):
             return
         self.store.rename_conversation(task_id, str(title).strip()[:200])
         if task_id == self._task_id:
-            self._task_title = str(title).strip()[:120]
+            self._task_title = str(title).strip()[:200]
         self._refresh_tasks()
         self.changed.emit()
 
@@ -1608,6 +1647,9 @@ class Controller(QObject):
                             [{"label": "Retry", "action": "retry"},
                              {"label": "Connection settings", "action": "settings"}])
             return
+        self._drafts.pop(self._task_id, None)
+        self._draft_text = ""
+        self.draftChanged.emit()
         if not self._task_id:
             task = self.store.create_conversation(derive_title(text), self._model)
             self._task_id, self._task_title = task["id"], task["title"]

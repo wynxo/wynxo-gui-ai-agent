@@ -83,6 +83,8 @@ class Store:
             message = json.loads(payload)
         except (ValueError, TypeError):
             return ""
+        if not isinstance(message, dict):
+            return ""
         role = message.get("role", "")
         if role == "tool":
             return "Desktop actions"
@@ -102,23 +104,32 @@ class Store:
         return rows
 
     def search(self, query: str, limit: int = 60) -> list[dict]:
-        """Conversations whose title or message text contains ``query``."""
-        needle = str(query or "").strip().lower()
+        """Conversations whose title or message text contains ``query``.
+
+        The message scan reads decoded text rather than the stored JSON, so a
+        query never matches the encoding itself — "content" and "role" are
+        words a person might search for, and `%` is a character they might
+        type, not a wildcard.
+        """
+        limit = max(0, int(limit))
+        if not limit:
+            return []
+        needle = str(query or "").strip().casefold()
         if not needle:
             return self.list_conversations()[:limit]
         results = []
         for conversation in self.list_conversations():
-            if needle in conversation["title"].lower() or needle in conversation["preview"].lower():
-                results.append({**conversation, "match": "title"})
-                continue
-            with self._lock:
-                rows = self._db.execute(
-                    "SELECT payload FROM messages WHERE conversation_id=? AND lower(payload) LIKE ? LIMIT 1",
-                    (conversation["id"], f"%{needle}%")).fetchone()
-            if rows:
-                results.append({**conversation, "match": "message"})
-            if len(results) >= limit:
-                break
+            match = "title" if needle in conversation["title"].casefold() else ""
+            if not match:
+                for message in self.get_messages(conversation["id"]):
+                    if any(needle in str(message.get(field, "")).casefold()
+                           for field in ("content", "thinking")):
+                        match = "message"
+                        break
+            if match:
+                results.append({**conversation, "match": match})
+                if len(results) >= limit:
+                    break
         return results
 
     def get_conversation(self, conversation_id: str) -> dict | None:

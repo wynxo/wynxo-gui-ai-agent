@@ -24,6 +24,14 @@ Item {
     // Opened from here by the preview runner, so the picker can be captured
     // the same way every other surface is.
     function showModelPicker() { modelButton.showPicker(); }
+
+    // What you typed belongs to the task you typed it in, so switching tasks
+    // parks it rather than throwing it away.
+    Connections {
+        target: bridge
+        function onDraftChanged() { input.text = bridge.draftText; }
+    }
+    Component.onCompleted: if (bridge) input.text = bridge.draftText
     function insert(prompt) {
         input.text = prompt;
         input.cursorPosition = input.length;
@@ -116,6 +124,7 @@ Item {
                 TextArea {
                     id: input
                     objectName: "composer"
+                    onTextChanged: if (bridge) bridge.setDraft(text)
                     placeholderText: bridge && bridge.desktopEnabled
                                      ? "Describe what to do on your screen…"
                                      : "Ask Wynxo to inspect, change, build or explain…"
