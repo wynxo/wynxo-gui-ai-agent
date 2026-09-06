@@ -218,7 +218,8 @@ def _park_cursor():
 
 def _snapshot(app, engine, controller, directory: Path, scenes):
     """Walk every scene, rebuilding demo state and grabbing the real window."""
-    from PySide6.QtCore import QTimer
+    from PySide6.QtCore import QTimer, Qt
+    from PySide6.QtTest import QTest
     from .demo import DemoController
     directory.mkdir(parents=True, exist_ok=True)
     root = engine.rootObjects()[0]
@@ -241,8 +242,20 @@ def _snapshot(app, engine, controller, directory: Path, scenes):
         QTimer.singleShot(500, lambda: apply_overlay(name, overlay))
 
     def apply_overlay(name, overlay):
-        root.setProperty("previewOverlay", overlay)
-        QTimer.singleShot(900, lambda: capture(name))
+        # Mode previews go through the real keyboard shortcuts instead of
+        # reaching into QML internals. That exercises the same Chat/Work/Codex
+        # switching path a user does and keeps screenshot scenes honest.
+        if overlay in ("modeChat", "modeWork", "modeCodex"):
+            key = {
+                "modeChat": Qt.Key_1,
+                "modeWork": Qt.Key_2,
+                "modeCodex": Qt.Key_3,
+            }[overlay]
+            QTest.keyClick(root, key, Qt.ControlModifier)
+            root.setProperty("previewOverlay", "")
+        else:
+            root.setProperty("previewOverlay", overlay)
+        QTimer.singleShot(1000, lambda: capture(name))
 
     def capture(name):
         target = directory / f"{name}.png"
