@@ -124,14 +124,25 @@ Item {
                 WMenu {
                     id: contextMenu
                     y: -implicitHeight - Theme.s2
-                    menuWidth: 250
+                    menuWidth: 264
+                    // Naming the focused window makes it obvious what will be
+                    // captured; X11 reports it, Wayland does not.
+                    property string windowTitle: ""
+                    onOpened: windowTitle = bridge ? bridge.activeWindowTitle() : ""
                     items: [
                         { id: "file", label: "File…", icon: "file" },
                         { id: "folder", label: "Folder…", icon: "folder" },
                         { id: "clipboard", label: "Clipboard", icon: "clipboard" },
                         { separator: true },
                         { id: "screen", label: "Capture screen", icon: "camera" },
-                        { id: "window", label: "Capture active window", icon: "window" },
+                        { id: "window",
+                          label: contextMenu.windowTitle
+                                 ? "Capture " + contextMenu.windowTitle.substring(0, 26)
+                                 : "Capture active window",
+                          icon: "window" },
+                        { separator: true, hidden: !(bridge && bridge.attachmentCount > 1) },
+                        { id: "clear", label: "Remove all context", icon: "close",
+                          hidden: !(bridge && bridge.attachmentCount > 1) },
                     ]
                     onPicked: function(id) {
                         if (!bridge) return;
@@ -140,11 +151,13 @@ Item {
                         else if (id === "clipboard") bridge.attachClipboard();
                         else if (id === "screen") bridge.attachScreenshot();
                         else if (id === "window") bridge.attachWindow();
+                        else if (id === "clear") bridge.clearAttachments();
                     }
                 }
 
                 Chip {
-                    text: bridge ? bridge.model : "No model"
+                    text: !bridge ? "No model"
+                        : root.width > 560 ? bridge.model : bridge.modelShortName
                     iconName: "layers"
                     onClicked: root.openModelPicker()
                     Layout.maximumWidth: Math.max(120, root.width * 0.24)
@@ -217,7 +230,8 @@ Item {
                     Layout.preferredWidth: Theme.control + 6
                     Layout.preferredHeight: Theme.control
                     iconSize: 17
-                    tint: bridge && bridge.busy ? Theme.textPrimary : Theme.onAccent
+                    tint: bridge && bridge.busy ? Theme.textPrimary
+                        : sendButton.enabled ? Theme.onAccent : Theme.textMuted
                     activeTint: tint
                     tooltip: bridge && bridge.busy ? "Stop · Esc" : "Send · Enter"
                     enabled: (bridge && bridge.busy) || root.canSend
@@ -226,7 +240,9 @@ Item {
                         radius: Theme.r2
                         color: bridge && bridge.busy ? Theme.surfaceHover
                              : sendButton.enabled ? (sendButton.hovered ? Theme.accentHover : Theme.accent)
-                             : Theme.surfaceRaised
+                             : "transparent"
+                        border.width: sendButton.enabled || (bridge && bridge.busy) ? 0 : 1
+                        border.color: Theme.borderSubtle
                         Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                     }
                 }

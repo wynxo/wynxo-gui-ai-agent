@@ -77,7 +77,7 @@ Control {
         anchors.right: parent.right
         anchors.rightMargin: 2
         anchors.verticalCenter: parent.verticalCenter
-        width: 22; height: 22; iconSize: 11
+        width: 22; height: 22; iconSize: 12
         iconName: "close"
         tooltip: "Remove"
         onClicked: chip.removed()

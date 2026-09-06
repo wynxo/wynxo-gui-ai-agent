@@ -134,6 +134,12 @@ Item {
                         enabled: bridge && bridge.workingDirectory !== ""
                         onClicked: bridge && bridge.revealPath(bridge.workingDirectory)
                     }
+                    IconButton {
+                        width: 28; height: 28; iconSize: 12; iconName: "close"
+                        tooltip: "Clear the working folder"
+                        visible: bridge && bridge.workingDirectory !== ""
+                        onClicked: bridge && bridge.clearWorkingDirectory()
+                    }
                 }
 
                 Item { Layout.fillHeight: true }
@@ -218,11 +224,12 @@ Item {
                     }
                     WButton {
                         text: bridge && bridge.connecting ? "Waiting…"
+                            : !(bridge && bridge.desktopAvailable) ? "Unavailable"
                             : bridge && bridge.desktopEnabled ? "Turn off" : "Turn on"
                         variant: bridge && bridge.desktopEnabled ? "secondary" : "primary"
                         compactPadding: true
                         implicitHeight: Theme.controlSmall
-                        enabled: bridge && !bridge.connecting
+                        enabled: bridge && !bridge.connecting && bridge.desktopAvailable
                         onClicked: bridge && bridge.toggleDesktop()
                     }
                 }
@@ -260,9 +267,17 @@ Item {
                             font.weight: Font.Medium
                             elide: Text.ElideMiddle
                         }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: bridge && bridge.modelCapabilitiesLoading
+                            text: "Checking what this model can do…"
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
                         Flow {
                             Layout.fillWidth: true
                             spacing: Theme.s1
+                            visible: !(bridge && bridge.modelCapabilitiesLoading)
                             Repeater {
                                 model: bridge && bridge.online
                                        ? ["Chat"].concat(bridge.modelSupportsTools ? ["Tools"] : [])

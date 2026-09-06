@@ -12,6 +12,8 @@ Sheet {
     property var commands: [
         { id: "new", label: "New chat", detail: "Start a fresh conversation", icon: "plus", shortcut: "Ctrl+N" },
         { id: "search", label: "Search chats", detail: "Filter your saved conversations", icon: "search", shortcut: "Ctrl+K" },
+        { id: "next", label: "Next chat", detail: "Move down your conversation list", icon: "down", shortcut: "Alt+Down" },
+        { id: "previous", label: "Previous chat", detail: "Move up your conversation list", icon: "up", shortcut: "Alt+Up" },
         { id: "models", label: "Switch model", detail: "Open the model manager", icon: "layers", shortcut: "Ctrl+M" },
         { id: "settings", label: "Open settings", detail: "Appearance, runtime, privacy", icon: "sliders", shortcut: "Ctrl+," },
         { id: "sidebar", label: "Toggle sidebar", detail: "Show or hide conversations", icon: "panelLeft", shortcut: "Ctrl+B" },

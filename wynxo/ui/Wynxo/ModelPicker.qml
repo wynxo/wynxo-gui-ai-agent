@@ -93,6 +93,17 @@ Sheet {
                                     font.family: Theme.sansFamily; font.pixelSize: Theme.micro
                                 }
                             }
+                            Rectangle {
+                                visible: modelData.recent && !modelData.selected
+                                width: recentText.implicitWidth + Theme.s2; height: 17; radius: Theme.r1
+                                color: Theme.surfaceHover
+                                Text {
+                                    id: recentText
+                                    anchors.centerIn: parent; text: "recent"
+                                    color: Theme.textMuted
+                                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                                }
+                            }
                             Item { Layout.fillWidth: true }
                         }
                         Text {

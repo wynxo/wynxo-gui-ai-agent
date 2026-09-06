@@ -79,6 +79,8 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+R"]; onActivated: bridge && bridge.regenerate() }
     Shortcut { sequences: ["Ctrl+D"]; onActivated: bridge && bridge.duplicateTask() }
     Shortcut { sequences: ["Ctrl+Shift+V"]; onActivated: bridge && bridge.pasteImage() }
+    Shortcut { sequences: ["Alt+Up"]; onActivated: bridge && bridge.openAdjacentTask(-1) }
+    Shortcut { sequences: ["Alt+Down"]; onActivated: bridge && bridge.openAdjacentTask(1) }
     Shortcut {
         sequences: ["Escape"]
         // Escape is the emergency stop: it always reaches the running task.
@@ -533,6 +535,8 @@ ApplicationWindow {
         case "clear": if (bridge.taskId) clearSheet.open(); break;
         case "reconnect": case "retry": bridge.refreshModels(); break;
         case "terminal": bridge.openTerminalHere(); break;
+        case "previous": bridge.openAdjacentTask(-1); break;
+        case "next": bridge.openAdjacentTask(1); break;
         }
     }
 }

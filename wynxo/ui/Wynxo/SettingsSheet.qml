@@ -448,10 +448,12 @@ Sheet {
                             }
                         }
                         WButton {
-                            text: bridge && bridge.desktopEnabled ? "Turn off screen control" : "Turn on screen control"
+                            text: !(bridge && bridge.desktopAvailable) ? "Screen control is unavailable here"
+                                : bridge && bridge.desktopEnabled ? "Turn off screen control"
+                                : "Turn on screen control"
                             iconName: "cursor"
                             variant: bridge && bridge.desktopEnabled ? "secondary" : "primary"
-                            enabled: bridge && !bridge.connecting
+                            enabled: bridge && !bridge.connecting && bridge.desktopAvailable
                             onClicked: bridge && bridge.toggleDesktop()
                         }
                         Text {
@@ -537,6 +539,7 @@ Sheet {
                                 { keys: "Escape", label: "Stop generation and desktop actions" },
                                 { keys: "Ctrl + N", label: "New chat" },
                                 { keys: "Ctrl + K", label: "Search chats" },
+                                { keys: "Alt + Up / Down", label: "Previous / next chat" },
                                 { keys: "Ctrl + Shift + P", label: "Command palette" },
                                 { keys: "Ctrl + Space", label: "Quick bar" },
                                 { keys: "Ctrl + M", label: "Model manager" },

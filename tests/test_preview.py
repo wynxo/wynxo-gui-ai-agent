@@ -74,9 +74,12 @@ def test_preview_refresh_stays_offline():
     try:
         bridge.refreshModels()
         assert bridge.online is True
-        assert [entry["name"] for entry in bridge.modelCatalog] == \
-               sorted((entry["name"] for entry in CATALOG),
-                      key=lambda name: (name not in ("qwen2.5vl:7b", "gemma3:4b"), name.lower()))
+        names = [entry["name"] for entry in bridge.modelCatalog]
+        assert set(names) == {entry["name"] for entry in CATALOG}
+        # Selected first, then favourites, then everything else.
+        assert names[0] == bridge.model
+        favourites = {entry["name"] for entry in CATALOG if entry["favorite"]}
+        assert set(names[:len(favourites)]) == favourites
     finally:
         bridge.shutdown()
 

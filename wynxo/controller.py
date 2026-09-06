@@ -432,7 +432,6 @@ class Controller(QObject):
         self._task_id = ""
         self._task_title = "New chat"
         self._token_rate = "—"
-        self._thinking_text = ""
         self._think_started = 0.0
         self._think_seconds = 0.0
         self._search = ""
@@ -643,10 +642,6 @@ class Controller(QObject):
         return [{"name": name, "color": color} for name, color in self.THEMES.items()]
     @Property("QVariantList", constant=True)
     def templates(self): return TEMPLATES
-    @Property(str, notify=changed)
-    def thinkingText(self): return self._thinking_text
-    @Property(bool, notify=changed)
-    def thinkingActive(self): return self._busy and bool(self._thinking_text)
     @Property(int, notify=changed)
     def numCtx(self): return self._num_ctx
     @Property(float, notify=changed)
@@ -674,14 +669,6 @@ class Controller(QObject):
             "rate": round(metrics.get("tokens_per_second", 0.0), 1),
             "hasData": bool(metrics.get("tokens") or metrics.get("prompt_tokens")),
         }
-    @Property(str, notify=changed)
-    def runMetricSummary(self):
-        metrics = self._run_metrics
-        if not metrics.get("tokens") and not metrics.get("prompt_tokens"):
-            return "No generation metrics yet"
-        seconds = metrics.get("total_ms", 0.0) / 1000.0
-        return (f"{metrics.get('tokens', 0)} out · {metrics.get('prompt_tokens', 0)} prompt · "
-                f"{metrics.get('tokens_per_second', 0.0):.1f} tok/s · {seconds:.1f}s")
 
     def _recount_history_tokens(self):
         """Estimate once per history change, not once per streamed token."""
@@ -708,8 +695,6 @@ class Controller(QObject):
     @Property(bool, notify=changed)
     def taskPinned(self):
         return any(item.get("id") == self._task_id and bool(item.get("pinned")) for item in self._tasks)
-    @Property("QVariantList", notify=tasksChanged)
-    def tasks(self): return self._tasks
     @Property("QVariantList", notify=tasksChanged)
     def taskGroups(self): return self._grouped_tasks()
     @Property(str, notify=tasksChanged)
@@ -751,6 +736,21 @@ class Controller(QObject):
             return
         self._search = text
         self.tasksChanged.emit()
+
+    @Slot(int)
+    def openAdjacentTask(self, delta):
+        """Move to the next or previous chat in the order the sidebar shows."""
+        if self._busy:
+            return
+        order = [item["id"] for group in self._grouped_tasks() for item in group["items"]]
+        if not order:
+            return
+        if self._task_id not in order:
+            self.openTask(order[0])
+            return
+        position = order.index(self._task_id) + int(delta)
+        if 0 <= position < len(order):
+            self.openTask(order[position])
 
     def _refresh_tasks(self):
         self._tasks = self.store.list_conversations()
@@ -797,9 +797,13 @@ class Controller(QObject):
             entry["favorite"] = entry["name"] in self._favorites
             entry["loaded"] = entry["name"] in self._loaded_models
             entry["selected"] = entry["name"] == self._model
+            entry["recent"] = entry["name"] in self._recent_models
             if entry["selected"]:
                 entry["capabilities"] = list(self._model_capabilities)
-        self._catalog.sort(key=lambda item: (not item["favorite"], item["name"].lower()))
+        recent = {name: index for index, name in enumerate(self._recent_models)}
+        self._catalog.sort(key=lambda item: (not item["selected"], not item["favorite"],
+                                             recent.get(item["name"], len(recent)),
+                                             item["name"].lower()))
         self.catalogChanged.emit()
 
     @staticmethod
@@ -816,6 +820,7 @@ class Controller(QObject):
             "capabilities": [],
             "favorite": False,
             "loaded": False,
+            "recent": False,
             "selected": False,
         }
 
@@ -1042,40 +1047,6 @@ class Controller(QObject):
         self.refreshModels()
         return True
 
-    @Slot(str, bool, bool, str, str, bool, result=bool)
-    def saveSettings(self, endpoint, thinking, reduced_motion, theme, accent, solid_background):
-        """Bulk save kept for the settings sheet and for scripted callers."""
-        if self._busy or self._pulling or self._probe_active:
-            self.toast.emit("Wait for the current connection or task to finish.")
-            return False
-        try:
-            OllamaClient(str(endpoint).strip())
-        except Exception as exc:
-            self._set_error("That Ollama address is not usable", str(exc))
-            return False
-        theme = self.LEGACY_THEMES.get(theme, theme)
-        theme = theme if theme in self.THEMES else "Platinum"
-        accent = self._normalise_accent(accent)
-        if accent is None:
-            self._set_error("That accent colour is not valid",
-                            "Enter an opaque hex colour such as #e9e3d6.")
-            return False
-        self._endpoint = str(endpoint).strip().rstrip("/")
-        self._think = bool(thinking)
-        self._reduced_motion = bool(reduced_motion)
-        self._theme = theme
-        self._accent = accent
-        self._solid_background = bool(solid_background)
-        for key, value in (("endpoint", self._endpoint), ("think", self._think),
-                           ("reduced_motion", self._reduced_motion), ("theme", theme),
-                           ("accent", accent), ("solid_background", self._solid_background)):
-            self.store.set_setting(key, value)
-        self._clear_error()
-        self.changed.emit()
-        self.refreshModels()
-        self.toast.emit("Settings saved")
-        return True
-
     @Slot()
     def completeOnboarding(self):
         self._onboarded = True
@@ -1091,7 +1062,6 @@ class Controller(QObject):
     # ------------------------------------------------------------- history
     def _reset_run_state(self):
         self._activity = []
-        self._thinking_text = ""
         self._think_seconds = 0.0
         self._token_rate = "—"
         self._run_metrics = _blank_metrics()
@@ -1141,14 +1111,6 @@ class Controller(QObject):
             self.newTask()
         self._refresh_tasks()
         self.toast.emit("Chat deleted")
-
-    @Slot(str)
-    def renameTask(self, title):
-        if self._task_id and str(title).strip():
-            self._task_title = str(title).strip()[:120]
-            self.store.rename_conversation(self._task_id, self._task_title)
-            self._refresh_tasks()
-            self.changed.emit()
 
     @Slot(str, str)
     def renameTaskById(self, task_id, title):
@@ -1431,7 +1393,6 @@ class Controller(QObject):
         self._clear_error()
         self._status = "Thinking"
         self._token_rate = "—"
-        self._thinking_text = ""
         self._think_started = 0.0
         self._think_seconds = 0.0
         self._turn_had_message = False
@@ -1544,7 +1505,6 @@ class Controller(QObject):
                 if not self._think_started:
                     self._think_started = time.monotonic()
                 self.messages.stream("thought", event.get("text", ""))
-                self._thinking_text = (self._thinking_text + event.get("text", ""))[-8000:]
                 self._status = "Thinking"
             else:
                 if self._think_started and not self._think_seconds:
@@ -1556,7 +1516,6 @@ class Controller(QObject):
             self._turn_had_message = False
             self._think_started = 0.0
             self._think_seconds = 0.0
-            self._thinking_text = ""
         elif kind == "status":
             self._status = event.get("text", "Working")
         elif kind == "session":
@@ -1616,7 +1575,6 @@ class Controller(QObject):
         self._busy = False
         self._run_job = None
         self._session_auto = False
-        self._thinking_text = ""
         self.messages.mark_idle()
         self._status = "Stopped" if stopped else ("Needs attention" if self._error else "Ready when you are")
         self._refresh_tasks()
@@ -1628,7 +1586,6 @@ class Controller(QObject):
         self._busy = False
         self._run_job = None
         self._session_auto = False
-        self._thinking_text = ""
         self.messages.mark_idle()
         self._status = "Needs attention"
         self._set_error("The model run did not finish", message,

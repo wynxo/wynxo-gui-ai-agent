@@ -625,3 +625,35 @@ def test_a_nearly_full_context_window_is_flagged(tmp_path):
     bridge._history_tokens = 100
     assert bridge.capabilityWarning == ""
     bridge.shutdown()
+
+
+def test_adjacent_chat_navigation_follows_the_sidebar_order(tmp_path):
+    bridge = controller(tmp_path)
+    made = [bridge.store.create_conversation(name) for name in ("First", "Second", "Third")]
+    bridge.store.set_pinned(made[2]["id"], True)
+    bridge._refresh_tasks()
+
+    order = [item["id"] for group in bridge.taskGroups for item in group["items"]]
+    assert order[0] == made[2]["id"]          # pinned first
+
+    bridge.openAdjacentTask(1)                # nothing open yet
+    assert bridge.taskId == order[0]
+    bridge.openAdjacentTask(1)
+    assert bridge.taskId == order[1]
+    bridge.openAdjacentTask(-1)
+    assert bridge.taskId == order[0]
+    bridge.openAdjacentTask(-1)               # already at the top
+    assert bridge.taskId == order[0]
+    bridge.shutdown()
+
+
+def test_recently_used_models_rank_above_the_rest(tmp_path):
+    bridge = controller(tmp_path)
+    bridge._catalog = [Controller._catalog_entry({"name": name, "size": 1})
+                       for name in ("alpha", "beta", "gamma")]
+    bridge._models = ["alpha", "beta", "gamma"]
+    bridge.setModel("gamma")
+    assert [entry["name"] for entry in bridge.modelCatalog][0] == "gamma"
+    assert bridge.modelCatalog[0]["recent"] is True
+    assert bridge.modelCatalog[1]["recent"] is False
+    bridge.shutdown()

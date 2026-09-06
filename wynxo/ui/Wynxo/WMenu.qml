@@ -17,8 +17,10 @@ Popup {
     implicitHeight: listHeight + Theme.s1 * 2
     readonly property int listHeight: {
         var total = 0;
-        for (var i = 0; i < items.length; i++)
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].hidden) continue;
             total += items[i].separator ? 9 : itemHeight;
+        }
         return total;
     }
 
@@ -44,6 +46,7 @@ Popup {
             delegate: Loader {
                 required property var modelData
                 width: menu.width - Theme.s1 * 2
+                active: !modelData.hidden
                 sourceComponent: modelData.separator ? separatorItem : entryItem
                 onLoaded: if (!modelData.separator) item.entry = modelData
             }

@@ -17,6 +17,8 @@ Popup {
     padding: 0
     closePolicy: Popup.NoAutoClose
     visible: bridge ? bridge.permissionPending : false
+    property bool showDetails: false
+    onVisibleChanged: if (!visible) showDetails = false
 
     Overlay.modal: Rectangle { color: Theme.scrim }
 
@@ -88,6 +90,58 @@ Popup {
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily; font.pixelSize: Theme.label
                 wrapMode: Text.WordWrap; lineHeight: 1.4
+            }
+        }
+
+        Item {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.s6
+            Layout.rightMargin: Theme.s6
+            Layout.preferredHeight: detailsRow.height + (prompt.showDetails ? detailText.height + Theme.s2 : 0)
+            visible: bridge && bridge.permissionDetail.length > 0
+
+            Item {
+                id: detailsRow
+                width: parent.width
+                height: 22
+                Row {
+                    id: detailsLabel
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: Theme.s2
+                    Icon {
+                        name: prompt.showDetails ? "down" : "chevron"
+                        ink: Theme.textMuted; width: 12; height: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: prompt.showDetails ? "Hide exact arguments" : "Show exact arguments"
+                        color: Theme.textMuted
+                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    }
+                }
+                MouseArea {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: detailsLabel.width + Theme.s2
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: prompt.showDetails = !prompt.showDetails
+                }
+            }
+            Text {
+                id: detailText
+                anchors.top: detailsRow.bottom
+                anchors.topMargin: Theme.s2
+                width: parent.width
+                visible: prompt.showDetails
+                text: bridge ? bridge.permissionDetail : ""
+                color: Theme.textMuted
+                font.family: Theme.monoFamily; font.pixelSize: Theme.micro
+                wrapMode: Text.WrapAnywhere
+                maximumLineCount: 5
+                elide: Text.ElideRight
             }
         }
 
