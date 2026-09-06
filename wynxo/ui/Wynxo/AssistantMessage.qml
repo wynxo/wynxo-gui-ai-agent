@@ -2,10 +2,8 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    Wynxo's turn: conversational typography, not a bubble.
-
-    Reasoning collapses into a single line once it is finished, so a thinking
-    model does not bury the answer it produced.
+    Agent output stays typographic and left aligned. Reasoning is a disclosure,
+    code is rendered by CodeBlock, and the actual answer gets the visual weight.
 */
 Item {
     id: root
@@ -34,10 +32,24 @@ Item {
         width: parent.width
         spacing: Theme.s3
 
-        // ------------------------------------------------------- byline
         Row {
             spacing: Theme.s2
-            height: 16
+            height: 18
+            Text {
+                text: "✦"
+                color: root.streaming ? Theme.accent : Theme.textMuted
+                font.family: Theme.sansFamily
+                font.pixelSize: 12
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: bridge && bridge.taskMode === "codex" ? "Wynxi" : "Wynxo"
+                color: Theme.textSecondary
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.caption
+                font.weight: Font.DemiBold
+                anchors.verticalCenter: parent.verticalCenter
+            }
             StatusDot {
                 visible: root.streaming
                 width: 6; height: 6
@@ -45,13 +57,8 @@ Item {
                 pulsing: root.streaming
                 anchors.verticalCenter: parent.verticalCenter
             }
-            SectionLabel {
-                text: "Wynxo"
-                anchors.verticalCenter: parent.verticalCenter
-            }
         }
 
-        // ----------------------------------------------------- reasoning
         Item {
             width: parent.width
             visible: root.thought.length > 0
@@ -67,7 +74,7 @@ Item {
                 background: Rectangle {
                     radius: Theme.r1
                     color: thoughtHeader.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: thoughtHeader.visualFocus ? 2 : 0
+                    border.width: thoughtHeader.visualFocus ? 1 : 0
                     border.color: Theme.accentEdge
                 }
                 contentItem: Row {
@@ -76,18 +83,19 @@ Item {
                     leftPadding: Theme.s2
                     Icon {
                         name: root.thoughtOpen ? "down" : "chevron"
-                        ink: thoughtHeader.hovered ? Theme.textSecondary : Theme.textMuted
-                        width: 12; height: 12
+                        ink: Theme.textMuted
+                        width: 11; height: 11
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
                         id: thoughtLabel
                         anchors.verticalCenter: parent.verticalCenter
                         text: !root.thinkDone ? "Thinking…"
-                            : root.thinkSeconds > 0 ? "Thought for " + root.thinkSeconds.toFixed(1) + "s"
+                            : root.thinkSeconds > 0 ? "Reasoned for " + root.thinkSeconds.toFixed(1) + "s"
                             : "Reasoning"
-                        color: thoughtHeader.hovered ? Theme.textSecondary : Theme.textMuted
-                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                        color: Theme.textMuted
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.micro
                     }
                 }
                 MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
@@ -98,28 +106,29 @@ Item {
                 anchors.top: thoughtHeader.bottom
                 anchors.topMargin: Theme.s2
                 width: parent.width
-                height: root.thoughtOpen ? thoughtText.implicitHeight + Theme.s4 * 2 : 0
+                height: root.thoughtOpen ? thoughtText.implicitHeight + Theme.s3 * 2 : 0
                 visible: root.thoughtOpen
                 radius: Theme.r2
-                color: Theme.surface
+                color: Theme.surfaceSunken
                 border.width: 1
                 border.color: Theme.borderSubtle
                 TextEdit {
                     id: thoughtText
                     anchors.fill: parent
-                    anchors.margins: Theme.s4
+                    anchors.margins: Theme.s3
                     text: root.thought
-                    readOnly: true; selectByMouse: true
+                    readOnly: true
+                    selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     color: Theme.textMuted
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.onAccent
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
                 }
             }
         }
 
-        // -------------------------------------------------------- content
         Repeater {
             model: root.blocks
             delegate: Loader {
@@ -137,7 +146,6 @@ Item {
             }
         }
 
-        // The block still receiving tokens; rendered without highlighting.
         Loader {
             width: column.width
             active: root.tail.length > 0
@@ -152,28 +160,25 @@ Item {
             }
         }
 
-        // -------------------------------------------------------- actions
         Row {
             spacing: 0
-            height: 28
+            height: 26
             opacity: hover.hovered && !root.streaming ? 1 : 0
             visible: opacity > 0 && root.body.length > 0
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
-                width: 28; height: 28; iconSize: 14; iconName: "copy"; tooltip: "Copy response"
+                width: 26; height: 26; iconSize: 12; iconName: "copy"; tooltip: "Copy response"
                 onClicked: if (bridge) bridge.copyText(root.body)
             }
             IconButton {
-                width: 28; height: 28; iconSize: 14; iconName: "retry"; tooltip: "Regenerate"; shortcut: "Ctrl+R"
+                width: 26; height: 26; iconSize: 12; iconName: "retry"; tooltip: "Regenerate"; shortcut: "Ctrl+R"
                 enabled: bridge && bridge.canRegenerate
                 onClicked: if (bridge) bridge.regenerate()
             }
             IconButton {
-                width: 28; height: 28; iconSize: 14; iconName: "branch"; tooltip: "Branch a new task from here"
+                width: 26; height: 26; iconSize: 12; iconName: "branch"; tooltip: "Branch from here"
                 onClicked: root.branched()
             }
-            // How the newest answer was produced. Never a permanent readout:
-            // it appears with the actions for the turn it describes.
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 leftPadding: Theme.s2
@@ -182,7 +187,8 @@ Item {
                              + bridge.runMetrics.tokens + " out · "
                              + bridge.runMetrics.totalSeconds.toFixed(1) + "s" : ""
                 color: Theme.textMuted
-                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.micro
             }
         }
     }
