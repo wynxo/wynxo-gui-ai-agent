@@ -3,9 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    The command box is the centre of the product. It behaves like a coding-agent
-    prompt rather than a chat bubble: roomy text area, context above, controls
-    below, and no decorative quick-action dashboard.
+    One command box for Chat, Work and Wynxi.
+
+    The prompt gets the space. Context, project, model and run controls live on
+    one quiet toolbar underneath it. Nothing competes with the text field and
+    nothing is allowed to collide when the window gets narrow.
 */
 Item {
     id: root
@@ -35,7 +37,8 @@ Item {
     readonly property bool workMode: root.mode === "work"
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool hasAttachments: bridge && bridge.attachmentCount > 0
-    readonly property bool tight: root.width < 520
+    readonly property bool tight: root.width < 560
+    readonly property bool veryTight: root.width < 430
     readonly property bool canSend: input.text.trim().length > 0 && bridge && bridge.online && !bridge.connecting
 
     function send() {
@@ -48,11 +51,10 @@ Item {
         id: shell
         width: parent.width
         height: content.implicitHeight + Theme.s3 * 2
-        radius: Theme.r3
-        color: Theme.surface
+        radius: 14
+        color: Theme.surfaceRaised
         border.width: 1
         border.color: input.activeFocus ? Theme.borderStrong : Theme.borderSubtle
-        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
         ColumnLayout {
@@ -73,8 +75,8 @@ Item {
                         id: attachment
                         required property var modelData
                         readonly property bool isImage: !!modelData.image
-                        width: isImage ? 72 : Math.min(fileChip.implicitWidth, root.width - Theme.s5)
-                        height: isImage ? 72 : fileChip.implicitHeight
+                        width: isImage ? 70 : Math.min(fileChip.implicitWidth, root.width - Theme.s5)
+                        height: isImage ? 70 : fileChip.implicitHeight
 
                         Chip {
                             id: fileChip
@@ -169,9 +171,9 @@ Item {
             // ------------------------------------------------------- prompt
             ScrollView {
                 Layout.fillWidth: true
-                Layout.minimumHeight: root.homeMode ? 66 : 48
+                Layout.minimumHeight: root.homeMode ? 68 : 46
                 Layout.preferredHeight: Math.min(root.maxHeight,
-                    Math.max(root.homeMode ? 66 : 48, input.implicitHeight + Theme.s2))
+                    Math.max(root.homeMode ? 68 : 46, input.implicitHeight + Theme.s2))
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
@@ -194,8 +196,8 @@ Item {
                     wrapMode: TextEdit.Wrap
                     font.family: Theme.sansFamily
                     font.pixelSize: Theme.body
-                    leftPadding: 1
-                    rightPadding: 1
+                    leftPadding: 2
+                    rightPadding: 2
                     topPadding: Theme.s1
                     bottomPadding: Theme.s1
                     background: Item {}
@@ -221,27 +223,39 @@ Item {
                 }
             }
 
-            Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle }
-
             // ------------------------------------------------------ toolbar
             RowLayout {
                 Layout.fillWidth: true
                 spacing: Theme.s1
 
-                IconButton {
+                AbstractButton {
                     id: addContext
                     Layout.preferredWidth: 30
                     Layout.preferredHeight: 30
-                    iconSize: 14
-                    iconName: "plus"
-                    tooltip: "Add context"
-                    active: contextMenu.opened
+                    hoverEnabled: true
+                    Accessible.name: "Add context"
                     onClicked: contextMenu.opened ? contextMenu.close() : contextMenu.open()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Add files, folders, screenshots or clipboard context"
+                    ToolTip.delay: 550
+                    background: Rectangle {
+                        radius: Theme.r2
+                        color: addContext.hovered || contextMenu.opened ? Theme.surfaceHover : "transparent"
+                        border.width: addContext.visualFocus ? 1 : 0
+                        border.color: Theme.accentEdge
+                    }
+                    contentItem: Icon {
+                        anchors.centerIn: parent
+                        name: "plus"
+                        ink: addContext.hovered ? Theme.textPrimary : Theme.textSecondary
+                        width: 14; height: 14
+                    }
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
 
                     WMenu {
                         id: contextMenu
                         preferredEdge: "above"
-                        menuWidth: 260
+                        menuWidth: 262
                         property string windowTitle: ""
                         onAboutToShow: windowTitle = bridge ? bridge.activeWindowTitle() : ""
                         items: [
@@ -251,9 +265,11 @@ Item {
                             { separator: true },
                             { id: "screen", label: "Screenshot", icon: "camera" },
                             { id: "region", label: "Screen region…", icon: "crop" },
-                            { id: "window", label: contextMenu.windowTitle
-                                ? "Window: " + contextMenu.windowTitle.substring(0, 22)
-                                : "Active window", icon: "window" },
+                            { id: "window",
+                              label: contextMenu.windowTitle
+                                     ? "Window: " + contextMenu.windowTitle.substring(0, 22)
+                                     : "Active window",
+                              icon: "window" },
                             { separator: true, hidden: !(bridge && bridge.attachmentCount > 1) },
                             { id: "clear", label: "Remove all context", icon: "close",
                               hidden: !(bridge && bridge.attachmentCount > 1) },
@@ -271,68 +287,42 @@ Item {
                     }
                 }
 
-                AbstractButton {
-                    id: projectChip
-                    visible: root.codexMode
-                    Layout.preferredHeight: 28
-                    Layout.maximumWidth: Math.max(150, root.width * 0.34)
-                    implicitWidth: projectRow.implicitWidth + Theme.s3 * 2
-                    hoverEnabled: true
-                    Accessible.name: bridge && bridge.projectPath ? "Project " + bridge.projectName : "Open project"
+                Chip {
+                    visible: root.codexMode && bridge && bridge.projectPath && !root.veryTight
+                    Layout.maximumWidth: root.tight ? 150 : 220
+                    text: bridge ? bridge.projectName : ""
+                    iconName: "folderOpen"
                     onClicked: if (bridge) bridge.chooseProject()
-                    background: Rectangle {
-                        radius: Theme.r1
-                        color: projectChip.hovered ? Theme.surfaceHover : "transparent"
-                        border.width: 1
-                        border.color: Theme.borderSubtle
-                    }
-                    contentItem: Row {
-                        id: projectRow
-                        anchors.centerIn: parent
-                        spacing: Theme.s2
-                        Icon {
-                            name: bridge && bridge.projectPath ? "folderOpen" : "folder"
-                            ink: bridge && bridge.projectPath ? Theme.textSecondary : Theme.textMuted
-                            width: 13; height: 13
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        Text {
-                            text: bridge && bridge.projectPath ? bridge.projectName : "Open project"
-                            color: bridge && bridge.projectPath ? Theme.textSecondary : Theme.textMuted
-                            font.family: Theme.monoFamily
-                            font.pixelSize: Theme.micro
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                    }
-                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                    ToolTip.visible: hovered
+                    ToolTip.text: bridge ? bridge.projectLabel + " — click to change" : ""
                 }
 
                 IconButton {
-                    visible: root.codexMode && !root.tight
-                    Layout.preferredWidth: 30
-                    Layout.preferredHeight: 30
-                    iconName: "terminal"
+                    visible: root.codexMode && bridge && bridge.projectPath && !root.tight
+                    Layout.preferredWidth: 30; Layout.preferredHeight: 30
                     iconSize: 13
-                    tooltip: bridge && bridge.projectPath ? "Open terminal in project" : "Open a project first"
-                    enabled: !!(bridge && bridge.projectPath)
+                    iconName: "terminal"
+                    tooltip: "Open terminal in project"
                     onClicked: if (bridge) bridge.openTerminalHere()
                 }
 
                 Chip {
-                    visible: root.workMode && !root.tight
-                    text: bridge && bridge.desktopEnabled ? "Screen on" : "Work"
+                    visible: root.workMode && !root.veryTight
+                    text: bridge && bridge.desktopEnabled ? "Screen on" : "Screen off"
                     iconName: "cursor"
-                    selected: bridge && bridge.desktopEnabled
+                    selected: !!(bridge && bridge.desktopEnabled)
+                    onClicked: if (bridge && !bridge.connecting) bridge.toggleDesktop()
+                    ToolTip.visible: hovered
+                    ToolTip.text: bridge && bridge.desktopEnabled ? "Turn screen control off" : "Turn screen control on"
                 }
 
                 Row {
-                    visible: bridge && bridge.contextFraction > 0.75 && !root.tight
+                    visible: bridge && bridge.contextFraction > 0.75 && root.width > 700 && !root.homeMode
                     spacing: Theme.s2
                     Text {
-                        text: bridge ? Math.round(bridge.contextFraction * 100) + "% ctx" : ""
+                        text: bridge ? Math.round(bridge.contextFraction * 100) + "%" : ""
                         color: bridge && bridge.contextFraction > 0.9 ? Theme.warning : Theme.textMuted
-                        font.family: Theme.monoFamily
-                        font.pixelSize: Theme.micro
+                        font.family: Theme.monoFamily; font.pixelSize: Theme.micro
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Meter {
@@ -342,22 +332,14 @@ Item {
                     }
                     HoverHandler { id: meterHover }
                     ToolTip.visible: meterHover.hovered
-                    ToolTip.text: bridge ? bridge.contextSummary + ". Start a new task to clear it." : ""
+                    ToolTip.text: bridge ? bridge.contextSummary : ""
                 }
 
                 Item { Layout.fillWidth: true }
 
-                Text {
-                    visible: root.width > 620 && !(bridge && bridge.busy)
-                    text: "Shift+Enter newline"
-                    color: Theme.textMuted
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.micro
-                }
-
                 ModelPicker {
                     id: modelButton
-                    compact: root.tight
+                    compact: true
                     onOpenModelManager: root.openModelManager()
                 }
 
@@ -376,10 +358,10 @@ Item {
                     enabled: (bridge && bridge.busy) || root.canSend
                     onClicked: bridge && bridge.busy ? bridge.stop() : root.send()
                     background: Rectangle {
-                        radius: Theme.r1
-                        color: bridge && bridge.busy ? Theme.surfaceHover
+                        radius: Theme.r2
+                        color: bridge && bridge.busy ? Theme.surfaceSelected
                              : sendButton.enabled ? (sendButton.hovered ? Theme.accentHover : Theme.accent)
-                             : Theme.surfaceRaised
+                             : Theme.surfaceSelected
                         border.width: sendButton.enabled || (bridge && bridge.busy) ? 0 : 1
                         border.color: Theme.borderSubtle
                         Rectangle {
@@ -415,7 +397,7 @@ Item {
             border.color: Theme.accentEdge
             Text {
                 anchors.centerIn: parent
-                text: "Drop files to add context"
+                text: "Drop to attach"
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.label
