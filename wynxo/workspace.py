@@ -1,10 +1,10 @@
-"""Task-scoped Chat / Work / Wynxi mode state.
+"""Task-scoped Chat / Work / Wynxi mode state and live agent plans.
 
 The base Controller intentionally stays focused on conversation, Ollama and
 runtime state. WorkspaceController adds the product-level behavior used by the
 shell: a new task starts unlocked, choosing Chat or Work locks that task's mode,
-and Wynxi creates a permanently coding-focused task. Modes are persisted in the
-existing private settings table so old databases need no migration.
+and Wynxi creates a permanently coding-focused task. Modes and plans are kept in
+the existing private settings table so old databases need no migration.
 
 Wynxo is also the desktop product's network-policy layer. The engine historically
 accepted loopback-only Ollama URLs, which made a perfectly normal homelab setup
@@ -15,6 +15,7 @@ has to live on the same machine as the GUI.
 """
 from __future__ import annotations
 
+import copy
 import ipaddress
 import time
 from urllib.parse import urlsplit
@@ -23,6 +24,77 @@ from PySide6.QtCore import Property, Signal, Slot
 
 from . import engine as engine_module
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
+
+
+PLAN_STATES = {"pending", "in_progress", "completed", "failed", "skipped"}
+_PLAN_PROMPT_MARKER = "Use update_plan for genuine multi-step work"
+
+
+def _install_plan_tool() -> None:
+    """Add a UI-only planning tool to the existing local agent loop once.
+
+    Keeping it in the workspace layer means the generic engine stays reusable.
+    The engine still validates the schema and returns a normal tool result; the
+    WorkspaceController consumes the corresponding events instead of showing
+    them as desktop activity.
+    """
+    if "update_plan" not in engine_module._SCHEMAS:
+        step = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "minLength": 1, "maxLength": 48},
+                "title": {"type": "string", "minLength": 1, "maxLength": 180},
+                "status": {"type": "string", "enum": sorted(PLAN_STATES)},
+            },
+            "required": ["id", "title", "status"],
+            "additionalProperties": False,
+        }
+        tool = engine_module._tool(
+            "update_plan",
+            "Publish or update the concise execution plan shown in Wynxo's Plan panel. "
+            "Use only for work that needs multiple concrete actions. Reuse stable step IDs "
+            "and update statuses as work progresses.",
+            {
+                "steps": {"type": "array", "minItems": 2, "maxItems": 8, "items": step},
+                "explanation": {"type": "string", "maxLength": 240},
+            },
+            ["steps"],
+        )
+        engine_module.TOOLS.insert(0, tool)
+        engine_module._SCHEMAS["update_plan"] = tool["function"]["parameters"]
+        engine_module._NONVISUAL.add("update_plan")
+        engine_module.LOW_RISK.add("update_plan")
+
+    if _PLAN_PROMPT_MARKER not in engine_module._SYSTEM:
+        engine_module._SYSTEM += (
+            "\nUse update_plan for genuine multi-step work that needs two or more concrete actions. "
+            "Publish a short plan before the first substantive action, keep the same step IDs, "
+            "mark exactly one current step in_progress when possible, and update the plan as steps "
+            "complete, fail, or are skipped. Do not create a plan for a simple answer or one-step action."
+        )
+
+
+class PlanningAgentEngine(AgentEngine):
+    """AgentEngine with one non-desktop tool consumed by the workspace UI."""
+
+    def run(self, *args, **kwargs):
+        desktop = self.desktop
+        if desktop is None:
+            return super().run(*args, **kwargs)
+        original_execute = desktop.execute
+
+        def execute(name, arguments, cancel=None):
+            if name == "update_plan":
+                return {"ok": True, "steps": len(arguments.get("steps", []))}
+            return original_execute(name, arguments, cancel)
+
+        # Runs are serialized by Controller; this temporary adapter exists only
+        # on the worker thread for the lifetime of this generation.
+        desktop.execute = execute
+        try:
+            return super().run(*args, **kwargs)
+        finally:
+            desktop.execute = original_execute
 
 
 def validate_workspace_endpoint(endpoint: str) -> str:
@@ -86,11 +158,14 @@ def endpoint_scope(endpoint: str) -> str:
 class WorkspaceController(Controller):
     modeChanged = Signal()
     endpointChanged = Signal()
+    planChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
 
     def __init__(self, *args, **kwargs):
         self._task_mode = "chat"
         self._task_mode_locked = False
+        self._plan_steps: list[dict] = []
+        _install_plan_tool()
         # OllamaClient resolves this name at construction time. Swap only the
         # endpoint policy; redirects and environment proxies remain disabled by
         # the transport itself.
@@ -105,14 +180,91 @@ class WorkspaceController(Controller):
     def _mode_key(task_id: str) -> str:
         return f"task_mode:{task_id}"
 
+    @staticmethod
+    def _plan_key(task_id: str) -> str:
+        return f"task_plan:{task_id}"
+
     def _saved_mode(self, task_id: str) -> str:
         mode = str(self.store.get_setting(self._mode_key(task_id), "chat") or "chat")
         return mode if mode in self.VALID_TASK_MODES else "chat"
+
+    @staticmethod
+    def _normalise_plan(steps) -> list[dict]:
+        result, seen = [], set()
+        for index, item in enumerate(list(steps or [])[:8]):
+            if not isinstance(item, dict):
+                continue
+            title = " ".join(str(item.get("title", "")).split())[:180]
+            if not title:
+                continue
+            identifier = "".join(ch for ch in str(item.get("id", "")).strip()[:48]
+                                 if ch.isalnum() or ch in "-_.") or f"step-{index + 1}"
+            if identifier in seen:
+                identifier = f"{identifier}-{index + 1}"
+            seen.add(identifier)
+            status = str(item.get("status", "pending"))
+            if status not in PLAN_STATES:
+                status = "pending"
+            result.append({"id": identifier, "title": title, "status": status})
+        return result
+
+    def _saved_plan(self, task_id: str) -> list[dict]:
+        return self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))
 
     def _persist_task_mode(self, task_id: str | None = None) -> None:
         target = str(task_id or self._task_id or "")
         if target:
             self.store.set_setting(self._mode_key(target), self._task_mode)
+
+    def _persist_plan(self, task_id: str | None = None) -> None:
+        target = str(task_id or self._task_id or "")
+        if target:
+            self.store.set_setting(self._plan_key(target), self._plan_steps)
+
+    def _set_plan(self, steps, *, persist: bool = True) -> None:
+        fresh = self._normalise_plan(steps)
+        if fresh == self._plan_steps:
+            return
+        self._plan_steps = fresh
+        if persist:
+            self._persist_plan()
+        self.planChanged.emit()
+
+    def _settle_plan(self, outcome: str) -> None:
+        if not self._plan_steps:
+            return
+        changed = False
+        fresh = []
+        for step in self._plan_steps:
+            item = dict(step)
+            if item["status"] == "in_progress":
+                item["status"] = ("failed" if outcome == "failed" else
+                                  "pending" if outcome == "cancelled" else "completed")
+                changed = True
+            fresh.append(item)
+        if changed:
+            self._set_plan(fresh)
+
+    @staticmethod
+    def _strip_plan_history(history) -> list[dict]:
+        """The plan is workspace state, not conversation/activity evidence."""
+        cleaned = []
+        for message in list(history or []):
+            if message.get("role") == "tool" and message.get("tool_name") == "update_plan":
+                continue
+            if message.get("role") == "assistant" and message.get("tool_calls"):
+                item = copy.deepcopy(message)
+                calls = [call for call in item.get("tool_calls", [])
+                         if call.get("function", {}).get("name") != "update_plan"]
+                if calls:
+                    item["tool_calls"] = calls
+                else:
+                    item.pop("tool_calls", None)
+                if item.get("content") or item.get("thinking") or calls:
+                    cleaned.append(item)
+                continue
+            cleaned.append(copy.deepcopy(message))
+        return cleaned
 
     @Property(str, notify=modeChanged)
     def taskMode(self):
@@ -125,6 +277,17 @@ class WorkspaceController(Controller):
     @Property(str, notify=modeChanged)
     def productName(self):
         return "Wynxi" if self._task_mode == "codex" else "Wynxo"
+
+    @Property("QVariantList", notify=planChanged)
+    def planSteps(self):
+        return [dict(step) for step in self._plan_steps]
+
+    @Property(str, notify=planChanged)
+    def planSummary(self):
+        if not self._plan_steps:
+            return ""
+        completed = sum(step["status"] in {"completed", "skipped"} for step in self._plan_steps)
+        return f"{completed} of {len(self._plan_steps)} complete"
 
     @Property(str, notify=endpointChanged)
     def endpointScope(self):
@@ -178,6 +341,7 @@ class WorkspaceController(Controller):
         if mode not in self.VALID_TASK_MODES or self._busy:
             return
         super().newTask()
+        self._set_plan([], persist=False)
         if self._task_id or self._busy:
             return
         self._task_mode = "chat"
@@ -193,18 +357,14 @@ class WorkspaceController(Controller):
             super().newTask()
             return
         super().newTask()
+        self._set_plan([], persist=False)
         if not self._task_id:
             self._task_mode = "chat"
             self._task_mode_locked = False
             self._emit_mode()
 
     def _grouped_tasks(self) -> list[dict]:
-        """The sidebar's groups, with each task's product on it.
-
-        Mode is a workspace concept, so it is added here rather than taught to
-        the base controller. The sidebar shows it as one small mark, not a
-        badge: it answers "which assistant was this?" at a glance.
-        """
+        """The sidebar's groups, with each task's product on it."""
         groups = super()._grouped_tasks()
         for group in groups:
             group["items"] = [{**task, "mode": self._saved_mode(str(task.get("id", "")))}
@@ -218,6 +378,7 @@ class WorkspaceController(Controller):
             return
         self._task_mode = self._saved_mode(task_id)
         self._task_mode_locked = True
+        self._set_plan(self._saved_plan(task_id), persist=False)
         self._emit_mode()
         if self._task_mode == "work" and not self.desktopEnabled and not self._connecting:
             self.toggleDesktop()
@@ -232,6 +393,7 @@ class WorkspaceController(Controller):
         super().send(text)
         if was_new and self._task_id:
             self._persist_task_mode()
+            self._persist_plan()
             self.modeChanged.emit()
 
     def _start_run(self, history):
@@ -246,10 +408,11 @@ class WorkspaceController(Controller):
         self._session_auto = False
         self._run_started = time.monotonic()
         self._run_metrics = _blank_metrics()
+        self.dock.begin_turn(self._task_title if self._task_title != "New task" else "Turn")
         self.activityChanged.emit()
         self._refresh_tasks()
         self.changed.emit()
-        engine = AgentEngine(OllamaClient(self._endpoint), self.desktop)
+        engine = PlanningAgentEngine(OllamaClient(self._endpoint), self.desktop)
         model = self._model
         enabled = self._task_mode == "work" and self.desktopEnabled
         think = self._think
@@ -265,16 +428,46 @@ class WorkspaceController(Controller):
             self._run_done, self._run_failed, self._on_event,
         )
 
+    def _on_event(self, event):
+        if event.get("type") == "tool_start" and event.get("name") == "update_plan":
+            self._set_plan(event.get("args", {}).get("steps", []))
+            explanation = str(event.get("args", {}).get("explanation", "")).strip()
+            self._status = explanation[:120] or "Planning"
+            self.changed.emit()
+            return
+        if event.get("type") == "tool_end" and event.get("name") == "update_plan":
+            return
+        super()._on_event(event)
+
+    def _run_done(self, history):
+        stopped = self._run_job is not None and self._run_job.cancel.is_set()
+        outcome = "cancelled" if stopped else ("failed" if self._error else "completed")
+        super()._run_done(self._strip_plan_history(history))
+        self._settle_plan(outcome)
+
+    def _run_failed(self, message):
+        super()._run_failed(message)
+        self._settle_plan("failed")
+
+    @Slot()
+    def clearTask(self):
+        task_id = self._task_id
+        super().clearTask()
+        if task_id and self._task_id == task_id:
+            self._set_plan([])
+
     @Slot()
     def duplicateTask(self):
         if self._busy or not self._task_id:
             return
         mode = self._task_mode
+        plan = [dict(step) for step in self._plan_steps]
         previous = self._task_id
         super().duplicateTask()
         if self._task_id and self._task_id != previous:
             self._task_mode = mode
             self._task_mode_locked = True
+            self._set_plan(plan)
             self._persist_task_mode()
             self._emit_mode()
 
@@ -283,11 +476,13 @@ class WorkspaceController(Controller):
         if self._busy:
             return
         mode = self._saved_mode(task_id)
+        plan = self._saved_plan(task_id)
         previous = self._task_id
         super().duplicateTaskById(task_id)
         if self._task_id and self._task_id != previous:
             self._task_mode = mode
             self._task_mode_locked = True
+            self._set_plan(plan)
             self._persist_task_mode()
             self._emit_mode()
 
@@ -296,10 +491,12 @@ class WorkspaceController(Controller):
         if self._busy or not self._task_id:
             return
         mode = self._task_mode
+        plan = [dict(step) for step in self._plan_steps]
         previous = self._task_id
         super().branchFrom(row)
         if self._task_id and self._task_id != previous:
             self._task_mode = mode
             self._task_mode_locked = True
+            self._set_plan(plan)
             self._persist_task_mode()
             self._emit_mode()
