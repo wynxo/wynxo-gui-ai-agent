@@ -327,11 +327,11 @@ SCENES = [
     ("08-settings", "conversation", "settings"),
     ("09-command-palette", "conversation", "palette"),
     ("10-quick-bar", "empty", "quickbar"),
-    # Capture onboarding before the model picker can remain open from another
-    # snapshot state. This also mirrors a true first launch more faithfully.
     ("11-welcome", "welcome", "welcome"),
     ("12-appearance", "conversation", "appearanceSettings"),
     ("13-violet-home", "empty-violet", ""),
     ("14-ember-home", "empty-ember", ""),
     ("15-ion-conversation", "conversation-ion", ""),
+    ("16-codex-home", "empty", "modeCodex"),
+    ("17-work-home", "empty", "modeWork"),
 ]
