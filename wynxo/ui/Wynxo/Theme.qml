@@ -4,10 +4,8 @@ import QtQuick
 /*!
     Wynxo's interface tokens.
 
-    The product is intentionally dense and tool-like: one dark canvas, subtle
-    separators, compact controls, restrained radius, and a warm focus colour.
-    The goal is the same visual hierarchy used by serious coding agents: text
-    and state first, chrome second.
+    A neutral graphite workspace keeps the chrome visible without turning every
+    panel into a card. Warm accent is reserved for focus and action state.
 */
 QtObject {
     id: theme
@@ -16,43 +14,43 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    readonly property color background:      "#0f0f0f"
+    readonly property color background:      "#1b1b1b"
     readonly property color backgroundSoft:  "#141414"
-    readonly property color surface:         "#191919"
-    readonly property color surfaceRaised:   "#202020"
-    readonly property color surfaceHover:    "#272727"
-    readonly property color surfaceSelected: "#2d2d2d"
-    readonly property color surfaceSunken:   "#0a0a0a"
-    readonly property color scrim:           "#cc050505"
+    readonly property color surface:         "#222222"
+    readonly property color surfaceRaised:   "#292929"
+    readonly property color surfaceHover:    "#303030"
+    readonly property color surfaceSelected: "#353535"
+    readonly property color surfaceSunken:   "#111111"
+    readonly property color scrim:           "#cc080808"
 
-    readonly property color borderSubtle: "#2f2f2f"
-    readonly property color borderStrong: "#424242"
+    readonly property color borderSubtle: "#353535"
+    readonly property color borderStrong: "#4a4a4a"
 
-    readonly property color textPrimary:   "#f1f1ec"
+    readonly property color textPrimary:   "#f2f2ee"
     readonly property color textSecondary: "#c8c8c2"
-    readonly property color textMuted:     "#93938d"
-    readonly property color textInverse:   "#101010"
+    readonly property color textMuted:     "#92928c"
+    readonly property color textInverse:   "#111111"
 
-    // Warm by default, but still user configurable from Appearance.
+    // Claude-like warmth as the default focus colour; Appearance can replace it.
     readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#d97757"
     readonly property color accentHover: Qt.lighter(accent, 1.08)
-    readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.11)
-    readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.42)
+    readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.12)
+    readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.44)
     readonly property color onAccent: (accent.r * 0.299 + accent.g * 0.587 + accent.b * 0.114) > 0.56
                                       ? "#101010" : "#f7f6f2"
 
-    readonly property color success: "#78c995"
-    readonly property color warning: "#d6aa5a"
-    readonly property color danger:  "#e68173"
-    readonly property color info:    "#80a9dc"
-    readonly property color successMuted: "#142019"
-    readonly property color warningMuted: "#241f15"
-    readonly property color dangerMuted:  "#251816"
+    readonly property color success: "#7acb96"
+    readonly property color warning: "#d7ab5d"
+    readonly property color danger:  "#e58476"
+    readonly property color info:    "#82abdd"
+    readonly property color successMuted: "#17231c"
+    readonly property color warningMuted: "#282116"
+    readonly property color dangerMuted:  "#2a1a18"
 
     readonly property var codePalette: ({
-        "text": "#deddd7", "keyword": "#d5a6e6", "string": "#9bc89b",
-        "number": "#d9a878", "comment": "#85857f", "function": "#8ab8db",
-        "builtin": "#82c7bd", "punctuation": "#999992"
+        "text": "#e0dfda", "keyword": "#d5a6e6", "string": "#9dca9d",
+        "number": "#dbaa7a", "comment": "#898983", "function": "#8dbbdd",
+        "builtin": "#84c9bf", "punctuation": "#9c9c95"
     })
 
     // -------------------------------------------------------------- rhythm
@@ -70,8 +68,8 @@ QtObject {
 
     readonly property int r1: 5
     readonly property int r2: 7
-    readonly property int r3: 10
-    readonly property int r4: 12
+    readonly property int r3: 11
+    readonly property int r4: 14
     readonly property int rPill: 999
 
     readonly property int control: compact ? 30 : 32
