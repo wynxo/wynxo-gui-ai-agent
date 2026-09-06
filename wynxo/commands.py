@@ -1,6 +1,7 @@
 """Bounded local command execution, independent of screen-control permission."""
 from __future__ import annotations
 
+import codecs
 import os
 from pathlib import Path
 import selectors
@@ -12,11 +13,16 @@ import time
 OUTPUT_LIMIT = 32000
 
 
-def run_command(command: str, cwd: str = "", timeout: int = 60, cancel=None) -> dict:
+def run_command(command: str, cwd: str = "", timeout: int = 60, cancel=None,
+                on_output=None) -> dict:
     """Run Bash with captured output; Stop/timeout terminates its process group.
 
     Commands run as the current user, without an interactive stdin or elevated
     privileges. The engine applies the same approval policy as other actions.
+
+    ``on_output`` is called with each decoded fragment as it arrives, so a
+    terminal view can show a long command's progress instead of waiting for the
+    exit code. It never sees more than the caller would read from the result.
     """
     directory = Path(cwd).expanduser() if cwd else Path.home()
     directory = directory.resolve(strict=True)
@@ -35,6 +41,20 @@ def run_command(command: str, cwd: str = "", timeout: int = 60, cancel=None) -> 
     truncated = False
     error = ""
     started = time.monotonic()
+    # A read can land in the middle of a multi-byte character, so the live
+    # fragments are decoded incrementally rather than one chunk at a time.
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+
+    def publish(chunk: bytes, final: bool = False) -> None:
+        if on_output is None:
+            return
+        fragment = decoder.decode(chunk, final)
+        if fragment:
+            try:
+                on_output(fragment)
+            except Exception:
+                pass  # A failing view must never take the command down with it.
+
     try:
         with selectors.DefaultSelector() as selector:
             selector.register(process.stdout, selectors.EVENT_READ)
@@ -53,6 +73,7 @@ def run_command(command: str, cwd: str = "", timeout: int = 60, cancel=None) -> 
                     room = OUTPUT_LIMIT - len(output)
                     output.extend(chunk[:room])
                     truncated = truncated or len(chunk) > room
+                    publish(chunk[:room])
             # A command can close stdout before finishing.
             while not error and process.poll() is None:
                 if cancel is not None and cancel.is_set():
@@ -79,6 +100,7 @@ def run_command(command: str, cwd: str = "", timeout: int = 60, cancel=None) -> 
                 pass
         process.wait()
         process.stdout.close()
+        publish(b"", final=True)
     result = {"ok": not error and process.returncode == 0,
               "exit_code": process.returncode, "output": output.decode("utf-8", "replace"),
               "cwd": str(directory), "command": command, "truncated": truncated}

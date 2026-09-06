@@ -35,6 +35,7 @@ Sheet {
             { keys: "Alt+Up / Alt+Down", label: "Previous / next task" },
             { keys: "Ctrl+Shift+P", label: "Command palette" },
             { keys: "Ctrl+B", label: "Show or hide the sidebar" },
+            { keys: "Ctrl+J", label: "Show or hide the panel" },
             { keys: "Ctrl+Space", label: "Quick bar" },
         ]},
         { title: "While a run is on", rows: [

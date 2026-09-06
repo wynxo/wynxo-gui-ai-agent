@@ -39,6 +39,11 @@ Composer 1.0 Composer.qml
 
 # The shell
 WorkspaceSidebar 1.0 WorkspaceSidebar.qml
+SidePanel 1.0 SidePanel.qml
+TerminalView 1.0 TerminalView.qml
+FilesView 1.0 FilesView.qml
+BrowserView 1.0 BrowserView.qml
+WebPage 1.0 WebPage.qml
 TaskRow 1.0 TaskRow.qml
 TaskHeader 1.0 TaskHeader.qml
 ErrorBanner 1.0 ErrorBanner.qml

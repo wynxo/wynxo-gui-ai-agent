@@ -76,8 +76,25 @@ def test_shell_has_one_sidebar_toggle_and_no_composer_overlap():
     assert "ReferenceError" not in result.stderr, result.stderr
     assert "Binding loop" not in result.stderr, result.stderr
     states = json.loads(result.stdout.strip().splitlines()[-1])
-    assert len(states) == 6
+    assert len(states) == 7
     for state in states:
         assert state["toggles"] == 1, state
         assert state["composer_inside"], state
         assert state["no_overlap"], state
+
+
+def test_the_panel_docks_where_there_is_room_and_gives_way_where_there_is_not():
+    """Two docked columns need a wide window. Below the threshold the panel
+    becomes a drawer, so the conversation keeps its width."""
+    environment = {**os.environ, "QT_QPA_PLATFORM": "offscreen", "QT_QUICK_BACKEND": "software"}
+    result = subprocess.run([sys.executable, str(PROBE.with_name("shell_probe.py"))],
+                            capture_output=True, text=True, timeout=30, env=environment)
+    assert result.returncode == 0, result.stderr
+    states = {state["state"]: state for state in json.loads(result.stdout.strip().splitlines()[-1])}
+
+    assert states["expanded"]["panel_docked"] is False
+    assert states["panel-open"]["panel_docked"] is True
+    assert states["narrow"]["panel_docked"] is False, "a 560px window has no room for it"
+    for state in states.values():
+        assert state["panel_inside"], state
+        assert state["clear_of_panel"], state

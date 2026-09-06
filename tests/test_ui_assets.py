@@ -101,6 +101,7 @@ def test_interactive_components_carry_accessible_names():
         "Composer.qml", "WorkspaceSidebar.qml", "TaskRow.qml", "TaskHeader.qml",
         "UserMessage.qml", "AssistantMessage.qml", "RunActivity.qml", "Meter.qml",
         "ModelPicker.qml", "TaskStart.qml",
+        "SidePanel.qml", "TerminalView.qml", "FilesView.qml",
     }
     for name in sorted(required):
         text = (MODULE / name).read_text(encoding="utf-8")
@@ -165,10 +166,49 @@ def test_the_runtime_preset_is_not_scattered():
 
 def test_the_permanent_inspector_is_gone():
     """A third column of context, activity and model was the main thing the
-    redesign removed; it must not come back by accident."""
+    redesign removed; it must not come back by accident.
+
+    The side panel is not that column: it shows the machine — the terminal, the
+    workspace and the browser — never the conversation's own state, and it is
+    opened by the user rather than by a run."""
     assert not (MODULE / "ContextPanel.qml").exists()
     main = (UI / "Main.qml").read_text(encoding="utf-8")
     assert "inspector" not in main.lower()
+    panel = (MODULE / "SidePanel.qml").read_text(encoding="utf-8")
+    for absent in ("bridge.attachments", "bridge.activity", "bridge.setModel("):
+        assert absent not in panel
+
+
+def test_the_panel_tab_is_chosen_in_one_place():
+    """Only the switcher moves the panel. Anything else doing it would be the
+    interface deciding what you look at."""
+    assert components_using("bridge.setPanelTab(") == {"SidePanel.qml"}
+    assert components_using("bridge.showPanel(") == {"Main.qml"}
+
+
+def test_live_command_output_has_one_home():
+    """The conversation keeps the finished result; only the terminal streams."""
+    assert components_using("bridge.terminalModel") == {"TerminalView.qml"}
+    assert components_using("bridge.runTerminalCommand(") == {"TerminalView.qml"}
+
+
+def test_the_optional_web_engine_is_isolated_to_one_component():
+    """`import QtWebEngine` fails the whole file when the module is absent, so
+    exactly one component may carry it — and it must be loaded by URL, never
+    named as a type, or the panel goes down with it."""
+    importers = {path.name for path in MODULE.glob("*.qml")
+                 if "import QtWebEngine" in path.read_text(encoding="utf-8")}
+    assert importers == {"WebPage.qml"}
+    browser = (MODULE / "BrowserView.qml").read_text(encoding="utf-8")
+    assert 'source: active ? "WebPage.qml" : ""' in browser
+    assert "WebPage {" not in browser
+
+
+def test_the_panel_falls_back_rather_than_failing_silently():
+    """Without Qt WebEngine the page still has to go somewhere the user can see."""
+    browser = (MODULE / "BrowserView.qml").read_text(encoding="utf-8")
+    assert "bridge.openBrowserExternally()" in browser
+    assert "No built-in browser" in browser
 
 
 def test_no_surface_chooses_its_own_visible_panel():

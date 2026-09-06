@@ -77,6 +77,9 @@ Canvas {
         case "starFilled": c.beginPath(); c.moveTo(12,3.5); c.lineTo(14.7,9.6); c.lineTo(21,10.4); c.lineTo(16.3,14.8); c.lineTo(17.6,21); c.lineTo(12,17.9); c.lineTo(6.4,21); c.lineTo(7.7,14.8); c.lineTo(3,10.4); c.lineTo(9.3,9.6); c.closePath(); c.fill(); break;
         case "layers": line([[12,3.5],[21,8],[12,12.5],[3,8],[12,3.5]]); line([[3,12],[12,16.5],[21,12]]); line([[3,16],[12,20.5],[21,16]]); break;
         case "save": line([[4,5.5],[4,20.5],[20,20.5],[20,9],[16.5,5.5],[4,5.5]]); rect(8,5.5,8,5,1); rect(7.5,14,9,6.5,1); break;
+        case "globe": circle(12,12,8.5); line([[3.5,12],[20.5,12]]); c.beginPath(); c.ellipse(7.5,3.5,9,17); c.stroke(); break;
+        case "chevronLeft": line([[15,5],[8,12],[15,19]]); break;
+        case "panelRight": rect(3,4,18,16,3); line([[15,4],[15,20]]); break;
         default: circle(12,12,7);
         }
     }

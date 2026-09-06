@@ -56,3 +56,39 @@ def test_invalid_working_directory_fails_before_execution(tmp_path):
     with pytest.raises(FileNotFoundError):
         run_command("touch unexpected", str(tmp_path / "missing"))
     assert not (tmp_path / "unexpected").exists()
+
+
+def test_output_is_published_while_the_command_is_still_running():
+    """The panel shows a long command's progress; it does not wait for the exit."""
+    seen = []
+    result = run_command("echo one; sleep 0.2; echo two", timeout=5, on_output=seen.append)
+    assert result["ok"] is True
+    assert "".join(seen) == "one\ntwo\n"
+    # Two reads, because the second line arrives after the sleep.
+    assert len(seen) >= 2
+
+
+def test_a_character_split_across_two_reads_is_still_one_character():
+    source = ("import sys, time\n"
+              "sys.stdout.buffer.write(b'a\\xc3'); sys.stdout.buffer.flush()\n"
+              "time.sleep(0.3)\n"
+              "sys.stdout.buffer.write(b'\\xa9b'); sys.stdout.buffer.flush()\n")
+    seen = []
+    run_command(python_command(source), timeout=10, on_output=seen.append)
+    assert len(seen) >= 2, "the halves arrived together, so nothing was split"
+    assert "".join(seen) == "aéb"
+    assert "\ufffd" not in "".join(seen)
+
+
+def test_a_failing_listener_does_not_take_the_command_down():
+    def explode(_fragment):
+        raise RuntimeError("the view is gone")
+
+    result = run_command("echo still fine", timeout=5, on_output=explode)
+    assert result["ok"] is True and result["output"] == "still fine\n"
+
+
+def test_published_output_never_exceeds_what_the_result_carries():
+    seen = []
+    result = run_command("yes hello | head -c 60000", timeout=10, on_output=seen.append)
+    assert len("".join(seen)) == len(result["output"]) == OUTPUT_LIMIT

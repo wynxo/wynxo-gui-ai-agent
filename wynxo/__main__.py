@@ -96,7 +96,8 @@ def main():
                         help="Open the floating quick bar, reusing a running Wynxo if there is one")
     parser.add_argument("--ui-preview", metavar="SCENE", nargs="?", const="conversation",
                         help="Run the interface with fixed demo state "
-                             "(empty, conversation, context, run, desktop, welcome)")
+                             "(empty, conversation, context, run, desktop, terminal, "
+                             "files, welcome)")
     parser.add_argument("--snapshot", metavar="DIR",
                         help="Render the demo scenes to PNG files in DIR and exit")
     parser.add_argument("--size", metavar="WxH",
@@ -121,6 +122,11 @@ def main():
 
     QQuickStyle.setStyle("Basic")
     app = QApplication(sys.argv[:1])
+    # Qt WebEngine has to be started between the application and the QML engine,
+    # and is optional: without it the browser panel hands pages to the user's own
+    # browser instead. Set WYNXO_NO_BROWSER=1 to skip it deliberately.
+    from . import webview
+    webview.initialize()
     app.setApplicationName("Wynxo")
     app.setOrganizationName("Wynxo")
     app.setApplicationDisplayName("Wynxo")

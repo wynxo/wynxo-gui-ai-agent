@@ -117,6 +117,49 @@ STEPS = [
 ]
 
 
+# A small, plausible project the file panel can walk, written into the preview
+# folder so the tree and the preview are real reads rather than fixtures.
+PORTAL_SOURCE = '\n'.join([
+    '"""Talk to the desktop portal without blocking the caller."""',
+    "import asyncio",
+    "",
+    "",
+    "class Portal:",
+    "    def __init__(self, bus, timeout=5.0):",
+    "        self.bus = bus",
+    "        self.timeout = timeout",
+    "",
+    "    async def request(self, name: str, options: dict) -> dict:",
+    '        """Send one request and wait for the response signal."""',
+    "        reply = await asyncio.wait_for(self.bus.call(name, options), self.timeout)",
+    '        if reply["response"]:',
+    '            raise PortalError(reply.get("detail", "The portal refused the request"))',
+    '        return reply.get("results", {})',
+    "",
+])
+
+PROJECT_FILES = {
+    "README.md": "# portal-bridge\n\nA thin wrapper around the desktop portal.\n",
+    "pyproject.toml": '[project]\nname = "portal-bridge"\nversion = "0.4.2"\n',
+    "bridge/__init__.py": '__version__ = "0.4.2"\n',
+    "bridge/portal.py": PORTAL_SOURCE,
+    "bridge/session.py": '"""Session tokens, kept out of the log."""\n\nTOKEN_KEY = "restore_token"\n',
+    "tests/test_portal.py": "def test_request_times_out():\n    assert True\n",
+}
+
+# What a real session looks like a minute in: something Wynxo ran, something you
+# ran, and something still going.
+TERMINAL = [
+    ("agent", "python -m pytest tests/test_portal.py -q",
+     ".F\n\n=============================== FAILURES ================================\n"
+     "______________________ test_request_times_out _______________________\n"
+     '        if reply["response"]:\n'
+     "E       KeyError: 'response'\n\n"
+     "bridge/portal.py:15: KeyError\n1 failed, 1 passed in 0.42s\n", 1, 428),
+    ("you", "git status --short", " M bridge/portal.py\n?? notes.md\n", 0, 36),
+]
+
+
 class DemoDesktop:
     """A desktop backend that reports a healthy session and never acts."""
 
@@ -155,6 +198,9 @@ class DemoController(Controller):
         store.set_setting("onboarded", scene != "welcome")
         store.set_setting("model", "qwen2.5vl:7b")
         store.set_setting("permission_mode", "safe")
+        # Only the panel scenes show the panel, so every other screenshot keeps
+        # framing the conversation the way the rest of the README describes it.
+        store.set_setting("panel_open", scene in ("terminal", "files"))
         store.set_setting("favorite_models", [entry["name"] for entry in CATALOG if entry["favorite"]])
         super().__init__(store=store, desktop=DemoDesktop(scene in ("desktop", "conversation")),
                          autoconnect=False)
@@ -217,6 +263,9 @@ class DemoController(Controller):
         if self.scene == "context":
             self._seed_context_scene()
             return
+        if self.scene in ("terminal", "files"):
+            self._seed_panel_scene()
+            return
 
         self.messages.append_message("user", "What's on my screen? Can you help me fix it?")
         if self.scene == "desktop":
@@ -261,6 +310,46 @@ class DemoController(Controller):
             "The ridge line is a single drag through 24 points; the sun is a filled "
             "ellipse. Say the word if you want the colours changed.")
         self.activityChanged.emit()
+        self.changed.emit()
+
+    def _seed_panel_scene(self):
+        """The same run, seen from the machine's side: the panel, open and busy."""
+        project = self._preview_directory / "portal-bridge"
+        for name, body in PROJECT_FILES.items():
+            path = project / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        self._working_directory = str(project)
+        self._recent_projects = [str(project)] + self._recent_projects[1:]
+        self._task_title = "Why is test_request_times_out failing?"
+        self._panel_open = True
+        self._panel_tab = "files" if self.scene == "files" else "terminal"
+
+        self.terminal.note("Opening org.kde.konsole")
+        for source, command, output, code, ms in TERMINAL:
+            self.terminal.start(command, str(project), source)
+            self.terminal.write(output)
+            self.terminal.finish(code=code, ms=ms)
+        # One command still running, because that is what the panel is for.
+        self.terminal.start("python -m pytest tests -q", str(project))
+        self.terminal.write("collected 14 items\n\ntests/test_portal.py ")
+
+        self._expanded_folders = {"bridge"}
+        self._rebuild_files()
+        if self.scene == "files":
+            self.openInPanel(str(project / "bridge" / "portal.py"))
+
+        self.messages.append_message("user", "Why is test_request_times_out failing?")
+        self.messages.append_message(
+            "assistant",
+            "The portal reply has no `response` key when the request times out, so the "
+            "assertion raises `KeyError` before the test can fail cleanly.\n\n"
+            "I am re-running the suite to see whether anything else depends on that "
+            "shape — it is running in the panel beside you.")
+        self._busy = True
+        self._status = "Running a command"
+        self.panelChanged.emit()
+        self.filesChanged.emit()
         self.changed.emit()
 
     def _seed_context_scene(self):
@@ -321,4 +410,6 @@ SCENES = [
     ("09-command-palette", "conversation", "palette"),
     ("10-quick-bar", "empty", "quickbar"),
     ("11-welcome", "welcome", "welcome"),
+    ("12-terminal", "terminal", ""),
+    ("13-files", "files", ""),
 ]

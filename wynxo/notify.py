@@ -59,6 +59,18 @@ def open_path(path: str) -> bool:
         return False
 
 
+def open_url(url: str) -> bool:
+    """Hand an http or https page to the user's own browser.
+
+    The scheme is checked here rather than trusted, because xdg-open will start
+    whatever handler a URL names, and Wynxo only ever means "open a web page".
+    """
+    address = str(url or "").strip()
+    if not address.lower().startswith(("http://", "https://")):
+        return False
+    return open_path(address)
+
+
 TERMINALS = ("x-terminal-emulator", "konsole", "gnome-terminal", "kgx", "ptyxis",
              "alacritty", "kitty", "wezterm", "foot", "xfce4-terminal", "tilix", "xterm")
 

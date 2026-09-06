@@ -121,3 +121,40 @@ def test_the_finished_run_scene_settles_every_step():
         assert answer["body"].count("KolourPaint is open") == 1
     finally:
         bridge.shutdown()
+
+
+def test_only_the_panel_scenes_open_the_panel():
+    """Every other screenshot frames the conversation the way the README
+    describes it, so the panel must not creep into all of them."""
+    for scene in ("conversation", "run", "desktop", "context", "empty", "welcome"):
+        bridge = DemoController(scene)
+        try:
+            assert bridge.panelOpen is False, scene
+        finally:
+            bridge.shutdown()
+
+
+def test_the_panel_scenes_show_a_live_command_and_a_real_tree():
+    bridge = DemoController("terminal")
+    try:
+        assert bridge.panelOpen is True and bridge.panelTab == "terminal"
+        blocks = bridge.terminal.session.blocks
+        kinds = [block["kind"] for block in blocks]
+        assert kinds.count("command") == 3
+        assert {block["source"] for block in blocks if block["kind"] == "command"} == {"agent", "you"}
+        # The last command is still going, which is the point of the panel.
+        assert bridge.terminal.session.running is True
+        assert any(block["status"] == "failed" for block in blocks)
+    finally:
+        bridge.shutdown()
+
+    bridge = DemoController("files")
+    try:
+        assert bridge.panelTab == "files"
+        names = [row["name"] for row in bridge.fileRows]
+        assert "bridge" in names and "portal.py" in names
+        assert bridge.previewName == "portal.py"
+        assert bridge.previewLanguage == "Python"
+        assert "asyncio" in bridge.previewHtml
+    finally:
+        bridge.shutdown()

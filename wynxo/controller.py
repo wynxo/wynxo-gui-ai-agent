@@ -1,9 +1,11 @@
 """Qt bridge. Network and desktop work never block the GUI thread.
 
-The controller owns four separate pieces of state that the UI reads
+The controller owns five separate pieces of state that the UI reads
 independently: conversation state (``Messages`` + history), Ollama state
 (catalogue, capabilities, connection), desktop state (permission mode, backend,
-pending approvals) and runtime configuration (presets and generation options).
+pending approvals), runtime configuration (presets and generation options) and
+the side panel — the terminal transcript, the workspace file tree and the
+built-in browser, which show the same run from the machine's side.
 Long operations run on ``Job`` threads and report back through Qt signals.
 """
 from __future__ import annotations
@@ -22,6 +24,9 @@ from PySide6.QtGui import QColor, QGuiApplication
 from . import context as ctx
 from . import markdown as md
 from . import notify
+from . import webview
+from . import workbench
+from .commands import run_command
 from .desktop import DesktopController, SessionTokens
 from .engine import (
     ASK, AUTO, PERMISSION_LABELS, PERMISSION_MODES, SAFE, AgentEngine, OllamaClient,
@@ -107,7 +112,11 @@ TOOL_PRESENTATION = {
     "press_key": ("keyboard", "Pressing keys"),
     "scroll": ("scroll", "Scrolling"),
     "wait": ("clock", "Waiting"),
+    "open_url": ("globe", "Opening a page"),
 }
+
+# The side panel's three surfaces, in the order the switcher shows them.
+PANEL_TABS = ("terminal", "files", "browser")
 
 STARTERS = [
     {"title": "Open an app", "icon": "launch", "prompt": "Open KCalc for me."},
@@ -323,6 +332,109 @@ class Messages(QAbstractListModel):
         return self.append_message(speaker, body, thought)
 
 
+class Terminal(QAbstractListModel):
+    """The transcript the side panel shows: one row per block.
+
+    Output arrives in fragments while a command is still running, so the open
+    output row is edited in place. Every mutation goes through this class rather
+    than through :class:`~wynxo.workbench.TerminalSession` directly, because Qt
+    has to be told about an insertion before the list grows.
+    """
+
+    KIND = Qt.UserRole + 1
+    TEXT = Qt.UserRole + 2
+    CWD = Qt.UserRole + 3
+    SOURCE = Qt.UserRole + 4
+    STATUS = Qt.UserRole + 5
+    TRUNCATED = Qt.UserRole + 6
+
+    # "state" is taken by Item in QML, so a delegate cannot require it.
+    ROLES = {KIND: b"kind", TEXT: b"text", CWD: b"cwd", SOURCE: b"source",
+             STATUS: b"status", TRUNCATED: b"truncated"}
+
+    changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.session = workbench.TerminalSession()
+
+    # ------------------------------------------------------- the Qt model
+    def roleNames(self):
+        return dict(self.ROLES)
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self.session.blocks)
+
+    def data(self, index, role):
+        if not index.isValid() or not 0 <= index.row() < len(self.session.blocks):
+            return None
+        block = self.session.blocks[index.row()]
+        field = self.ROLES.get(role)
+        return block.get(field.decode()) if field else None
+
+    def _touch(self, row: int) -> None:
+        if row is not None and 0 <= row < len(self.session.blocks):
+            position = self.index(row, 0)
+            self.dataChanged.emit(position, position, list(self.ROLES))
+
+    def _trim(self) -> None:
+        extra = self.session.overflow()
+        if not extra:
+            return
+        self.beginRemoveRows(QModelIndex(), 0, extra - 1)
+        self.session.drop_front(extra)
+        self.endRemoveRows()
+
+    def _append(self, mutate):
+        self._trim()
+        row = len(self.session.blocks)
+        self.beginInsertRows(QModelIndex(), row, row)
+        mutate()
+        self.endInsertRows()
+        self.changed.emit()
+        return row
+
+    # ------------------------------------------------------------ writing
+    def start(self, command: str, cwd: str = "", source: str = workbench.AGENT) -> None:
+        if self.session.running:
+            # ``start`` closes the previous command, which is a second block.
+            self.finish(error="Interrupted by the next command", status="stopped")
+        self._append(lambda: self.session.start(command, cwd, source))
+
+    def write(self, text: str) -> None:
+        if not text:
+            return
+        if self.session.output_index is None:
+            self._append(self.session.open_output)
+        self.session.write(text)
+        self._touch(self.session.output_index)
+
+    def finish(self, code: int = 0, error: str = "", ms: int = 0, status: str = "") -> None:
+        # Trimming first, because it moves the command row this result belongs to.
+        self._trim()
+        command_row = self.session.command_index
+        row = len(self.session.blocks)
+        self.beginInsertRows(QModelIndex(), row, row)
+        self.session.finish(code, error, ms, status)
+        self.endInsertRows()
+        self._touch(command_row)
+        self.changed.emit()
+
+    def note(self, text: str, status: str = "note") -> None:
+        self._append(lambda: self.session.note(text, status))
+
+    def clear(self) -> None:
+        if not self.session.blocks:
+            return
+        self.beginResetModel()
+        self.session.clear()
+        self.endResetModel()
+        self.changed.emit()
+
+    def transcript(self) -> str:
+        return self.session.transcript()
+
+
 class Job(QThread):
     event = Signal(dict)
     result = Signal(object)
@@ -365,6 +477,11 @@ class Controller(QObject):
     paletteChanged = Signal()
     catalogChanged = Signal()
     permissionChanged = Signal()
+    panelChanged = Signal()
+    filesChanged = Signal()
+    previewChanged = Signal()
+    browserChanged = Signal()
+    browseRequested = Signal(str)
     toast = Signal(str)
     focusComposer = Signal()
     quickBarRequested = Signal()
@@ -434,6 +551,12 @@ class Controller(QObject):
         self._recent_projects = [str(p) for p in (setting("recent_projects", []) or []) if str(p)]
         self._sidebar_width = _bounded_int(setting("sidebar_width", 248), 200, 400, 248)
         self._sidebar_collapsed = bool(setting("sidebar_collapsed", False))
+        self._panel_open = bool(setting("panel_open", True))
+        self._panel_tab = str(setting("panel_tab", "terminal"))
+        if self._panel_tab not in PANEL_TABS:
+            self._panel_tab = "terminal"
+        self._panel_width = _bounded_int(setting("panel_width", 400), 300, 780, 400)
+        self._show_hidden_files = bool(setting("show_hidden_files", False))
         self._onboarded = bool(setting("onboarded", False))
         self._run_metrics = _blank_metrics()
         self._models: list[str] = []
@@ -456,6 +579,21 @@ class Controller(QObject):
         self._error_actions: list[dict] = []
         self._activity: list[dict] = []
         self._attachments: list[dict] = []
+        # ------------------------------------------------------- side panel
+        self.terminal = Terminal(self)
+        self._terminal_job: Job | None = None
+        self._terminal_started = 0.0
+        self._file_rows: list[dict] = []
+        self._expanded_folders: set[str] = set()
+        self._preview: dict = {}
+        self._preview_html = ""
+        self._preview_image = ""
+        self._browser_url = ""
+        self._browser_ready = webview.available()
+        # A tab you are not looking at reports for itself instead of stealing
+        # the view; nothing here ever changes which tab is shown.
+        self._panel_unseen = {tab: 0 for tab in PANEL_TABS}
+        self.browseRequested.connect(self._show_url)
         # What you had typed, per task, so moving between them loses nothing.
         self._draft_text = ""
         self._drafts: dict[str, tuple[str, list[dict]]] = {}
@@ -490,6 +628,7 @@ class Controller(QObject):
         self._code_palette = dict(md.DEFAULT_PALETTE)
         self._html_palette = dict(md.HTML_PALETTE)
         self._history_tokens = 0
+        self._rebuild_files()
         if autoconnect:
             self.refreshModels()
 
@@ -1597,6 +1736,10 @@ class Controller(QObject):
             self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
             del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
             self.store.set_setting("recent_projects", self._recent_projects)
+        # A new place means a new tree, a stale preview and a new default cwd.
+        self._expanded_folders = set()
+        self.closePreview()
+        self._rebuild_files()
         self.changed.emit()
 
     @Slot()
@@ -1642,6 +1785,340 @@ class Controller(QObject):
         if not notify.open_terminal(self._working_directory or str(Path.home())):
             self.toast.emit("No terminal emulator was found on this system.")
 
+    # --------------------------------------------------------- the side panel
+    # Three surfaces on the machine's side of the conversation: the commands
+    # Wynxo ran, the folder it is working in, and the page it put on screen.
+    # None of them ever decides to become the visible one — an unseen count asks
+    # for attention and the user chooses, exactly as with the left sidebar.
+
+    PANEL_LABELS = {"terminal": "Terminal", "files": "Files", "browser": "Browser"}
+    PANEL_ICONS = {"terminal": "terminal", "files": "folder", "browser": "globe"}
+
+    @Property(bool, notify=panelChanged)
+    def panelOpen(self): return self._panel_open
+    @Property(str, notify=panelChanged)
+    def panelTab(self): return self._panel_tab
+    @Property(int, notify=panelChanged)
+    def panelWidth(self): return self._panel_width
+
+    @Property("QVariantList", notify=panelChanged)
+    def panelTabs(self):
+        return [{"id": tab, "label": self.PANEL_LABELS[tab], "icon": self.PANEL_ICONS[tab],
+                 "unseen": self._panel_unseen[tab]} for tab in PANEL_TABS]
+
+    @Property(int, notify=panelChanged)
+    def panelUnseen(self):
+        """How much has happened in tabs you are not looking at."""
+        return sum(self._panel_unseen.values())
+
+    def _mark_unseen(self, tab: str) -> None:
+        if tab not in self._panel_unseen:
+            return
+        if self._panel_open and self._panel_tab == tab:
+            return
+        self._panel_unseen[tab] = min(self._panel_unseen[tab] + 1, 99)
+        self.panelChanged.emit()
+
+    def _mark_seen(self) -> None:
+        if self._panel_open and self._panel_unseen.get(self._panel_tab):
+            self._panel_unseen[self._panel_tab] = 0
+
+    @Slot(bool)
+    def setPanelOpen(self, value):
+        value = bool(value)
+        if value == self._panel_open:
+            return
+        self._panel_open = value
+        self.store.set_setting("panel_open", value)
+        self._mark_seen()
+        self.panelChanged.emit()
+
+    @Slot()
+    def togglePanel(self):
+        self.setPanelOpen(not self._panel_open)
+
+    @Slot(str)
+    def setPanelTab(self, tab):
+        tab = str(tab)
+        if tab not in PANEL_TABS:
+            return
+        self._panel_tab = tab
+        self.store.set_setting("panel_tab", tab)
+        self._mark_seen()
+        self.panelChanged.emit()
+
+    @Slot(str)
+    def showPanel(self, tab):
+        """Open the panel on a tab. Only ever called by something you did."""
+        if str(tab) in PANEL_TABS:
+            self.setPanelTab(str(tab))
+        self.setPanelOpen(True)
+
+    @Slot(int)
+    def setPanelWidth(self, width):
+        width = _bounded_int(width, 300, 780, self._panel_width)
+        if width == self._panel_width:
+            return
+        self._panel_width = width
+        self.store.set_setting("panel_width", width)
+        self.panelChanged.emit()
+
+    # ------------------------------------------------------------- terminal
+    @Property(QObject, constant=True)
+    def terminalModel(self): return self.terminal
+
+    @Property(str, notify=changed)
+    def terminalCwd(self): return self._working_directory or str(Path.home())
+
+    @Property(str, notify=changed)
+    def terminalCwdLabel(self):
+        return ctx.working_directory_label(self.terminalCwd)
+
+    @Property(bool, notify=panelChanged)
+    def terminalBusy(self): return self._terminal_job is not None
+
+    @Property(bool, notify=panelChanged)
+    def terminalEmpty(self): return not self.terminal.session.blocks
+
+    @Slot(str)
+    def runTerminalCommand(self, text):
+        """Run what the user typed in the panel. Their own command, no prompt."""
+        command = str(text).strip()
+        if not command or self._terminal_job is not None:
+            return
+        directory = self.terminalCwd
+        if not Path(directory).is_dir():
+            self.terminal.note(f"{directory} is no longer a folder.", "failed")
+            return
+        self.terminal.start(command, directory, workbench.USER)
+        self._terminal_started = time.monotonic()
+
+        def work(cancel, emit):
+            return run_command(command, directory, 300, cancel,
+                               on_output=lambda fragment: emit({"type": "output", "text": fragment}))
+
+        self._terminal_job = self._job(work, self._terminal_done, self._terminal_failed,
+                                       self._on_terminal_event)
+        self.panelChanged.emit()
+
+    def _on_terminal_event(self, event):
+        if event.get("type") == "output":
+            self.terminal.write(event.get("text", ""))
+
+    def _terminal_done(self, result):
+        stopped = self._terminal_job is not None and self._terminal_job.cancel.is_set()
+        elapsed = int((time.monotonic() - self._terminal_started) * 1000)
+        result = result if isinstance(result, dict) else {}
+        self._terminal_job = None
+        self.terminal.finish(code=int(result.get("exit_code") or 0),
+                             error=str(result.get("error") or ""), ms=elapsed,
+                             status="stopped" if stopped else "")
+        self.panelChanged.emit()
+
+    def _terminal_failed(self, message):
+        elapsed = int((time.monotonic() - self._terminal_started) * 1000)
+        self._terminal_job = None
+        self.terminal.finish(code=1, error=str(message), ms=elapsed, status="failed")
+        self.panelChanged.emit()
+
+    @Slot()
+    def stopTerminalCommand(self):
+        if self._terminal_job is not None:
+            self._terminal_job.cancel.set()
+
+    @Slot()
+    def clearTerminal(self):
+        self.terminal.clear()
+        self._panel_unseen["terminal"] = 0
+        self.panelChanged.emit()
+
+    @Slot()
+    def copyTerminal(self):
+        transcript = self.terminal.transcript()
+        if not transcript.strip():
+            self.toast.emit("There is nothing in the terminal yet.")
+            return
+        self.copyText(transcript)
+
+    # ---------------------------------------------------------------- files
+    @Property(str, notify=filesChanged)
+    def fileRoot(self): return str(workbench.resolve_root(self._working_directory))
+
+    @Property(str, notify=filesChanged)
+    def fileRootLabel(self): return ctx.working_directory_label(self.fileRoot)
+
+    @Property("QVariantList", notify=filesChanged)
+    def fileRows(self): return self._file_rows
+
+    @Property(bool, notify=filesChanged)
+    def showHiddenFiles(self): return self._show_hidden_files
+
+    def _rebuild_files(self):
+        root = workbench.resolve_root(self._working_directory)
+        self._file_rows = workbench.build_tree(root, self._expanded_folders,
+                                               self._show_hidden_files)
+        self.filesChanged.emit()
+
+    @Slot()
+    def refreshFiles(self):
+        self._rebuild_files()
+
+    @Slot(bool)
+    def setShowHiddenFiles(self, value):
+        value = bool(value)
+        if value == self._show_hidden_files:
+            return
+        self._show_hidden_files = value
+        self.store.set_setting("show_hidden_files", value)
+        self._rebuild_files()
+
+    @Slot(str)
+    def toggleFolder(self, relative):
+        relative = str(relative)
+        if not relative:
+            return
+        if relative in self._expanded_folders:
+            # Collapsing a folder also forgets what was open inside it, so
+            # reopening it does not restore a tree you have not looked at.
+            self._expanded_folders = {item for item in self._expanded_folders
+                                      if item != relative and not item.startswith(relative + "/")}
+        else:
+            self._expanded_folders.add(relative)
+        self._rebuild_files()
+
+    @Slot(str)
+    def attachFromPanel(self, path):
+        """Send a file from the tree to the composer as context."""
+        self.attachPath(str(path))
+
+    # -------------------------------------------------------------- preview
+    @Property(bool, notify=previewChanged)
+    def previewActive(self): return bool(self._preview)
+    @Property(str, notify=previewChanged)
+    def previewName(self): return str(self._preview.get("name", ""))
+    @Property(str, notify=previewChanged)
+    def previewPath(self): return str(self._preview.get("path", ""))
+    @Property(str, notify=previewChanged)
+    def previewSubtitle(self): return str(self._preview.get("subtitle", ""))
+    @Property(str, notify=previewChanged)
+    def previewError(self): return str(self._preview.get("error", ""))
+    @Property(bool, notify=previewChanged)
+    def previewIsImage(self): return bool(self._preview.get("image"))
+    @Property(str, notify=previewChanged)
+    def previewImage(self): return self._preview_image
+    @Property(str, notify=previewChanged)
+    def previewHtml(self): return self._preview_html
+    @Property(str, notify=previewChanged)
+    def previewLanguage(self):
+        return md.display_language(str(self._preview.get("language", ""))) if self._preview.get("ok") else ""
+
+    # Above this, syntax highlighting costs more than it tells you.
+    HIGHLIGHT_LIMIT = 200_000
+
+    def _render_preview(self):
+        self._preview_html = ""
+        self._preview_image = ""
+        if not self._preview.get("ok"):
+            return
+        if self._preview.get("image"):
+            try:
+                loaded = ctx.load_image(self._preview["path"])
+            except (ctx.ContextError, OSError) as exc:
+                self._preview = {**self._preview, "ok": False, "error": str(exc)}
+                return
+            # A data URI, because the preview reads the file once rather than
+            # handing QML a path it would open a second time.
+            self._preview_image = f"data:{loaded['mime']};base64,{loaded['image']}"
+            self._preview = {**self._preview, "subtitle": loaded["subtitle"] or self._preview["subtitle"]}
+            return
+        text = self._preview.get("text", "")
+        language = self._preview.get("language", "") if len(text) <= self.HIGHLIGHT_LIMIT else ""
+        self._preview_html = md.highlight(text, language, self._code_palette)
+
+    @Slot(str)
+    def openInPanel(self, path):
+        """Show a file from the tree in the preview pane."""
+        target = str(path).replace("file://", "")
+        if not target:
+            return
+        self._preview = workbench.read_preview(target, self.fileRoot)
+        self._render_preview()
+        self.previewChanged.emit()
+
+    @Slot()
+    def closePreview(self):
+        if not self._preview:
+            return
+        self._preview = {}
+        self._preview_html = ""
+        self._preview_image = ""
+        self.previewChanged.emit()
+
+    @Slot()
+    def copyPreview(self):
+        if self._preview.get("ok") and self._preview.get("text"):
+            self.copyText(self._preview["text"])
+        else:
+            self.toast.emit("There is no text to copy.")
+
+    # -------------------------------------------------------------- browser
+    @Property(bool, constant=True)
+    def browserAvailable(self): return self._browser_ready
+
+    @Property(str, notify=browserChanged)
+    def browserUrl(self): return self._browser_url
+
+    @Property(str, notify=browserChanged)
+    def browserLabel(self): return workbench.url_label(self._browser_url)
+
+    @Slot(str)
+    def navigate(self, text):
+        """Take an address from the panel's own field, or refuse it plainly."""
+        try:
+            url = workbench.normalise_url(str(text))
+        except ValueError as exc:
+            self.toast.emit(str(exc))
+            return
+        if not url:
+            return
+        self._show_url(url)
+
+    @Slot(str)
+    def _show_url(self, url):
+        """Put a page in the panel. Always runs on the GUI thread."""
+        self._browser_url = str(url)
+        self.browserChanged.emit()
+        if not self._browser_ready:
+            if not notify.open_url(self._browser_url):
+                self.toast.emit("No browser is available to open that page.")
+        self._mark_unseen("browser")
+
+    def _browse(self, url: str) -> dict:
+        """The engine's ``open_url`` handler; called on the run thread."""
+        address = str(url)
+        self.browseRequested.emit(address)
+        if self._browser_ready:
+            return {"ok": True, "url": address,
+                    "output": f"{address} is now showing in Wynxo's browser panel. "
+                              "You have not read the page; do not describe its contents."}
+        return {"ok": True, "url": address,
+                "output": f"{address} was handed to the user's own browser, because Wynxo's "
+                          "built-in view is unavailable. You have not read the page."}
+
+    @Slot()
+    def openBrowserExternally(self):
+        if not self._browser_url:
+            self.toast.emit("There is no page open.")
+        elif not notify.open_url(self._browser_url):
+            self.toast.emit("No browser is available to open that page.")
+
+    @Slot()
+    def clearBrowser(self):
+        if not self._browser_url:
+            return
+        self._browser_url = ""
+        self.browserChanged.emit()
+
     # ---------------------------------------------------------- generation
     def _start_run(self, history):
         self._busy = True
@@ -1667,7 +2144,8 @@ class Controller(QObject):
             lambda cancel, emit: engine.run(
                 list(history), model, enabled, cancel, emit, think=think, max_steps=max_steps,
                 num_ctx=num_ctx, temperature=temperature, keep_alive=keep_alive,
-                permission_mode=mode, project=project, confirm=self._confirm_action),
+                permission_mode=mode, project=project, confirm=self._confirm_action,
+                browse=self._browse),
             self._run_done, self._run_failed, self._on_event,
         )
 
@@ -1789,8 +2267,14 @@ class Controller(QObject):
             self.messages.append_activity(step)
             self._activity = (self._activity + [step])[-60:]
             self._status = summary or label
+            self._echo_to_terminal(name, event.get("args", {}))
             self.activityChanged.emit()
             self.scrollToEnd.emit()
+        elif kind == "tool_output":
+            # A command that is still running, talking. The transcript shows it
+            # as it arrives; the conversation only ever sees the finished text.
+            self.terminal.write(str(event.get("text", "")))
+            self._mark_unseen("terminal")
         elif kind == "tool_end":
             result = event.get("result", {})
             failed = bool(result.get("error")) or result.get("ok") is False
@@ -1803,6 +2287,12 @@ class Controller(QObject):
             elif not output and result.get("width"):
                 output = f"Captured {result['width']} × {result['height']} pixels"
             patch = {"state": state, "ms": int(event.get("ms", 0) or 0), "output": output[:32000]}
+            if event.get("name") == "run_command" and self.terminal.session.running:
+                # The timeline says "done"; a terminal says "ok".
+                self.terminal.finish(code=int(result.get("exit_code") or 0),
+                                     error=str(result.get("error") or ""),
+                                     ms=patch["ms"],
+                                     status="ok" if state == "done" else state)
             self.messages.update_last_step(**patch)
             if self._activity:
                 self._activity[-1] = {**self._activity[-1], **patch}
@@ -1825,6 +2315,25 @@ class Controller(QObject):
         elif kind == "cancelled":
             self._status = "Stopped"
         self.changed.emit()
+
+    def _echo_to_terminal(self, name: str, args: dict) -> None:
+        """Put an action into the transcript, so the panel shows the whole run.
+
+        Only the things that happen *on the machine* belong here — a command,
+        an application, a page. Clicking and typing are the screen's business
+        and already have their own row in the conversation.
+        """
+        args = args if isinstance(args, dict) else {}
+        if name == "run_command":
+            self.terminal.start(str(args.get("command", "")),
+                                str(args.get("cwd") or self.terminalCwd), workbench.AGENT)
+        elif name == "open_app":
+            self.terminal.note(f"Opening {args.get('app', 'an application')}")
+        elif name == "open_url":
+            self.terminal.note(f"Showing {args.get('url', 'a page')} in the browser panel")
+        else:
+            return
+        self._mark_unseen("terminal")
 
     def _run_done(self, history):
         self._history = history
@@ -1867,6 +2376,8 @@ class Controller(QObject):
         if self._pending_permission is not None:
             self._permission_answer = False
             self._permission_event.set()
+        if self._terminal_job:
+            self._terminal_job.cancel.set()
         if self._run_job:
             self._run_job.cancel.set()
             self._status = "Stopping…"
@@ -1986,6 +2497,10 @@ class Controller(QObject):
     @Slot("QVariantMap")
     def setCodePalette(self, palette):
         self._code_palette = {**md.DEFAULT_PALETTE, **self._palette_hex(palette)}
+        # The file preview is highlighted in Python too, so it is repainted
+        # from here rather than waiting for the next time it is opened.
+        self._render_preview()
+        self.previewChanged.emit()
         self.paletteChanged.emit()
 
     @Slot(str)

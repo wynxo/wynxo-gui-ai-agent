@@ -20,6 +20,7 @@ Item {
     signal openAgentSettings()
     signal openShortcuts()
     signal clearRequested()
+    signal togglePanel()
 
     implicitHeight: Theme.compact ? 46 : 52
 
@@ -182,6 +183,25 @@ Item {
             onClicked: if (bridge) bridge.refreshModels()
             ToolTip.visible: hovered
             ToolTip.text: bridge ? bridge.endpoint + " — click to reconnect" : ""
+        }
+
+        // The panel is the machine's side of the run; it stays one click away
+        // and says when something happened while it was shut.
+        IconButton {
+            objectName: "headerPanelToggle"
+            iconName: "panelRight"
+            tooltip: bridge && bridge.panelOpen ? "Hide the panel" : "Show terminal, files and browser"
+            shortcut: "Ctrl+J"
+            active: bridge && bridge.panelOpen
+            onClicked: root.togglePanel()
+
+            Rectangle {
+                visible: bridge && !bridge.panelOpen && bridge.panelUnseen > 0
+                width: 6; height: 6; radius: 3
+                color: Theme.accent
+                x: parent.width - 9
+                y: 7
+            }
         }
 
         IconButton {

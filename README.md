@@ -36,9 +36,11 @@ inference; Wynxo is the interface.
 
 **The workspace**
 A chat-first layout: conversations and the optional workspace folder on the
-left, a centered composer for new chats, and a readable conversation on the
-right. One sidebar toggle stays visible across expanded, collapsed and narrow
-window layouts. Context and model controls live in the composer.
+left, a readable conversation in the middle, and a panel on the right for the
+terminal, the workspace files and a built-in browser. One sidebar toggle stays
+visible across expanded, collapsed and narrow window layouts; both side columns
+become drawers when the window is too narrow to hold them. Context and model
+controls live in the composer.
 
 The charcoal interface uses softer conversation cards, a spacious composer,
 and a welcome screen with responsive task starters. Copy and edit actions stay
@@ -65,6 +67,30 @@ without screen-control permission. Commands return their output and exit code,
 run in the selected workspace (or home folder), and stop on cancellation or
 timeout. Output is capped at 32 KB; commands default to 60 seconds, with a
 maximum of 300 seconds. There is no interactive stdin or automatic elevation.
+
+**The panel**
+A right-hand panel — `Ctrl+J` — that shows the machine's side of the run.
+
+*Terminal.* Every command Wynxo runs appears the moment it is asked for, with
+its output streaming in while it is still going and a line that closes it —
+exit status and duration. Applications it launches and pages it opens are noted
+in the same place. There is a prompt at the bottom, so your own commands run in
+the same folder and land in the same transcript; `>` is yours, `$` is Wynxo's.
+
+*Files.* The project folder as a tree, with a read-only, syntax-highlighted
+preview of anything you click and one click to send a file to the composer as
+context. Caches and dependency folders are left out; dotfiles are one toggle
+away. Nothing outside the workspace folder can be opened, symlinks included.
+
+*Browser.* A page inside Wynxo, with an address bar you can drive and an
+`open_url` tool that lets a model put something in front of you. The page is
+shown, never scraped: nothing on it goes back to the model, so a web page
+cannot tell Wynxo what to do next. The embedded view needs Qt WebEngine, which
+ships with the full PySide6 package; without it the panel says so and hands the
+page to your own browser.
+
+The panel never switches tabs by itself. A tab you are not watching shows a dot
+when something happens in it, and moving the view stays your decision.
 
 **Screen control**
 When enabled, a model with vision and tool calling can open applications,
@@ -125,6 +151,7 @@ Every image below is a real capture of the running Qt application, produced by
 | **Model** — switch and set the speed in one place<br>![](docs/screenshots/06-models.png) | **Model manager** — capabilities, size, favourites, downloads<br>![](docs/screenshots/07-model-manager.png) |
 | **Settings** — five sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
 | **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/10-quick-bar.png) | **First run** — four steps, then out of your way<br>![](docs/screenshots/11-welcome.png) |
+| **Terminal** — what Wynxo ran, as it runs<br>![](docs/screenshots/12-terminal.png) | **Files** — the project, previewed in place<br>![](docs/screenshots/13-files.png) |
 
 ---
 
@@ -294,6 +321,7 @@ specific compositor and version.
 | Ctrl+Space | Quick bar |
 | Ctrl+M | Model manager |
 | Ctrl+B | Show or hide the sidebar |
+| Ctrl+J | Show or hide the panel |
 | Ctrl+R | Regenerate |
 | Ctrl+D | Duplicate task |
 | Alt+Up / Alt+Down | Previous / next task |
@@ -334,6 +362,11 @@ off every transition and looping animation rather than just shortening them.
   with `0600` permissions.
 - Screenshots go to your local model and are **not** written into task history.
   The Wayland portal may create its own temporary capture files.
+- The built-in browser is the one place Wynxo reaches the wider internet, and
+  only where you or a request of yours sends it. It runs off the record — no
+  cookies, cache or history on disk — opens `http` and `https` pages only, and
+  never feeds a page back into the conversation. `WYNXO_NO_BROWSER=1` turns the
+  embedded view off entirely.
 - No account, no API key, no telemetry, no hosted backend.
 
 ---

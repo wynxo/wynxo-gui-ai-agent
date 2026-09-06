@@ -7,10 +7,12 @@ import Wynxo
 /*!
     The application shell.
 
-    Two regions: where you are, and what you are doing. The sidebar is docked
-    and resizable above 900px and a drawer below it; nothing else moves on its
-    own. Everything that used to need a third column is now a popover, a menu,
-    or part of the task itself.
+    Three regions: where you are, what you are doing, and what the machine is
+    doing about it. The left sidebar is docked and resizable above 900px and a
+    drawer below it; the right panel — terminal, files, browser — follows the
+    same rule at 1080px, because two docked columns need the room. Nothing moves
+    on its own: both are yours to open, and neither changes because a run
+    started.
 */
 ApplicationWindow {
     id: window
@@ -26,6 +28,15 @@ ApplicationWindow {
     onRoomForSidebarChanged: if (roomForSidebar && sidebarDrawer) sidebarDrawer.close()
     readonly property bool sidebarCollapsed: bridge ? bridge.sidebarCollapsed : false
     readonly property bool sidebarDocked: roomForSidebar
+
+    // The right panel needs a conversation beside it to be worth docking; below
+    // that width it becomes a drawer over the task, like the sidebar does.
+    readonly property bool roomForPanel: width >= 1080
+    onRoomForPanelChanged: if (roomForPanel && panelDrawer) panelDrawer.close()
+    readonly property bool panelOpen: bridge ? bridge.panelOpen : false
+    readonly property bool panelDocked: roomForPanel && panelOpen
+    property int panelUserWidth: 400
+    readonly property int panelWidth: Math.max(300, Math.min(panelUserWidth, Math.round(width * 0.45)))
     // The width the user chose. QML owns it while the handle is being dragged
     // and hands it back to the bridge on release, so a drag is not a hundred
     // round trips through the settings store.
@@ -44,6 +55,7 @@ ApplicationWindow {
     Component.onCompleted: {
         Theme.systemSans = window.font.family;
         if (bridge) window.sidebarUserWidth = bridge.sidebarWidth;
+        if (bridge) window.panelUserWidth = bridge.panelWidth;
         window.pushPalettes();
         if (bridge && !bridge.onboarded) onboarding.open();
     }
@@ -93,6 +105,7 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+K"]; onActivated: window.focusSearch() }
     Shortcut { sequences: ["Ctrl+M"]; onActivated: models.open() }
     Shortcut { sequences: ["Ctrl+B"]; onActivated: window.toggleSidebar() }
+    Shortcut { sequences: ["Ctrl+J"]; onActivated: window.togglePanel() }
     Shortcut { sequences: ["Ctrl+Shift+P"]; onActivated: palette.open() }
     Shortcut { sequences: ["Ctrl+Space"]; onActivated: window.openQuickBar() }
     Shortcut { sequences: ["Ctrl+Shift+S"]; onActivated: if (bridge) bridge.stop() }
@@ -182,6 +195,7 @@ ApplicationWindow {
                 onOpenCommandPalette: palette.open()
                 onOpenShortcuts: shortcuts.open()
                 onClearRequested: clearSheet.open()
+                onTogglePanel: window.togglePanel()
             }
 
             ColumnLayout {
@@ -291,6 +305,50 @@ ApplicationWindow {
                 Item { Layout.fillHeight: true; visible: bridge && !bridge.hasMessages }
             }
         }
+
+        // ------------------------------------------------------ the panel
+        // Same handle as the sidebar, mirrored: dragging left widens it.
+        Item {
+            id: panelResizer
+            property bool dragging: panelDrag.active
+            visible: window.panelDocked
+            Layout.preferredWidth: visible ? 5 : 0
+            Layout.fillHeight: true
+            z: 2
+            Rectangle {
+                anchors.centerIn: parent
+                width: 1; height: parent.height
+                color: panelResizer.dragging || panelHover.hovered ? Theme.borderStrong : Theme.borderSubtle
+                Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+            }
+            HoverHandler { id: panelHover; cursorShape: Qt.SizeHorCursor }
+            DragHandler {
+                id: panelDrag
+                target: null
+                yAxis.enabled: false
+                cursorShape: Qt.SizeHorCursor
+                property real startWidth: 0
+                onActiveChanged: {
+                    if (active) startWidth = window.panelUserWidth;
+                    else if (bridge) bridge.setPanelWidth(window.panelUserWidth);
+                }
+                onTranslationChanged: if (active)
+                    window.panelUserWidth = Math.max(300, Math.min(780, startWidth - translation.x))
+            }
+        }
+
+        SidePanel {
+            id: panel
+            objectName: "sidePanel"
+            Layout.preferredWidth: window.panelWidth
+            Layout.fillHeight: true
+            visible: window.panelDocked
+            onCloseRequested: if (bridge) bridge.setPanelOpen(false)
+            Behavior on Layout.preferredWidth {
+                enabled: !Theme.reducedMotion && !panelResizer.dragging
+                NumberAnimation { duration: Theme.base; easing.type: Theme.easing }
+            }
+        }
     }
 
     // --------------------------------------------------------- the drawer
@@ -313,6 +371,21 @@ ApplicationWindow {
             onDeleteRequested: function(id, title) { sidebarDrawer.close(); deleteSheet.ask(id, title); }
             // Collapsing has no meaning in a drawer; closing it does.
             onCollapseRequested: sidebarDrawer.close()
+        }
+    }
+
+    // A window too narrow for two columns still gets the panel, over the task
+    // rather than beside it.
+    Drawer {
+        id: panelDrawer
+        edge: Qt.RightEdge
+        width: Math.min(460, window.width - 48)
+        height: window.height
+        dragMargin: 0
+        background: Rectangle { color: Theme.backgroundSoft }
+        SidePanel {
+            anchors.fill: parent
+            onCloseRequested: panelDrawer.close()
         }
     }
 
@@ -412,7 +485,7 @@ ApplicationWindow {
     property string previewOverlay: ""
     function closeOverlays() {
         settings.close(); models.close(); palette.close(); shortcuts.close();
-        onboarding.close(); quickBar.close();
+        onboarding.close(); quickBar.close(); panelDrawer.close();
         renameSheet.close(); deleteSheet.close(); clearSheet.close(); linkSheet.close();
     }
     onPreviewOverlayChanged: {
@@ -432,6 +505,22 @@ ApplicationWindow {
     }
 
     // ---------------------------------------------------------- commands
+    function togglePanel() {
+        if (!bridge) return;
+        if (!window.roomForPanel) {
+            if (panelDrawer.opened) panelDrawer.close();
+            else panelDrawer.open();
+            return;
+        }
+        bridge.setPanelOpen(!bridge.panelOpen);
+    }
+
+    function showPanel(tab) {
+        if (!bridge) return;
+        bridge.showPanel(tab);
+        if (!window.roomForPanel) panelDrawer.open();
+    }
+
     function toggleSidebar() {
         if (!window.sidebarDocked) {
             if (sidebarDrawer.opened) sidebarDrawer.close();
@@ -461,6 +550,10 @@ ApplicationWindow {
         case "settings": settings.show(settings.generalPage); break;
         case "shortcuts": shortcuts.open(); break;
         case "sidebar": window.toggleSidebar(); break;
+        case "panel": window.togglePanel(); break;
+        case "panelterminal": window.showPanel("terminal"); break;
+        case "panelfiles": window.showPanel("files"); break;
+        case "panelbrowser": window.showPanel("browser"); break;
         case "quickbar": window.openQuickBar(); break;
         case "screenshot": bridge.attachScreenshot(); break;
         case "window": bridge.attachWindow(); break;

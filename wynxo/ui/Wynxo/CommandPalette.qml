@@ -31,6 +31,10 @@ Sheet {
         { id: "terminal", group: "Project", label: "Open a terminal in the project", icon: "terminal" },
         { id: "copypath", group: "Project", label: "Copy project path", icon: "copy" },
 
+        { id: "panelterminal", group: "Panel", label: "Wynxo's terminal", detail: "Every command, with its output", icon: "terminal" },
+        { id: "panelfiles", group: "Panel", label: "Workspace files", detail: "Browse and preview the project", icon: "folder" },
+        { id: "panelbrowser", group: "Panel", label: "Built-in browser", detail: "A page inside Wynxo", icon: "globe" },
+
         { id: "file", group: "Context", label: "Attach a file…", icon: "file" },
         { id: "folder", group: "Context", label: "Attach a folder…", icon: "folder" },
         { id: "screenshot", group: "Context", label: "Capture the screen", icon: "camera" },
@@ -44,6 +48,7 @@ Sheet {
         { id: "reconnect", group: "Setup", label: "Reconnect to Ollama", icon: "bolt" },
         { id: "quickbar", group: "Setup", label: "Open the quick bar", icon: "command", shortcut: "Ctrl+Space" },
         { id: "sidebar", group: "Setup", label: "Show or hide the sidebar", icon: "panelLeft", shortcut: "Ctrl+B" },
+        { id: "panel", group: "Setup", label: "Show or hide the panel", detail: "Terminal, files and browser", icon: "panelRight", shortcut: "Ctrl+J" },
         { id: "shortcuts", group: "Setup", label: "Keyboard shortcuts", icon: "keyboard" },
         { id: "settings", group: "Setup", label: "Settings", icon: "sliders", shortcut: "Ctrl+," },
     ]

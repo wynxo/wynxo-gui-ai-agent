@@ -28,16 +28,27 @@ def record(label):
                 and item.property('visible')]
     composer = window.findChild(QObject, 'mainComposer')
     viewport = window.findChild(QObject, 'conversationViewport')
+    panel = window.findChild(QObject, 'sidePanel')
     position = composer.mapToScene(QPointF(0, 0))
     viewport_position = viewport.mapToScene(QPointF(0, 0))
+    panel_position = panel.mapToScene(QPointF(0, 0)) if panel else QPointF(0, 0)
     result.append({'state': label, 'toggles': len(controls),
                    'composer_inside': position.x() >= 0 and position.y() >= 0
                     and position.x() + composer.width() <= window.width()
                     and position.y() + composer.height() <= window.height(),
-                   'no_overlap': viewport_position.y() + viewport.height() <= position.y()})
+                   'no_overlap': viewport_position.y() + viewport.height() <= position.y(),
+                   'panel_docked': bool(panel and panel.property('visible')),
+                   'panel_inside': not (panel and panel.property('visible'))
+                    or panel_position.x() + panel.width() <= window.width() + 1,
+                   'clear_of_panel': not (panel and panel.property('visible'))
+                    or position.x() + composer.width() <= panel_position.x()})
 
 try:
     record('expanded')
+    # The panel is the third column; it must not push the conversation out of
+    # the window, and it has to give up its dock when there is no room for it.
+    controller.setPanelOpen(True)
+    record('panel-open')
     controller.setSidebarCollapsed(True)
     record('collapsed')
     window.setWidth(560)

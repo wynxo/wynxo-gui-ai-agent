@@ -1,7 +1,8 @@
 """Local Ollama transport and a bounded desktop tool loop, independent of Qt.
 
 Events passed to ``emit``: token/thinking/status/error (text), tool_start
-(name,args,risk,summary,confirming), tool_end (name,result,ms,declined),
+(name,args,risk,summary,confirming), tool_output (name,text) while a command
+is still running, tool_end (name,result,ms,declined),
 metrics (tokens,tokens_per_second), session (permission_mode,visual,max_steps),
 message_end (message), and cancelled. ``run`` returns the complete history;
 its runtime system prompt is never added to that returned history.
@@ -22,6 +23,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from .commands import run_command
+from .workbench import normalise_url, url_label
 
 LOG = logging.getLogger(__name__)
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
@@ -294,9 +296,11 @@ TOOLS = [
     _tool("wait", "Pause briefly to let an application update.",
           {"seconds": {"type": "number", "minimum": 0, "maximum": 5}}, ["seconds"]),
     _tool("list_apps", "List installed applications and desktop IDs that open_app can launch."),
+    _tool("open_url", "Show an http or https page in Wynxo's built-in browser panel, where the user can see and use it. Does not read the page for you.",
+          {"url": {"type": "string", "minLength": 4, "maxLength": 2048}}, ["url"]),
 ]
 _SCHEMAS = {tool["function"]["name"]: tool["function"]["parameters"] for tool in TOOLS}
-_NONVISUAL = {"open_app", "list_apps", "wait", "run_command"}
+_NONVISUAL = frozenset({"open_app", "list_apps", "wait", "run_command", "open_url"})
 
 # Permission modes. "ask" confirms anything that touches the desktop, "safe"
 # confirms only the actions that can commit or destroy something, and "auto"
@@ -347,6 +351,9 @@ def action_summary(name: str, args: dict | None = None) -> str:
         return "Run " + str(args.get("command", "a command"))[:120]
     if name == "open_app":
         return f"Open {args.get('app', 'an application')}"
+    if name == "open_url":
+        site = url_label(args.get("url", ""))
+        return f"Show {site or 'a page'} in the browser panel"
     if name == "drag":
         points = args.get("points")
         count = len(points) if isinstance(points, list) else 0
@@ -406,6 +413,8 @@ Use the user's chosen language. Be accurate about your capabilities and results.
 Act on requests using your tools instead of telling the user to do the work themselves.
 When local tools are available, launch applications and run commands without screen control.
 For "open/run kcalc", use list_apps then open_app. For command-line work use run_command.
+Use open_url to put a web page in front of the user in Wynxo's own browser panel; it shows
+the page, it does not fetch or read it, so never describe page content you have not seen.
 Use command output to inspect files, diagnose errors, edit code and verify your work.
 Commands run as the user, with no interactive input. Do not attempt sudo password prompts.
 Do not claim a general inability to run commands when run_command is available.
@@ -438,7 +447,8 @@ class AgentEngine:
             emit: Callable[[dict], None], think: bool = False, max_steps: int = 20,
             num_ctx: int = 16384, temperature: float = 0.7, keep_alive: str = "5m",
             permission_mode: str = AUTO, project: str = "",
-            confirm: Callable[[str, dict, str], bool] | None = None) -> list[dict]:
+            confirm: Callable[[str, dict, str], bool] | None = None,
+            browse: Callable[[str], dict] | None = None) -> list[dict]:
         # Capture fresh screen context for each request. A later chat-only/nonvisual
         # model must not inherit screenshots from an earlier desktop task.
         history = copy.deepcopy([m for m in messages if not (m.get("images") and
@@ -503,7 +513,12 @@ class AgentEngine:
                     requested = Path(args.get("cwd") or base).expanduser()
                     if not requested.is_absolute():
                         requested = base / requested
-                    result = run_command(args["command"], str(requested), args.get("timeout", 60), cancel)
+                    result = run_command(args["command"], str(requested), args.get("timeout", 60), cancel,
+                                         on_output=lambda fragment: event("tool_output", name=name, text=fragment))
+                elif name == "open_url":
+                    if browse is None:
+                        raise RuntimeError("The built-in browser is not available in this session")
+                    result = browse(normalise_url(args["url"]))
                 else:
                     result = self.desktop.execute(name, args, cancel)
                 if not isinstance(result, dict):
@@ -529,7 +544,10 @@ class AgentEngine:
             status = self.desktop.status() if self.desktop else {}
             tools_enabled = self.desktop is not None and "tools" in capabilities
             visual = tools_enabled and desktop_enabled and status.get("connected") and "vision" in capabilities
-            allowed = set(_SCHEMAS) if visual else (_NONVISUAL if tools_enabled else set())
+            # Never advertise a browser panel that this session cannot show.
+            offline = set() if browse is not None else {"open_url"}
+            local_tools = _NONVISUAL - offline
+            allowed = (set(_SCHEMAS) - offline) if visual else (local_tools if tools_enabled else set())
             if tools_enabled:
                 gate = {ASK: "The user approves every desktop action and command before it runs.",
                         SAFE: "Commands, typing and key presses need the user's approval before they run.",
@@ -551,7 +569,7 @@ class AgentEngine:
                 result = tool_result("screenshot", {}, allowed)
                 if not result.get("ok", True) or not result.get("image"):
                     # A screenless copilot must not guess where to click.
-                    allowed = _NONVISUAL.copy()
+                    allowed = set(local_tools)
                     system += "\nScreen capture failed. Visual tools are disabled; explain the screen capture error."
                 else:
                     append_screen(result)

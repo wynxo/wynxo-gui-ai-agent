@@ -200,6 +200,53 @@ def test_nonvision_model_can_only_launch_apps():
     assert {t["function"]["name"] for t in client.requests[0]["tools"]} == {"open_app", "list_apps", "wait", "run_command"}
 
 
+def test_a_page_is_only_offered_when_something_can_show_it():
+    """A tool nothing can carry out is worse than no tool at all."""
+    client = FakeClient([response("No browser here.")], ["tools"])
+    run(client)
+    assert "open_url" not in {t["function"]["name"] for t in client.requests[0]["tools"]}
+
+    client = FakeClient([response("Ready.")], ["tools"])
+    run(client, browse=lambda url: {"ok": True, "url": url})
+    assert "open_url" in {t["function"]["name"] for t in client.requests[0]["tools"]}
+
+
+def test_showing_a_page_goes_through_the_panel_not_the_desktop():
+    shown = []
+
+    def browse(url):
+        shown.append(url)
+        return {"ok": True, "url": url, "output": "Showing it."}
+
+    client = FakeClient([response("Here it is.", [("open_url", {"url": "example.com/docs"})]),
+                         response("Opened.")], ["tools"])
+    history, events, desktop = run(client, browse=browse)
+    # The address is completed once, in the engine, before anything is shown.
+    assert shown == ["https://example.com/docs"]
+    assert desktop.calls == []
+    assert json.loads(next(m for m in history if m["role"] == "tool")["content"])["ok"] is True
+
+
+def test_an_address_that_is_not_a_web_page_never_reaches_the_panel():
+    shown = []
+    client = FakeClient([response("Trying.", [("open_url", {"url": "file:///etc/passwd"})]),
+                         response("Refused.")], ["tools"])
+    history, events, _ = run(client, browse=lambda url: shown.append(url) or {"ok": True})
+    assert shown == []
+    result = json.loads(next(m for m in history if m["role"] == "tool")["content"])
+    assert result["ok"] is False and "http" in result["error"]
+
+
+def test_command_output_is_reported_while_the_command_still_runs():
+    client = FakeClient([response("Checking.", [("run_command", {"command": "echo streamed"})]),
+                         response("Done.")], ["tools"])
+    _, events, _ = run(client, desktop_enabled=False)
+    fragments = [e["text"] for e in events if e["type"] == "tool_output"]
+    assert "".join(fragments) == "streamed\n"
+    # The live fragments arrive before the action closes.
+    assert [e["type"] for e in events].index("tool_output") < [e["type"] for e in events].index("tool_end")
+
+
 def test_screenshot_failure_removes_visual_tools():
     client = FakeClient([response("Screen capture failed.")])
     _, events, desktop = run(client, FakeDesktop("screenshot"))
