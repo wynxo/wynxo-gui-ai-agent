@@ -16,6 +16,10 @@ Control {
 
     implicitHeight: Theme.controlSmall
     implicitWidth: layout.implicitWidth + Theme.s3 * 2 + (removable ? Theme.s5 : 0)
+    hoverEnabled: true          // Control.hovered drives the attached ToolTip.
+    ToolTip.delay: 450
+    Accessible.role: interactive ? Accessible.Button : Accessible.StaticText
+    Accessible.name: subtitle ? text + ", " + subtitle : text
 
     background: Rectangle {
         radius: Theme.rPill

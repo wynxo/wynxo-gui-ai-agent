@@ -175,7 +175,8 @@ Item {
 
                 Item {
                     // Context meter: quiet until it starts to matter.
-                    visible: root.width > 760 && bridge && bridge.contextUsed > 0
+                    // Quiet until the window starts to fill up.
+                    visible: root.width > 640 && bridge && bridge.contextFraction > 0.45
                     Layout.leftMargin: Theme.s2
                     Layout.preferredWidth: 78
                     Layout.preferredHeight: Theme.controlSmall
@@ -199,7 +200,7 @@ Item {
 
                 Chip {
                     visible: bridge && bridge.desktopEnabled && root.width > 560
-                    text: root.width > 780 ? "Screen control" : "Screen"
+                    text: root.width > 700 ? "Screen control" : "Screen"
                     iconName: "cursor"
                     selected: true
                     onClicked: root.openDesktopSettings()

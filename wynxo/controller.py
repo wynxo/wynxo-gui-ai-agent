@@ -165,8 +165,19 @@ class Messages(QAbstractListModel):
         row.update(fields)
         return row
 
+    @staticmethod
+    def context_step(message: dict) -> dict:
+        return {"name": "context", "icon": "paperclip", "label": "Context attached",
+                "summary": ctx.context_message_label(message), "detail": "",
+                "state": "done", "ms": 0, "output": ""}
+
     def replace(self, messages):
-        """Rebuild the view from stored history, folding tool calls into groups."""
+        """Rebuild the view from stored history.
+
+        Tool results become activity groups and attached context folds into a
+        chip, so reopening a chat never dumps a whole file back into the
+        transcript as if the user had typed it.
+        """
         self.beginResetModel()
         self.items = []
         self._documents = {}
@@ -175,6 +186,9 @@ class Messages(QAbstractListModel):
             role = message.get("role")
             if role == "tool":
                 pending_steps.append(self._stored_step(message))
+                continue
+            if ctx.is_context_message(message):
+                pending_steps.append(self.context_step(message))
                 continue
             if pending_steps:
                 self.items.append(self._row("activity", steps=pending_steps))
@@ -438,6 +452,7 @@ class Controller(QObject):
         self._capture_busy = False
         self._code_palette = dict(md.DEFAULT_PALETTE)
         self._html_palette = dict(md.HTML_PALETTE)
+        self._history_tokens = 0
         if autoconnect:
             self.refreshModels()
 
@@ -524,6 +539,9 @@ class Controller(QObject):
             return f"{self._model} has no vision, so it can open apps but cannot click or type based on what is on screen."
         if self._think and "thinking" not in self._model_capabilities:
             return f"{self._model} does not support thinking, so that setting is ignored for this model."
+        if self.contextFraction > 0.92:
+            return ("This conversation nearly fills the model's context window. Start a new chat, "
+                    "or switch to the Deep runtime preset for more room.")
         return ""
 
     @Property(bool, notify=changed)
@@ -665,12 +683,15 @@ class Controller(QObject):
         return (f"{metrics.get('tokens', 0)} out · {metrics.get('prompt_tokens', 0)} prompt · "
                 f"{metrics.get('tokens_per_second', 0.0):.1f} tok/s · {seconds:.1f}s")
 
+    def _recount_history_tokens(self):
+        """Estimate once per history change, not once per streamed token."""
+        self._history_tokens = sum(ctx.estimate_tokens(str(m.get("content", "")))
+                                   for m in self._history)
+
     @Property(int, notify=changed)
     def contextUsed(self):
         """Approximate prompt tokens in play, including pending attachments."""
-        used = int(self._run_metrics.get("prompt_tokens", 0) or 0)
-        if not used:
-            used = sum(ctx.estimate_tokens(str(m.get("content", ""))) for m in self._history)
+        used = int(self._run_metrics.get("prompt_tokens", 0) or 0) or self._history_tokens
         return used + sum(int(item.get("tokens", 0)) for item in self._attachments)
     @Property(float, notify=changed)
     def contextFraction(self):
@@ -1084,6 +1105,7 @@ class Controller(QObject):
         self._task_id = ""
         self._task_title = "New chat"
         self._history = []
+        self._history_tokens = 0
         self.messages.replace([])
         self._reset_run_state()
         self._clear_error()
@@ -1104,6 +1126,7 @@ class Controller(QObject):
         self._task_title = task["title"]
         self._history = self.store.get_messages(task_id)
         self.messages.replace(self._history)
+        self._recount_history_tokens()
         self._reset_run_state()
         self.activityChanged.emit()
         self.changed.emit()
@@ -1165,6 +1188,7 @@ class Controller(QObject):
         if self._busy or not self._task_id:
             return
         self._history = []
+        self._history_tokens = 0
         self.store.set_messages(self._task_id, [], self._model)
         self.messages.replace([])
         self._reset_run_state()
@@ -1183,15 +1207,29 @@ class Controller(QObject):
         self.changed.emit()
 
     def _history_cut(self, row: int) -> list[dict]:
-        """History up to and including the message shown at view ``row``."""
+        """History up to and including the message shown at view ``row``.
+
+        View rows and history entries do not line up: tool results and attached
+        context are folded into activity groups, so the mapping is recomputed
+        with exactly the rules the model uses.
+        """
         seen = -1
+        pending = False
         for position, message in enumerate(self._history):
+            if message.get("role") == "tool" or ctx.is_context_message(message):
+                pending = True
+                continue
             if message.get("role") not in ("user", "assistant"):
                 continue
             if message.get("images") and str(message.get("content", "")).startswith("Current desktop screenshot ("):
                 continue
             if not message.get("content") and not message.get("thinking"):
                 continue
+            if pending:
+                seen += 1        # The folded activity group occupies one row.
+                pending = False
+                if seen == row:
+                    return self._history[:position]
             seen += 1
             if seen == row:
                 return self._history[:position + 1]
@@ -1436,6 +1474,7 @@ class Controller(QObject):
         extra = ctx.build_messages([a for a in attachments if vision_ready or not a.get("image")])
         self._history.extend(extra)
         self._history.append({"role": "user", "content": text})
+        self._recount_history_tokens()
         self.store.set_messages(self._task_id, self._history, self._model)
         if attachments:
             self.messages.append_activity({
@@ -1570,6 +1609,7 @@ class Controller(QObject):
 
     def _run_done(self, history):
         self._history = history
+        self._recount_history_tokens()
         self.store.set_messages(self._task_id, history, self._model)
         stopped = self._run_job is not None and self._run_job.cancel.is_set()
         elapsed = time.monotonic() - self._run_started if self._run_started else 0.0

@@ -558,3 +558,70 @@ def test_the_bridge_exposes_theme_aware_rendering(tmp_path):
     bridge.setHtmlPalette({"accent": "#00ff00"})
     assert "#00ff00" in bridge.renderMarkdown("a `b` c")
     bridge.shutdown()
+
+
+def test_reopening_a_chat_folds_attached_context_into_a_chip(tmp_path):
+    bridge = controller(tmp_path)
+    task = bridge.store.create_conversation("With context", "local:test")
+    history = ctx.build_messages([
+        ctx.make(ctx.FILE, "main.py", path="/home/me/main.py", text="print(1)\n" * 50),
+    ]) + [
+        {"role": "user", "content": "What does this do?"},
+        {"role": "assistant", "content": "It prints."},
+    ]
+    bridge.store.set_messages(task["id"], history, "local:test")
+    bridge.openTask(task["id"])
+
+    kinds = [item["kind"] for item in bridge.messages.items]
+    assert kinds == ["activity", "user", "assistant"]
+    assert bridge.messages.items[0]["steps"][0]["summary"] == "main.py"
+    # The file body must not reappear as something the user typed.
+    assert all("print(1)" not in item["body"] for item in bridge.messages.items)
+    bridge.shutdown()
+
+
+def test_branching_maps_view_rows_past_folded_groups(tmp_path):
+    bridge = controller(tmp_path)
+    task = bridge.store.create_conversation("Folded", "local:test")
+    history = ctx.build_messages([ctx.make(ctx.FILE, "a.py", path="/a.py", text="x")]) + [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "reply one"},
+        {"role": "tool", "tool_name": "screenshot", "content": '{"ok": true}'},
+        {"role": "user", "content": "second"},
+        {"role": "assistant", "content": "reply two"},
+    ]
+    bridge.store.set_messages(task["id"], history, "local:test")
+    bridge.openTask(task["id"])
+    assert [item["kind"] for item in bridge.messages.items] == \
+           ["activity", "user", "assistant", "activity", "user", "assistant"]
+
+    bridge.branchFrom(2)  # the first assistant reply
+    assert [m.get("content") for m in bridge._history][-2:] == ["first", "reply one"]
+    bridge.shutdown()
+
+
+def test_context_estimate_is_cached_rather_than_recomputed_per_token(tmp_path):
+    bridge = controller(tmp_path)
+    bridge._history = [{"role": "user", "content": "x" * 4000}]
+    bridge._recount_history_tokens()
+    cached = bridge.contextUsed
+    assert cached > 0
+    # Streaming emits `changed` constantly; reading the property must not walk
+    # the whole conversation again.
+    bridge._history.append({"role": "assistant", "content": "y" * 4000})
+    assert bridge.contextUsed == cached
+    bridge._recount_history_tokens()
+    assert bridge.contextUsed > cached
+    bridge.shutdown()
+
+
+def test_a_nearly_full_context_window_is_flagged(tmp_path):
+    bridge = controller(tmp_path)
+    bridge._online = True
+    bridge._model_capabilities = ["completion"]
+    bridge._num_ctx = 2048
+    bridge._history_tokens = 2000
+    assert "nearly fills" in bridge.capabilityWarning
+    bridge._history_tokens = 100
+    assert bridge.capabilityWarning == ""
+    bridge.shutdown()

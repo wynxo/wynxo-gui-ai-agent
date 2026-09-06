@@ -89,7 +89,17 @@ Sheet {
                 width: list.width
                 height: 46
                 radius: Theme.r2
-                color: index === palette.highlighted ? Theme.surfaceHover : "transparent"
+                color: index === palette.highlighted ? Theme.surfaceSelected : "transparent"
+                Rectangle {
+                    // Shape as well as colour, so the keyboard position is
+                    // obvious without relying on a background tint alone.
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 2
+                    height: index === palette.highlighted ? 20 : 0
+                    radius: 1
+                    color: Theme.accent
+                    Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
+                }
                 RowLayout {
                     anchors.fill: parent
                     anchors.leftMargin: Theme.s3

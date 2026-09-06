@@ -443,8 +443,12 @@ ApplicationWindow {
     }
 
     // -------------------------------------------------------- quick bar
+    // Exposed so --snapshot can grab the floating window on its own.
+    property var quickBarWindow: quickBar
+
     Window {
         id: quickBar
+        objectName: "quickBar"
         width: 620
         height: quickContent.implicitHeight
         flags: Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Dialog

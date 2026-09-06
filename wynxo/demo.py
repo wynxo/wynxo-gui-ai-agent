@@ -11,24 +11,22 @@ import tempfile
 import time
 from pathlib import Path
 
+from . import context as ctx
 from . import markdown as md
 from .controller import Controller
 from .storage import Store
 
-ANSWER = """Here's what I found on your screen.
-
-**Firefox** is focused with three tabs open, and a terminal is running `pytest`
-behind it. Two of the tests are failing on the same assertion.
+ANSWER = """**Firefox** is focused, with `pytest` running in a terminal behind it.
+Two tests fail on the same assertion.
 
 ### What's failing
 
-| Test | File | Reason |
-| --- | --- | --- |
-| `test_context_window` | `tests/test_engine.py` | expected 8192, got 16384 |
-| `test_keep_alive` | `tests/test_engine.py` | keep-alive not forwarded |
+| Test | Reason |
+| --- | --- |
+| `test_context_window` | expected 8192, got 16384 |
+| `test_keep_alive` | keep-alive not forwarded |
 
-Both come from the same root cause: the runtime options are built before the
-preset is applied, so the defaults win.
+Same root cause: the options are built before the preset is applied.
 
 ```python
 def build_options(preset: str, overrides: dict) -> dict:
@@ -38,8 +36,7 @@ def build_options(preset: str, overrides: dict) -> dict:
     return options
 ```
 
-Moving the `update()` after the preset lookup fixes both tests. Want me to open
-the file and make the change?"""
+Want me to open the file and make the change?"""
 
 THINKING = """The user asked what is on screen. I have a screenshot, so I should
 describe what is actually visible rather than guess. Two failing tests are
@@ -78,6 +75,22 @@ CATALOG = [
      "quantization": "F16", "sizeLabel": "274 MB", "sizeBytes": 274_000_000,
      "capabilities": ["embedding"], "favorite": False, "loaded": False, "selected": False},
 ]
+
+# A 4x3 slate PNG: enough for the inspector preview to render a real image.
+_SWATCH = (
+    "iVBORw0KGgoAAAANSUhEUgAAAUAAAAC0CAIAAABqhmJGAAAC8UlEQVR42u3csWrbQBzAYblodp0ORghjTJ8sQ56gY4c+"
+    "Qp6gQ5+sGGOM8VIwwXOGQEhbN8W2pLv76/umEJNCjv64O90pk7ZdVkCZPhgCEDAgYOAS9dnvrlafX75Yr392+ynQ7wz8"
+    "WuAfX9/+KdBvwN0Wq2GwBwYEDOED/vvJ09vv3PIpMMQM3FWx6oW+TVylBHtgQMCAgGEk6tPpySiAGRgQMCBgEDAgYEDA"
+    "gIBBwICAAQGDgAEBAwIGBAwCBgQMCBgQMARQX/dji8XK2HVlu11f+iPT6Z1xi+d4/DVQwFVVHQ57I367+bwxCFhCg4AB"
+    "AQMCBgQMAgYEDAgYEDAIGEim7uMfXS5X8UZqs1n774IZGBAwIGAQMJBGbQhKNJ1+3O93xiGSpmmveKHfDAxm4N85cQF7"
+    "YEDAIGBAwICAAQGDgAEBA5dzlTKsH98fY/+CX7/l/gvudtsiAw7wQr/LZFhCAwIGBAzxeIgV1v3DF4NgBgYEDJSyhHYG"
+    "A2ZgQMAgYGAse2By0LYLg/AvA9xSNgMDAgYBAwIGuuQhVlhhntMwdMDFvdDv6hiW0ICAAQGDgAEBA/1wjBRWoXehnX6l"
+    "D9ipDFhCAwIGAQNj2QOTA0+DzMCAgAEBAwIGAQMZGOML/S6KIWBy5+9CJzfASZ4lNNgDAwIGBAxj4SFWWO5CC/hKzmnA"
+    "EhoQMAgYEDAgYKCqKsdIgbkL/Y4wZ2xmYBAwIGAg/R44qxf6XQtDwJTHXWhLaEDAgIABAYOAgQx4oR8ETH4KvQvt9MsS"
+    "GgQMCBgQMHCGh1hheRpkBgYEDAgYGGIPnPCFfpfAMAMDAgZKXEKTA38XOrkBTvLMwGAJDQgYSL8HdpYDBQdMDtyFtoQG"
+    "BAwIGBAwCBgQMCBgEDAgYEDAwP9df5VyPm8MX0JN0xoEJrPZJ6MAltCAgAEBg4ABAQMCBgQMAgYEDAgYBAwIGBAwIGAQ"
+    "MCBgQMCAgEHAgIABAYOAAQEDAgYEDAIGBAwIGKieAdhQjRZgDb/uAAAAAElFTkSuQmCC"
+)
 
 STEPS = [
     {"name": "screenshot", "icon": "eye", "label": "Inspecting the screen",
@@ -193,8 +206,11 @@ class DemoController(Controller):
             self._task_title = "New chat"
             self.changed.emit()
             return
+        if self.scene == "context":
+            self._seed_context_scene()
+            return
 
-        self.messages.append_message("user", "What's on my screen right now, and can you help me fix it?")
+        self.messages.append_message("user", "What's on my screen? Can you help me fix it?")
         if self.scene == "desktop":
             self._seed_desktop_scene()
             return
@@ -212,6 +228,22 @@ class DemoController(Controller):
         item["body"] = ANSWER
         item["blocks"] = md.segment(ANSWER)
         self.messages._emit(row, list(Messages_roles()))
+
+    def _seed_context_scene(self):
+        """A new message with local context attached, ready to send."""
+        self._task_id = ""
+        self._task_title = "New chat"
+        self._attachments = [
+            ctx.from_capture({"ok": True, "image": _SWATCH, "width": 2560, "height": 1440},
+                             ctx.SCREENSHOT, title="Screen", detail="Full screen"),
+            ctx.make(ctx.FILE, "controller.py", path="/home/you/wynxo/controller.py",
+                     text="class Controller:\n    pass\n" * 40, subtitle="1240 lines · 38 KB"),
+            ctx.make(ctx.FOLDER, "wynxo", path="/home/you/wynxo",
+                     text="ui/\ncontroller.py\nengine.py", subtitle="12 items"),
+        ]
+        self._working_directory = str(Path.home() / "projects" / "wynxo")
+        self.attachmentsChanged.emit()
+        self.changed.emit()
 
     def _seed_desktop_scene(self):
         self._task_title = "Draw a mountain scene in KolourPaint"
@@ -252,4 +284,6 @@ SCENES = [
     ("05-model-picker", "conversation", "models"),
     ("06-command-palette", "conversation", "palette"),
     ("07-welcome", "welcome", "welcome"),
+    ("08-quick-bar", "empty", "quickbar"),
+    ("09-context", "context", ""),
 ]

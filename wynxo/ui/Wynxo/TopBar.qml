@@ -14,6 +14,7 @@ Item {
     signal openSettings()
     signal openCommandPalette()
     signal openDesktopSettings()
+    signal clearRequested()
 
     implicitHeight: Theme.compact ? 52 : 60
 
@@ -216,6 +217,4 @@ Item {
             onClicked: root.toggleInspector()
         }
     }
-
-    signal clearRequested()
 }

@@ -96,7 +96,7 @@ def main():
                         help="Open the floating quick bar, reusing a running Wynxo if there is one")
     parser.add_argument("--ui-preview", metavar="SCENE", nargs="?", const="conversation",
                         help="Run the interface with fixed demo state "
-                             "(empty, conversation, desktop, welcome)")
+                             "(empty, conversation, context, desktop, welcome)")
     parser.add_argument("--snapshot", metavar="DIR",
                         help="Render the demo scenes to PNG files in DIR and exit")
     parser.add_argument("--size", metavar="WxH",
@@ -173,6 +173,8 @@ def main():
         # between shots and the window is grabbed once it settles.
         _snapshot(app, engine, controller, Path(args.snapshot).expanduser(), SCENES)
     elif args.screenshot:
+        _park_cursor()
+
         def capture():
             root = engine.rootObjects()[0]
             if not root.grabWindow().save(args.screenshot):
@@ -204,18 +206,23 @@ def main():
     return exit_code
 
 
-def _snapshot(app, engine, controller, directory: Path, scenes):
-    """Walk every scene, rebuilding demo state and grabbing the real window."""
-    from PySide6.QtCore import QPoint, QTimer
+def _park_cursor():
+    """Move the pointer out of the window so no control is grabbed mid-hover."""
+    from PySide6.QtCore import QPoint
     from PySide6.QtGui import QCursor
-    from .demo import DemoController
-    directory.mkdir(parents=True, exist_ok=True)
-    root = engine.rootObjects()[0]
-    # Park the pointer so no control is caught in a hover state.
     try:
         QCursor.setPos(QPoint(4, 4))
     except Exception:
         pass
+
+
+def _snapshot(app, engine, controller, directory: Path, scenes):
+    """Walk every scene, rebuilding demo state and grabbing the real window."""
+    from PySide6.QtCore import QTimer
+    from .demo import DemoController
+    directory.mkdir(parents=True, exist_ok=True)
+    root = engine.rootObjects()[0]
+    _park_cursor()
     pending = list(scenes)
     state = {"controller": controller}
 
@@ -239,7 +246,13 @@ def _snapshot(app, engine, controller, directory: Path, scenes):
 
     def capture(name):
         target = directory / f"{name}.png"
-        if root.grabWindow().save(str(target)):
+        # The quick bar is its own top-level window, so grab that one directly.
+        window = root
+        if root.property("previewOverlay") == "quickbar":
+            floating = root.property("quickBarWindow")
+            if floating is not None:
+                window = floating
+        if window.grabWindow().save(str(target)):
             print(f"saved {target}")
         else:
             print(f"could not save {target}", file=sys.stderr)

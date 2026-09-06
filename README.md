@@ -1,16 +1,111 @@
 # Wynxo
 
-**A local AI copilot for your Linux desktop.**
+**A local desktop copilot for Linux, powered entirely by Ollama.**
 
-Wynxo is a native Python + Qt Quick app with a dark workspace, streamed conversations, saved tasks, model controls, subtle motion, and a live activity panel. Connect your existing Ollama server, choose a model, and chat—or enable desktop control to let a capable model open apps, move the pointer, type, click, scroll, and draw with mouse strokes.
+Wynxo is a native Python + Qt Quick application. Chat with a model running on
+your own machine, attach files, folders and screenshots as context, and — when
+you turn it on — let a capable model see your screen and drive your mouse and
+keyboard.
 
-No browser window, Node.js, hosted account, or API key is required. Ollama runs inference separately; Wynxo is the GUI that connects to it.
+No browser, no Node.js, no account, no API key, no cloud AI. Ollama does the
+inference; Wynxo is the interface.
 
-![Wynxo desktop app](docs/screenshot.png)
+![Wynxo, mid-conversation](docs/screenshots/02-conversation.png)
+
+---
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Screenshots](#screenshots)
+- [Requirements](#requirements)
+- [Install](#install)
+- [Connecting Ollama](#connecting-ollama)
+- [Screen control](#screen-control)
+- [Wayland and X11](#wayland-and-x11)
+- [Keyboard](#keyboard)
+- [Privacy](#privacy)
+- [Development](#development)
+- [Testing and screenshots](#testing-and-screenshots)
+- [Update or remove](#update-or-remove)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## What it does
+
+**Conversation**
+Streamed replies with real Markdown: headings, tables, quotes, lists and links
+set in the app's own type scale. Fenced code becomes a card with syntax
+highlighting, copy, and save. Reasoning from a thinking model collapses to a
+single line — *Thought for 8.2s* — instead of burying the answer.
+
+**Local context**
+Attach files, folders, images, the clipboard, a screen capture, or the active
+window. Everything appears as a removable chip above the composer and as a
+preview in the inspector, so you always know exactly what the model can see.
+Drag and drop works too.
+
+**Screen control**
+When enabled, a model with vision and tool calling can open applications,
+click, type, scroll and drag. Every action appears in an inline timeline with
+its status, duration and result. Escape stops everything, instantly.
+
+**Permission modes**
+Screen control is not a single switch:
+
+| Mode | Behaviour |
+| --- | --- |
+| Ask | Approve every desktop action before it runs |
+| Safe auto *(default)* | Run low-risk actions; confirm typing and key presses |
+| Auto | Run desktop actions without interrupting you |
+
+Reading the screen and moving the pointer never prompt — they change nothing.
+Typing and key chords can save, send or delete in whatever has focus, so they
+stay behind a prompt unless you choose Auto.
+
+**Models**
+Browse what Ollama has installed with parameter size, quantisation, disk usage
+and capabilities. Favourite the ones you use, download new tags, delete old
+ones. Wynxo reads capabilities from Ollama rather than guessing from names, and
+warns you *before* you send if the model cannot do what you are asking.
+
+**Quick bar**
+A floating command bar (`Ctrl+Space`) that sits above other windows for a fast
+question, a screen capture, or a jump back into the full app.
+
+**Everything else**
+Command palette, conversation search, pin, rename, duplicate, branch from any
+message, edit and resend, export to Markdown, runtime presets, generation
+metrics, desktop notifications for long unattended runs, an optional tray icon,
+five accent themes, a compact density, and a reduced-motion setting.
+
+---
+
+## Screenshots
+
+Every image below is a real capture of the running Qt application, produced by
+`python -m wynxo --snapshot` (see [Testing and screenshots](#testing-and-screenshots)).
+
+| | |
+| --- | --- |
+| **New chat** — useful immediately, no marketing copy<br>![](docs/screenshots/01-new-chat.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/09-context.png) |
+| **Screen control** — inline activity timeline and a permission prompt<br>![](docs/screenshots/03-desktop-control.png) | **Settings** — eight pages, organised by intent<br>![](docs/screenshots/04-settings.png) |
+| **Models** — capabilities, size, favourites, downloads<br>![](docs/screenshots/05-model-picker.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/06-command-palette.png) |
+| **First run** — four steps, then out of your way<br>![](docs/screenshots/07-welcome.png) | **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/08-quick-bar.png) |
+
+---
+
+## Requirements
+
+- Linux with a graphical session (Wayland or X11)
+- Python 3.10 or newer, and Git
+- [Ollama](https://docs.ollama.com/linux) running locally
+- At least one local model — a vision + tools model for screen control
+
+---
 
 ## Install
-
-Requires **Linux, Python 3.10+, and Git**. Install as your normal user:
 
 ```bash
 git clone https://github.com/wynxo/wynxo-gui-ai-agent.git
@@ -18,154 +113,157 @@ cd wynxo-gui-ai-agent
 python3 install.py
 ```
 
-`./install` does the same thing. Open **Wynxo** from your application menu, or run:
+`./install` does the same thing. Then open **Wynxo** from your application menu,
+or run `~/.local/bin/wynxo`.
 
-```bash
-~/.local/bin/wynxo
-```
+The installer builds its own Python environment, installs dependencies, and
+registers a launcher, an icon and a desktop entry. It copies the app, so the
+checkout can be moved or deleted afterwards. It does not need `sudo`, touch
+your system Python, start a background service, install Ollama, or download a
+model. The first install needs internet access for the Python packages.
 
-The installer creates its own Python environment, installs dependencies, and registers a launcher and icon. It copies the app, so you can move or remove the checkout afterward. It does not need `sudo`, modify your system Python, start a background service, install Ollama, or download a model. The first installation needs internet access to download Python packages.
-
-If Debian/Ubuntu reports missing `venv` support:
+If Debian or Ubuntu reports missing `venv` support:
 
 ```bash
 sudo apt install python3-venv
 python3 install.py
 ```
 
-## Connect Ollama
+---
 
-1. Install [Ollama for Linux](https://docs.ollama.com/linux), if you do not already have it.
-2. Ensure Ollama is running. If it is not managed by a service, run `ollama serve` in a separate terminal.
-3. Open Wynxo → **Settings**. The default server is `http://127.0.0.1:11434`.
-4. Choose an installed model. To download another, enter its exact Ollama model tag in Settings and start the download. Downloads only happen when you request them.
+## Connecting Ollama
 
-The requested preference is **`qwen3.8:27b`**. Wynxo selects it when it is installed; otherwise, it offers your available models. A tag must actually exist in your Ollama installation or registry; Wynxo cannot make a missing model available. You can also use a local model you imported under that name. Run `ollama list` to check your installed tags.
+1. Install [Ollama for Linux](https://docs.ollama.com/linux) if you have not already.
+2. Make sure it is running. If it is not managed by a service, run `ollama serve`.
+3. Open Wynxo. The default address is `http://127.0.0.1:11434`; change it under
+   **Settings → General** if yours differs.
+4. Pick a model in the model manager (`Ctrl+M`), or download one by tag.
 
-For chat, use any compatible local chat model. For desktop work, the model must advertise the relevant capabilities through Ollama:
+What a model can do depends on the capabilities Ollama reports for it:
 
-| Model capabilities | What Wynxo can do |
+| Capability | What Wynxo can do |
 | --- | --- |
 | Chat | Stream answers and save conversations |
-| Tools | Discover and open installed desktop apps |
-| Vision + tools | Read screenshots, click, type, use shortcuts, scroll, and drag to draw |
+| Tools | Discover and launch installed applications |
+| Vision | Read screenshots and images you attach |
+| Vision + tools | Full screen control: click, type, scroll, drag |
+| Thinking | Show the model's reasoning before its answer |
 
-A large text model without vision cannot see buttons or a canvas. Wynxo disables visual input tools when vision is unavailable. If your model does not support tool calling, desktop requests remain conversational. Model size alone does not determine these abilities. Larger models also need more memory and may respond slowly on CPU.
+A large text-only model cannot see a button or a canvas; Wynxo disables the
+visual tools rather than letting the model guess where to click. Model size
+alone does not determine these abilities. See Ollama's
+[API introduction](https://docs.ollama.com/api/introduction) and
+[tool calling documentation](https://docs.ollama.com/capabilities/tool-calling).
 
-Wynxo reads capabilities from Ollama rather than guessing from model names. See Ollama's [API introduction](https://docs.ollama.com/api/introduction) and [tool calling documentation](https://docs.ollama.com/capabilities/tool-calling).
+Only loopback addresses are accepted, `localhost` is resolved by Wynxo itself
+rather than trusted to DNS, proxy environment variables are ignored, redirects
+are refused, and models that forward to a remote host are rejected.
 
-## Use your desktop copilot
+---
 
-Start with a small task:
+## Screen control
+
+Start with something small:
 
 > Open KolourPaint and draw a simple smiley face in the middle of a new canvas.
 
-Enable **Desktop control** before sending the request. On Wayland, allow the desktop's screen-sharing and input permissions. Install the requested drawing app yourself first; Wynxo discovers apps through their desktop entries.
+Turn on **Screen control** first, from the inspector, the composer, or
+**Settings → Screen control**. On Wayland, allow the screen-sharing and input
+permissions your desktop asks for. Install the application you want it to use
+first — Wynxo discovers apps through their desktop entries and never runs a
+shell command.
 
-The activity panel shows the model's actual tool calls and whether they succeeded. Screenshots provide visual feedback to a model with vision. Pointer motion and keyboard input affect your real desktop. Use **Stop** to cancel the current task, or disable Desktop control to revoke the app's input access. An action already completed is not undone by stopping.
+While it works, the timeline shows each action, whether it succeeded, and how
+long it took. Screenshots feed a vision model; pointer motion and keyboard
+input affect your real desktop.
 
-Desktop control starts off each time you open Wynxo. Runs have a 20-action limit; review the result and send a follow-up to continue a longer task. Keep early tasks simple while you assess your model's reliability: successful tool execution does not by itself prove the model chose the right button.
+Safety, unchanged from earlier releases and extended in this one:
 
-## Desktop support
+- Screen control starts **off** every time Wynxo opens.
+- **Escape** stops generation and desktop actions immediately.
+- Turning screen control off revokes input access at the backend, not just in
+  the UI, even while an action is in flight.
+- Every run has an action budget (20 by default); Wynxo stops and asks rather
+  than running indefinitely.
+- The model is never given a shell. Applications are launched through `gio`
+  from their installed desktop entry.
+- Screen text and tool results are treated as untrusted data, never as
+  instructions.
+- A permission prompt that times out, is dismissed, or is interrupted by
+  Escape counts as a refusal.
 
-| Session | Backend | Current limits |
+An action that already happened is not undone by stopping.
+
+---
+
+## Wayland and X11
+
+| Session | Backend | Notes |
 | --- | --- | --- |
-| KDE/GNOME Wayland | XDG RemoteDesktop, ScreenCast and Screenshot portals | Select every monitor; compositor permission required; screenshot prompts depend on the portal implementation |
-| X11 | XTEST input + Pillow screenshots | Requires XTEST; keyboard characters must be available in the active keymap |
-| No graphical session | Chat only | Desktop input and capture are unavailable |
+| KDE / GNOME Wayland | XDG RemoteDesktop, ScreenCast and Screenshot portals | Select every monitor; the compositor owns the permission dialog |
+| X11 | XTEST input, Pillow capture | Needs XTEST; typed characters must exist in the active keymap |
+| No graphical session | Chat only | Input and capture are unavailable |
 
-On Wayland, select every monitor in the permission dialog so Wynxo can map screenshot pixels to the correct input stream. Wynxo prefers the position metadata exposed by the portal, then uses monitor sizes or the compositor's stable stream order when that optional metadata is missing. If permission is denied or a portal is unavailable, Wynxo reports the error; it cannot bypass the desktop's permission system. Wayland support still needs testing on your specific compositor/version.
+On Wayland, select every monitor in the permission dialog so Wynxo can map
+screenshot pixels to the right input stream. It prefers the position metadata
+the portal exposes, then monitor sizes, then the compositor's stable stream
+order. Capturing the screen *for context* uses the Screenshot portal alone and
+never asks for input control. Per-window capture is X11-only; Wayland
+compositors do not expose it.
 
-On Debian KDE, these packages supply the usual desktop integration pieces:
+On Debian KDE:
 
 ```bash
 sudo apt install xdg-desktop-portal xdg-desktop-portal-kde libglib2.0-bin
 ```
 
-Use your desktop's corresponding portal backend on other environments. `libglib2.0-bin` supplies `gio`, which launches installed apps. Backend details follow the [XDG desktop portal interfaces](https://flatpak.github.io/xdg-desktop-portal/docs/).
+Use the matching portal backend on other desktops. `libglib2.0-bin` provides
+`gio`, which launches applications. Wayland support still needs testing on your
+specific compositor and version.
 
-## Your workspace
+---
 
-- Stream replies, watch live model thinking when enabled, and see generation speed.
-- Start, reopen, rename, and delete saved tasks.
-- Copy responses or export a conversation to Markdown.
-- Switch between installed models and download a model from Settings.
-- Use command suggestions for common desktop tasks, plus Obsidian, Violet, Ice, Amber, and Rose themes or a custom accent color.
-- Enable reduced motion or a solid dark canvas in Settings.
-- Open the command palette for fast actions, reconnecting Ollama, desktop control, and workspace navigation.
-- Keep using chat while desktop access is off or unavailable.
+## Keyboard
 
 | Shortcut | Action |
 | --- | --- |
-| Enter / Shift+Enter | Send / insert a new line |
-| Ctrl+N | New task |
-| Ctrl+K | Search saved tasks |
-| Ctrl+Shift+P | Open the command palette |
+| Enter / Shift+Enter | Send / new line |
+| Escape | Stop generation and desktop actions |
+| Ctrl+N | New chat |
+| Ctrl+K | Search chats |
+| Ctrl+Shift+P | Command palette |
+| Ctrl+Space | Quick bar |
+| Ctrl+M | Model manager |
+| Ctrl+B / Ctrl+I | Toggle sidebar / inspector |
+| Ctrl+R | Regenerate |
+| Ctrl+D | Duplicate chat |
+| Ctrl+Shift+V | Paste an image as context |
 | Ctrl+, | Settings |
-| Escape / Ctrl+Shift+S | Stop the current task **while Wynxo has keyboard focus** |
 
-The stop shortcuts are window shortcuts, not global hotkeys. If another app has focus, switch back to Wynxo and use Stop; you can also end the desktop sharing session through your compositor's controls.
+These are window shortcuts, active while Wynxo has keyboard focus. Linux gives
+applications no portable way to claim a system-wide hotkey, so for a real
+global quick bar, bind your desktop's custom shortcut to:
 
-History and settings are stored in a local SQLite database at `~/.local/share/wynxo/history.sqlite3`, or under `$XDG_DATA_HOME/wynxo`. Screenshot image payloads are not saved in chat history. The Wayland screenshot portal may create temporary capture files of its own.
-
-Wynxo only accepts loopback Ollama endpoints, disables HTTP proxy inheritance, and refuses redirects. Use locally installed models for local inference; your Ollama server and its model configuration determine where inference runs. This project has no telemetry or hosted backend.
-
-## Update or remove
-
-To update, pull the latest code and rerun the installer:
-
-```bash
-git pull
-python3 install.py
+```
+wynxo --quick
 ```
 
-An upgrade builds a new environment before switching the active release. A failed installation keeps the previous version usable. Previous release files remain until uninstall so a running app can finish using them; restart Wynxo to use an update.
+A running Wynxo picks that up over a local socket and raises the bar; if none is
+running, it starts one.
 
-Remove the installed app from anywhere:
+---
 
-```bash
-~/.local/bin/wynxo --uninstall
-```
+## Privacy
 
-Or run `python3 uninstall.py` from the checkout. Conversations and settings are kept by default. To remove them **as well as the app**, use:
+- Inference runs through your local Ollama server. Nothing is sent anywhere else.
+- Conversations live in a private SQLite file at
+  `~/.local/share/wynxo/history.sqlite3` (or `$XDG_DATA_HOME/wynxo`), created
+  with `0600` permissions.
+- Screenshots go to your local model and are **not** written into chat history.
+  The Wayland portal may create its own temporary capture files.
+- No account, no API key, no telemetry, no hosted backend.
 
-```bash
-~/.local/bin/wynxo --uninstall --purge
-```
-
-Uninstall never removes Ollama or downloaded model files. Modified launchers, modified desktop entries, unknown installation files, and user-data symlinks are preserved and reported.
-
-Default installation locations:
-
-| Item | Location |
-| --- | --- |
-| App + isolated Python environments | `$XDG_DATA_HOME/wynxo-app` (default `~/.local/share/wynxo-app`) |
-| Launcher | `~/.local/bin/wynxo` |
-| Application menu entry | `$XDG_DATA_HOME/applications/io.github.wynxo.Wynxo.desktop` |
-| App icon | `$XDG_DATA_HOME/icons/hicolor/scalable/apps/io.github.wynxo.Wynxo.svg` |
-| Conversations + settings | `$XDG_DATA_HOME/wynxo/history.sqlite3` |
-
-Advanced: `python3 install.py --install-root /path/to/wynxo-app --bin-dir /path/to/bin`. Pass the same install root to `uninstall.py`, or use that installation's launcher. Paths containing spaces are supported. The installer refuses to overwrite paths it does not own.
-
-## Troubleshooting
-
-**Ollama unavailable:** Check `ollama list` and `curl http://127.0.0.1:11434/api/tags`. The Settings URL is the server origin, without `/api`. If Ollama is already running as a service, do not start a second server on the same port.
-
-**A model cannot be found:** Use a tag listed by `ollama list` or an available tag from the Ollama library. A failed download leaves the existing models alone.
-
-**Qt cannot load the xcb plugin:** A minimal Debian/Ubuntu desktop may need:
-
-```bash
-sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1 libgl1
-```
-
-Run the launcher from a terminal to see missing library diagnostics. Package names vary by distro; see [Qt's Linux requirements](https://doc.qt.io/qt-6/linux-requirements.html).
-
-**Graphics-driver rendering issues:** Try `QT_QUICK_BACKEND=software ~/.local/bin/wynxo`. Reduced motion is also available in Settings.
-
-**The `wynxo` command is missing:** Use `~/.local/bin/wynxo` or the application menu. Add `~/.local/bin` to your shell's `PATH` if desired; the installer does not edit shell configuration.
-
-**Desktop control is unavailable:** Check the session/backend explanation in Wynxo, grant the desktop's permission prompt, select every monitor, and confirm portal support. Wynxo can fall back when positions are omitted, but a portal that returns the wrong number or dimensions of streams must be updated or tested with one display. X11 is an alternative when available from your login screen.
+---
 
 ## Development
 
@@ -176,14 +274,130 @@ python3 -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-`wynxo/ui` contains the Qt Quick interface; `controller.py` bridges worker threads and the UI; `engine.py` handles Ollama and the tool loop; `desktop.py` handles Linux desktop integration; `storage.py` manages history. The installer uses only Python's standard library and can run before app dependencies are installed.
+Layout:
 
-Headless UI smoke test:
+| Path | Responsibility |
+| --- | --- |
+| `wynxo/ui/Main.qml` | The application shell: layout, shortcuts, overlays |
+| `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~30 components |
+| `wynxo/controller.py` | Qt bridge; owns UI, Ollama, task and desktop state |
+| `wynxo/engine.py` | Ollama transport and the bounded desktop tool loop |
+| `wynxo/desktop.py` | Wayland portal and X11 backends |
+| `wynxo/markdown.py` | Message segmentation, highlighting, Markdown rendering |
+| `wynxo/context.py` | Composer attachments |
+| `wynxo/storage.py` | SQLite history and settings |
+| `wynxo/demo.py` | Fixed state for previews and screenshots |
+
+`Theme.qml` is the only place colour, spacing, radius, type and motion are
+defined; a test fails the build if a component hard-codes a colour. The
+installer uses only the standard library, so it runs before dependencies exist.
+
+---
+
+## Testing and screenshots
 
 ```bash
+.venv/bin/python -m pytest -q
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software .venv/bin/python -m wynxo --smoke-test
 ```
 
-Tests cover network streaming with simulated Ollama responses, desktop action validation using test backends, storage, and install/uninstall transactions. They do not establish end-to-end reliability of an arbitrary model or compositor. A real screenshot → model → drawing task still depends on your installed model, running Ollama, drawing app, and desktop permissions.
+To see the interface without any real history, Ollama, or desktop access:
 
-Wynxo is an independent project, not affiliated with OpenAI, Anthropic, Tesla, or xAI. MIT licensed; third-party dependencies keep their own licenses.
+```bash
+.venv/bin/python -m wynxo --ui-preview              # a full conversation
+.venv/bin/python -m wynxo --ui-preview context      # attachments
+.venv/bin/python -m wynxo --ui-preview desktop      # screen control mid-task
+.venv/bin/python -m wynxo --ui-preview welcome      # first run
+```
+
+To regenerate every screenshot in `docs/screenshots/` — real captures of the
+real renderer, never mock-ups:
+
+```bash
+xvfb-run -a -s "-screen 0 1600x1000x24" \
+  .venv/bin/python -m wynxo --snapshot docs/screenshots
+```
+
+Add `--size 980x760` to check a narrower layout. CI runs the same command and
+uploads the results as a build artifact.
+
+Tests cover Ollama streaming against a real local HTTP server, desktop action
+validation with test backends, permission modes and the approval gate, message
+segmentation and rendering, attachments, storage, and install/uninstall
+transactions. They do not establish end-to-end reliability of an arbitrary
+model or compositor — a real screenshot → model → drawing task still depends on
+your installed model, your Ollama server, the target application, and your
+desktop's permissions.
+
+---
+
+## Update or remove
+
+```bash
+git pull
+python3 install.py
+```
+
+An upgrade builds a new environment before switching the active release, so a
+failed install leaves the previous version working. Restart Wynxo to use an
+update.
+
+```bash
+~/.local/bin/wynxo --uninstall            # keeps conversations and settings
+~/.local/bin/wynxo --uninstall --purge    # removes them too
+```
+
+Uninstall never removes Ollama or your downloaded models. Modified launchers,
+modified desktop entries, unknown files and user-data symlinks are preserved
+and reported.
+
+| Item | Location |
+| --- | --- |
+| App and isolated environments | `$XDG_DATA_HOME/wynxo-app` (default `~/.local/share/wynxo-app`) |
+| Launcher | `~/.local/bin/wynxo` |
+| Desktop entry | `$XDG_DATA_HOME/applications/io.github.wynxo.Wynxo.desktop` |
+| Icon | `$XDG_DATA_HOME/icons/hicolor/scalable/apps/io.github.wynxo.Wynxo.svg` |
+| Conversations and settings | `$XDG_DATA_HOME/wynxo/history.sqlite3` |
+
+Advanced: `python3 install.py --install-root /path --bin-dir /path`. Pass the
+same install root to `uninstall.py`, or use that installation's launcher.
+
+---
+
+## Troubleshooting
+
+**Ollama is not responding.** Check `ollama list` and
+`curl http://127.0.0.1:11434/api/tags`. The Settings address is the server
+origin, without `/api`. If Ollama already runs as a service, do not start a
+second one on the same port.
+
+**A model tag cannot be found.** Use a tag from `ollama list` or the Ollama
+library. A failed download leaves your existing models alone.
+
+**Qt cannot load the xcb plugin.** A minimal desktop may need:
+
+```bash
+sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1 libgl1
+```
+
+Run the launcher from a terminal to see the missing-library diagnostics.
+Package names vary by distribution; see
+[Qt's Linux requirements](https://doc.qt.io/qt-6/linux-requirements.html).
+
+**Rendering looks wrong.** Try `QT_QUICK_BACKEND=software ~/.local/bin/wynxo`.
+Reduced motion is also available under Settings → Appearance.
+
+**The `wynxo` command is missing.** Use `~/.local/bin/wynxo` or the application
+menu, and add `~/.local/bin` to your `PATH` if you want the short form. The
+installer does not edit your shell configuration.
+
+**Screen control is unavailable.** Read the backend explanation in
+Settings → Screen control, grant your desktop's permission prompt, select every
+monitor, and confirm portal support. X11 is an alternative when your login
+screen offers it.
+
+---
+
+Wynxo is an independent project, not affiliated with Ollama or any AI vendor.
+MIT licensed. Inter and JetBrains Mono are bundled under the SIL Open Font
+License; other dependencies keep their own licences.
