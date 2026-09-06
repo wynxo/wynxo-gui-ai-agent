@@ -45,14 +45,21 @@ def test_plan_row_exposes_agent_plan_states():
     assert "StatusDot" in row
 
 
-def test_workspace_auto_opens_plan_only_for_multistep_runs():
+def test_workspace_auto_opens_from_an_explicit_multistep_plan():
     dock = source("WorkspaceDock.qml")
     assert "userSelectedWorkspaceTab" in dock
-    assert "onActivityChanged" in dock
+    assert "onPlanChanged" in dock
+    assert "bridge.planSteps" in dock
     assert "steps.length >= 2" in dock
     assert "root.planSelected = true" in dock
     assert "root.dock.setVisible(true)" in dock
     assert "if (!bridge || !root.dock || root.userSelectedWorkspaceTab)" in dock
+
+
+def test_plan_rail_indicator_uses_plan_state_not_activity_count():
+    rail = source("DockTabBar.qml")
+    assert "bridge.planSteps.length >= 2" in rail
+    assert "bridge.activity.length >= 2" not in rail
 
 
 def test_shortcuts_and_header_respect_manual_workspace_choice():
