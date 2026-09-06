@@ -6,30 +6,19 @@ Item {
     id: root
     signal starterChosen(string prompt)
     Accessible.role: Accessible.StaticText
-    Accessible.name: "What can I help with?"
-    ColumnLayout {
+    Accessible.name: "Where should we begin?"
+
+    Text {
         anchors.centerIn: parent
         width: parent.width
-        spacing: Theme.s4
-        Text {
-            Layout.fillWidth: true
-            text: "What can I help with?"
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            color: Theme.textPrimary
-            font.family: Theme.sansFamily
-            font.pixelSize: root.width < 600 ? 28 : 36
-            font.weight: Font.Medium
-            font.letterSpacing: -1
-        }
-        Text {
-            Layout.fillWidth: true
-            text: "Your ideas. Your computer. A little help from Wynxo."
-            horizontalAlignment: Text.AlignHCenter
-            wrapMode: Text.WordWrap
-            color: Theme.textSecondary
-            font.family: Theme.sansFamily
-            font.pixelSize: Theme.body
-        }
+        text: "Where should we begin?"
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+        wrapMode: Text.WordWrap
+        color: Theme.textPrimary
+        font.family: Theme.sansFamily
+        font.pixelSize: root.width < 600 ? 25 : 28
+        font.weight: Font.Medium
+        font.letterSpacing: -0.45
     }
 }
