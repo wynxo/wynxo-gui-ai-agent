@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Single-line text field with an optional leading icon and a quiet focus ring. */
+/*! Dense single-line field with a restrained one-pixel focus treatment. */
 TextField {
     id: field
     property string iconName: ""
@@ -13,16 +13,17 @@ TextField {
     selectedTextColor: Theme.onAccent
     font.family: mono ? Theme.monoFamily : Theme.sansFamily
     font.pixelSize: Theme.label
-    leftPadding: iconName ? Theme.s3 + 21 : Theme.s3
+    leftPadding: iconName ? Theme.s3 + 20 : Theme.s3
     rightPadding: Theme.s3
     selectByMouse: true
     Accessible.name: placeholderText
 
     background: Rectangle {
-        radius: Theme.r2
-        color: Theme.surface
+        radius: Theme.r1
+        color: field.activeFocus ? Theme.surfaceRaised : Theme.surface
         border.width: 1
-        border.color: field.activeFocus ? Theme.accentEdge : Theme.borderSubtle
+        border.color: field.activeFocus ? Theme.borderStrong : Theme.borderSubtle
+        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
     }
 
@@ -30,9 +31,8 @@ TextField {
         visible: field.iconName !== ""
         name: field.iconName
         ink: field.activeFocus ? Theme.textSecondary : Theme.textMuted
-        width: 14; height: 14
+        width: 13; height: 13
         x: Theme.s3
         anchors.verticalCenter: parent.verticalCenter
-        Behavior on ink { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
     }
 }
