@@ -8,9 +8,9 @@ import Wynxo
     The application shell.
 
     Two regions: where you are, and what you are doing. The sidebar is docked
-    and resizable above 900px and a drawer below it; nothing else moves on its
-    own. Everything that used to need a third column is now a popover, a menu,
-    or part of the task itself.
+    and resizable above 900px and a drawer below it. A new task deliberately
+    stays sparse: one centered prompt and one composer. Conversation-only
+    controls appear after the first message instead of crowding the home screen.
 */
 ApplicationWindow {
     id: window
@@ -21,24 +21,18 @@ ApplicationWindow {
     color: bridge && bridge.solidBackground ? Theme.background : Theme.backgroundSoft
 
     // ------------------------------------------------------------ layout
-    // One threshold, one rule: there is room for the sidebar, or there is not.
     readonly property bool roomForSidebar: width >= 900
     onRoomForSidebarChanged: if (roomForSidebar && sidebarDrawer) sidebarDrawer.close()
     readonly property bool sidebarCollapsed: bridge ? bridge.sidebarCollapsed : false
     readonly property bool sidebarDocked: roomForSidebar
-    // The width the user chose. QML owns it while the handle is being dragged
-    // and hands it back to the bridge on release, so a drag is not a hundred
-    // round trips through the settings store.
+    readonly property bool homeMode: bridge && !bridge.hasMessages
     property int sidebarUserWidth: 248
-    // Narrow windows get a narrower sidebar rather than an arbitrary cut-off.
     readonly property int sidebarWidth: sidebarCollapsed ? 52
         : Math.max(200, Math.min(sidebarUserWidth, Math.round(width * 0.3)))
 
     property bool closing: false
 
     // ------------------------------------------------------------- setup
-    // A binding rather than an assignment, so the theme keeps following the
-    // bridge — including when a preview run swaps it out underneath us.
     Binding { target: Theme; property: "bridge"; value: bridge }
 
     Component.onCompleted: {
@@ -48,8 +42,6 @@ ApplicationWindow {
         if (bridge && !bridge.onboarded) onboarding.open();
     }
 
-    // Markdown and code are rendered in Python, so the renderers need the same
-    // palette the rest of the interface uses — including after an accent change.
     function pushPalettes() {
         if (!Theme.bridge) return;
         Theme.bridge.setCodePalette(Theme.codePalette);
@@ -76,7 +68,6 @@ ApplicationWindow {
 
     Connections {
         target: bridge
-        // A first run — or "replay the welcome" — opens onboarding.
         function onChanged() {
             if (bridge && !bridge.onboarded && !onboarding.opened && window.previewOverlay === "")
                 onboarding.open();
@@ -103,7 +94,6 @@ ApplicationWindow {
     Shortcut { sequences: ["Alt+Down"]; onActivated: if (bridge) bridge.openAdjacentTask(1) }
     Shortcut {
         sequences: ["Escape"]
-        // Escape is the emergency stop: it always reaches the running task.
         onActivated: {
             if (bridge && bridge.permissionPending) bridge.resolvePermission(false);
             else if (bridge && bridge.busy) bridge.stop();
@@ -132,8 +122,6 @@ ApplicationWindow {
             }
         }
 
-        // A grab handle rather than a visible divider: the sidebar edge is
-        // already a line, and one line is enough.
         Item {
             id: resizer
             property bool dragging: drag.active
@@ -153,9 +141,6 @@ ApplicationWindow {
                 target: null
                 yAxis.enabled: false
                 cursorShape: Qt.SizeHorCursor
-                // `translation` is measured from where the drag started, so the
-                // width has to be too. Adding it to the current width instead
-                // would compound every frame and run away from the pointer.
                 property real startWidth: 0
                 onActiveChanged: {
                     if (active) startWidth = window.sidebarUserWidth;
@@ -190,21 +175,23 @@ ApplicationWindow {
                 Layout.leftMargin: Theme.gutter
                 Layout.rightMargin: Theme.gutter
                 Layout.bottomMargin: Theme.s4
-                spacing: Theme.s3
+                spacing: window.homeMode ? Theme.s2 : Theme.s3
 
-                Item { Layout.fillHeight: true; visible: bridge && !bridge.hasMessages }
+                // Equal flexible space above and below keeps the empty-state
+                // prompt/composer cluster optically centered like ChatGPT's
+                // desktop home screen.
+                Item { Layout.fillHeight: true; visible: window.homeMode }
 
                 TaskView {
                     id: taskView
                     objectName: "conversationViewport"
                     Layout.fillWidth: true
                     Layout.fillHeight: bridge && bridge.hasMessages
-                    Layout.preferredHeight: bridge && !bridge.hasMessages ? 120 : -1
+                    Layout.preferredHeight: window.homeMode ? 64 : -1
                     onLinkClicked: function(link) { linkSheet.ask(link); }
                     onStarterChosen: function(prompt) { composer.insert(prompt); }
                 }
 
-                // A model limit worth knowing about before you send.
                 Rectangle {
                     Layout.fillWidth: true
                     Layout.maximumWidth: Theme.readingWidth
@@ -250,45 +237,22 @@ ApplicationWindow {
                     onOpenModelManager: models.open()
                 }
 
-                GridLayout {
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: 570
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.topMargin: Theme.s2
-                    visible: bridge && !bridge.hasMessages
-                    columns: width < 560 ? 2 : 4
-                    columnSpacing: Theme.s2; rowSpacing: Theme.s2
-                    Repeater {
-                        model: bridge ? bridge.starters : []
-                        delegate: Chip {
-                            required property var modelData
-                            text: modelData.title
-                            iconName: modelData.icon
-                            Layout.fillWidth: true
-                            implicitHeight: 36
-                            background: Rectangle {
-                                radius: Theme.rPill
-                                color: parent.hovered ? Theme.surfaceHover : "transparent"
-                                border.width: 1
-                                border.color: parent.visualFocus ? Theme.accent : Theme.borderSubtle
-                            }
-                            onClicked: composer.insert(modelData.prompt)
-                        }
-                    }
-                }
-
+                // Home suggestions were deliberately removed. The first screen
+                // now asks for one thing only: the user's instruction.
                 Text {
                     Layout.fillWidth: true
                     Layout.maximumWidth: Theme.readingWidth
                     Layout.alignment: Qt.AlignHCenter
                     horizontalAlignment: Text.AlignHCenter
+                    visible: bridge && bridge.hasMessages
                     text: bridge && bridge.projectPath ? "Working in " + bridge.projectName
                           : "Local AI · Commands, apps, and everyday questions"
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     elide: Text.ElideMiddle
                 }
-                Item { Layout.fillHeight: true; visible: bridge && !bridge.hasMessages }
+
+                Item { Layout.fillHeight: true; visible: window.homeMode }
             }
         }
     }
@@ -311,7 +275,6 @@ ApplicationWindow {
             onOpenSettings: { sidebarDrawer.close(); settings.show(settings.generalPage); }
             onRenameRequested: function(id, title) { sidebarDrawer.close(); renameSheet.ask(id, title); }
             onDeleteRequested: function(id, title) { sidebarDrawer.close(); deleteSheet.ask(id, title); }
-            // Collapsing has no meaning in a drawer; closing it does.
             onCollapseRequested: sidebarDrawer.close()
         }
     }
@@ -370,7 +333,6 @@ ApplicationWindow {
     }
 
     // -------------------------------------------------------- quick bar
-    // Exposed so --snapshot can grab the floating window on its own.
     property var quickBarWindow: quickBar
 
     Window {
@@ -407,8 +369,8 @@ ApplicationWindow {
         quickContent.focusInput();
     }
 
-    // Preview hook: --snapshot drives the real UI into a named state so the
-    // README screenshots come from this renderer, not from a mock-up.
+    // Preview hook: --snapshot drives the real UI into a named state so README
+    // screenshots come from this renderer, not from a mock-up.
     property string previewOverlay: ""
     function closeOverlays() {
         settings.close(); models.close(); palette.close(); shortcuts.close();
@@ -443,7 +405,6 @@ ApplicationWindow {
 
     function focusSearch() {
         if (!window.sidebarDocked) {
-            // Focus only lands once the drawer has finished opening.
             if (sidebarDrawer.opened) drawerSidebar.focusSearch();
             else { sidebarDrawer.focusSearchWhenOpen = true; sidebarDrawer.open(); }
             return;
