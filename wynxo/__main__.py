@@ -85,7 +85,7 @@ def _build_tray(app, window, controller):
     tray.activated.connect(lambda reason: controller.quickBarRequested.emit()
                            if reason == QSystemTrayIcon.Trigger else None)
     tray.show()
-    tray._menu = menu  # Keep the menu alive alongside the tray icon.
+    tray._menu = menu
     return tray
 
 
@@ -95,8 +95,7 @@ def main():
     parser.add_argument("--quick", action="store_true",
                         help="Open the floating quick bar, reusing a running Wynxo if there is one")
     parser.add_argument("--ui-preview", metavar="SCENE", nargs="?", const="conversation",
-                        help="Run the interface with fixed demo state "
-                             "(empty, conversation, context, run, desktop, welcome)")
+                        help="Run the interface with fixed demo state")
     parser.add_argument("--snapshot", metavar="DIR",
                         help="Render the demo scenes to PNG files in DIR and exit")
     parser.add_argument("--size", metavar="WxH",
@@ -137,8 +136,8 @@ def main():
         scene = args.ui_preview or "conversation"
         controller = DemoController(scene if not args.snapshot else "conversation")
     else:
-        from .controller import Controller
-        controller = Controller(autoconnect=not args.smoke_test)
+        from .workspace import WorkspaceController
+        controller = WorkspaceController(autoconnect=not args.smoke_test)
 
     engine = QQmlApplicationEngine()
     engine.addImportPath(str(UI))
@@ -169,8 +168,6 @@ def main():
 
     if args.snapshot:
         from .demo import SCENES
-        # Each scene needs its own demo state, so the controller is rebuilt
-        # between shots and the window is grabbed once it settles.
         _snapshot(app, engine, controller, Path(args.snapshot).expanduser(), SCENES)
     elif args.screenshot:
         _park_cursor()
@@ -181,9 +178,6 @@ def main():
                 print("Could not save screenshot", file=sys.stderr)
                 app.exit(1)
             else:
-                # Close the QML window while the context bridge is still alive;
-                # this avoids evaluating bindings against a cleared context on
-                # headless smoke runs and follows the same path as user exit.
                 root.close()
                 QTimer.singleShot(0, app.quit)
         QTimer.singleShot(1800, capture)
@@ -194,9 +188,6 @@ def main():
             QTimer.singleShot(0, app.quit)
         QTimer.singleShot(1200, finish_smoke)
 
-    # Tear down after Qt has destroyed the QML object tree. Closing the Python
-    # bridge while bindings are still live makes QML briefly evaluate it as null
-    # during shutdown and produces noisy TypeError diagnostics.
     exit_code = app.exec()
     if server is not None:
         server.close()
@@ -207,7 +198,6 @@ def main():
 
 
 def _park_cursor():
-    """Move the pointer out of the window so no control is grabbed mid-hover."""
     from PySide6.QtCore import QPoint
     from PySide6.QtGui import QCursor
     try:
@@ -237,28 +227,15 @@ def _snapshot(app, engine, controller, directory: Path, scenes):
         previous, state["controller"] = state["controller"], fresh
         if previous is not None:
             QTimer.singleShot(2500, previous.shutdown)
-        # Reset mode and overlays between scenes so singleton UI state cannot
-        # contaminate later visual-regression captures.
-        root.setProperty("previewWorkspaceMode", "chat")
         root.setProperty("previewOverlay", "")
         QTimer.singleShot(500, lambda: apply_overlay(name, overlay))
 
     def apply_overlay(name, overlay):
-        if overlay in ("modeChat", "modeWork", "modeCodex"):
-            mode = {
-                "modeChat": "chat",
-                "modeWork": "work",
-                "modeCodex": "codex",
-            }[overlay]
-            root.setProperty("previewWorkspaceMode", mode)
-            root.setProperty("previewOverlay", "")
-        else:
-            root.setProperty("previewOverlay", overlay)
+        root.setProperty("previewOverlay", overlay)
         QTimer.singleShot(1000, lambda: capture(name))
 
     def capture(name):
         target = directory / f"{name}.png"
-        # The quick bar is its own top-level window, so grab that one directly.
         window = root
         if root.property("previewOverlay") == "quickbar":
             floating = root.property("quickBarWindow")
