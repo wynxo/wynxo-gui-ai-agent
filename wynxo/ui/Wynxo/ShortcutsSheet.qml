@@ -37,6 +37,17 @@ Sheet {
             { keys: "Ctrl+B", label: "Show or hide the sidebar" },
             { keys: "Ctrl+Space", label: "Quick bar" },
         ]},
+        { title: "The workspace dock", rows: [
+            { keys: "Ctrl+Shift+B", label: "Show or hide the dock panel" },
+            { keys: "Ctrl+Shift+E", label: "Files" },
+            { keys: "Ctrl+`", label: "Terminal" },
+            { keys: "Ctrl+Shift+G", label: "Changes" },
+            { keys: "Ctrl+Shift+K", label: "Context" },
+            { keys: "Ctrl+Shift+A", label: "Activity" },
+            { keys: "Ctrl+Shift+W", label: "Browser" },
+            { keys: "Ctrl+Shift+U", label: "Preview" },
+            { keys: "Ctrl+L", label: "Focus the address bar — Browser only" },
+        ]},
         { title: "While a run is on", rows: [
             { keys: "Esc", label: "Stop, from the Wynxo window" },
             { keys: "Desktop", label: "Stop from any window — see Settings → Agent" },

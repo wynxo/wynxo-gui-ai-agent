@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    The scrolling half of the workspace: a new task, or one in progress.
+    The conversation: a work stream, scrolled.
 
     The jump button appears only once you have scrolled away from the newest
     output, so following a live run costs nothing and reading back does not
@@ -11,20 +11,12 @@ import QtQuick.Controls
 Item {
     id: root
     signal linkClicked(string link)
-    signal starterChosen(string prompt)
 
     function jumpToEnd() { list.jumpToEnd(); }
-
-    TaskStart {
-        anchors.fill: parent
-        visible: bridge && !bridge.hasMessages
-        onStarterChosen: function(prompt) { root.starterChosen(prompt); }
-    }
 
     MessageList {
         id: list
         anchors.fill: parent
-        visible: bridge && bridge.hasMessages
         model: bridge ? bridge.messageModel : null
         onLinkClicked: function(link) { root.linkClicked(link); }
     }
@@ -34,11 +26,11 @@ Item {
         id: jump
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: Theme.s3
+        anchors.bottomMargin: Theme.s2
         implicitHeight: Theme.controlSmall
         implicitWidth: jumpRow.implicitWidth + Theme.s3 * 2
         hoverEnabled: true
-        opacity: list.visible && !list.following && !list.atBottom ? 1 : 0
+        opacity: !list.following && !list.atBottom ? 1 : 0
         visible: opacity > 0
         Accessible.name: "Jump to the latest message"
         onClicked: list.jumpToEnd()

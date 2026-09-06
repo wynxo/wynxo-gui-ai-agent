@@ -3,11 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Product navigation, project context and task history.
+    Where you are: the product, the project, and every task you have had.
 
-    Wynxo and Wynxi are separate workspaces, not tabs inside a web-style
-    segmented control. The sidebar keeps that distinction obvious while staying
-    compact enough to feel like a native coding tool.
+    The top strip holds the three things you reach for constantly — new task,
+    search, collapse. Wynxo and Wynxi are one small switch rather than two
+    permanent rows, because you change product occasionally and start a task
+    every few minutes. Everything below is history.
 */
 Item {
     id: root
@@ -29,26 +30,68 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.s2
-        anchors.topMargin: Theme.s3
+        anchors.topMargin: Theme.s2
         anchors.bottomMargin: Theme.s2
         spacing: Theme.s2
         visible: !root.collapsed
 
+        // ------------------------------------------------------- identity
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s1
-            Layout.rightMargin: Theme.s1
+            Layout.preferredHeight: 30
             spacing: Theme.s2
 
-            Mark { Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
-            Text {
+            Mark { Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
+
+            // The product switch: the name you are in, with the other one a
+            // click away. Two words, not two rows of chrome.
+            AbstractButton {
+                id: productButton
                 Layout.fillWidth: true
-                text: "Wynxo"
-                color: Theme.textPrimary
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.heading
-                font.weight: Font.DemiBold
+                implicitHeight: 28
+                hoverEnabled: true
+                Accessible.name: (root.inWynxi ? "Wynxi" : "Wynxo") + ". Switch product"
+                onClicked: productMenu.opened ? productMenu.close() : productMenu.open()
+                background: Rectangle {
+                    radius: Theme.r1
+                    color: productButton.hovered || productMenu.opened ? Theme.surfaceHover : "transparent"
+                }
+                contentItem: Row {
+                    leftPadding: Theme.s1
+                    spacing: Theme.s1
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.inWynxi ? "Wynxi" : "Wynxo"
+                        color: Theme.textPrimary
+                        font.family: Theme.sansFamily
+                        font.pixelSize: Theme.heading
+                        font.weight: Font.DemiBold
+                    }
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "down"; ink: Theme.textDisabled
+                        width: 11; height: 11
+                    }
+                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+
+                WMenu {
+                    id: productMenu
+                    menuWidth: 236
+                    items: [
+                        { id: "chat", label: "Wynxo", detail: "Chat and desktop work",
+                          icon: "chat", checked: !root.inWynxi },
+                        { id: "codex", label: "Wynxi", detail: "Coding agent, in a project",
+                          icon: "code", checked: root.inWynxi },
+                    ]
+                    onPicked: function(id) {
+                        if (id === "chat" && root.inWynxi) root.newModeTask("chat");
+                        else if (id === "codex" && !root.inWynxi) root.newModeTask("codex");
+                    }
+                }
             }
+
             IconButton {
                 Layout.preferredWidth: 28; Layout.preferredHeight: 28
                 objectName: "sidebarCollapseButton"
@@ -58,155 +101,64 @@ Item {
             }
         }
 
-        // Product switch. Two quiet rows read much more like Codex/desktop
-        // navigation than a large pill control.
-        ColumnLayout {
+        // ---------------------------------------------- the two constants
+        RowLayout {
             Layout.fillWidth: true
-            spacing: 2
-
-            AbstractButton {
-                id: wynxoButton
-                Layout.fillWidth: true
-                implicitHeight: 40
-                hoverEnabled: true
-                readonly property bool chosen: !root.inWynxi
-                Accessible.name: "Wynxo. Chat and Work"
-                Accessible.checked: chosen
-                onClicked: if (!chosen) root.newModeTask("chat")
-                background: Rectangle {
-                    radius: Theme.r2
-                    color: wynxoButton.chosen ? Theme.surfaceSelected
-                         : wynxoButton.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: wynxoButton.visualFocus ? 1 : 0
-                    border.color: Theme.accentEdge
-                }
-                contentItem: RowLayout {
-                    spacing: Theme.s3
-                    Icon {
-                        Layout.leftMargin: Theme.s2
-                        Layout.preferredWidth: 15; Layout.preferredHeight: 15
-                        name: "chat"
-                        ink: wynxoButton.chosen ? Theme.textPrimary : Theme.textMuted
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text {
-                            text: "Wynxo"
-                            color: Theme.textPrimary
-                            font.family: Theme.sansFamily
-                            font.pixelSize: Theme.label
-                            font.weight: Font.Medium
-                        }
-                        Text {
-                            text: "Chat & Work"
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily
-                            font.pixelSize: Theme.micro
-                        }
-                    }
-                    Icon {
-                        Layout.rightMargin: Theme.s2
-                        Layout.preferredWidth: 10; Layout.preferredHeight: 10
-                        visible: wynxoButton.chosen
-                        name: "check"
-                        ink: Theme.textMuted
-                    }
-                }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
-            }
-
-            AbstractButton {
-                id: wynxiButton
-                Layout.fillWidth: true
-                implicitHeight: 40
-                hoverEnabled: true
-                readonly property bool chosen: root.inWynxi
-                Accessible.name: "Wynxi. Coding workspace"
-                Accessible.checked: chosen
-                onClicked: if (!chosen) root.newModeTask("codex")
-                background: Rectangle {
-                    radius: Theme.r2
-                    color: wynxiButton.chosen ? Theme.surfaceSelected
-                         : wynxiButton.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: wynxiButton.visualFocus ? 1 : 0
-                    border.color: Theme.accentEdge
-                }
-                contentItem: RowLayout {
-                    spacing: Theme.s3
-                    Icon {
-                        Layout.leftMargin: Theme.s2
-                        Layout.preferredWidth: 15; Layout.preferredHeight: 15
-                        name: "code"
-                        ink: wynxiButton.chosen ? Theme.accent : Theme.textMuted
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text {
-                            text: "Wynxi"
-                            color: Theme.textPrimary
-                            font.family: Theme.sansFamily
-                            font.pixelSize: Theme.label
-                            font.weight: Font.Medium
-                        }
-                        Text {
-                            text: "Code"
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily
-                            font.pixelSize: Theme.micro
-                        }
-                    }
-                    Icon {
-                        Layout.rightMargin: Theme.s2
-                        Layout.preferredWidth: 10; Layout.preferredHeight: 10
-                        visible: wynxiButton.chosen
-                        name: "check"
-                        ink: Theme.textMuted
-                    }
-                }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
-            }
-        }
-
-        Divider { Layout.fillWidth: true; Layout.topMargin: Theme.s1; Layout.bottomMargin: Theme.s1 }
-
-        WButton {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 34
-            text: root.inWynxi ? "New coding task" : "New task"
-            iconName: "plus"
-            variant: "secondary"
-            onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
-            ToolTip.visible: hovered
-            ToolTip.text: "Ctrl+N"
-        }
-
-        Field {
-            id: search
-            Layout.fillWidth: true
-            iconName: "search"
-            placeholderText: "Search"
-            font.pixelSize: Theme.caption
-            Component.onCompleted: text = bridge ? bridge.searchQuery : ""
-            onTextChanged: if (bridge) bridge.setSearch(text)
-            Keys.onEscapePressed: function(event) {
-                if (text.length) { text = ""; event.accepted = true; }
-                else event.accepted = false;
-            }
-        }
-
-        SectionLabel {
-            Layout.fillWidth: true
-            Layout.leftMargin: Theme.s1
             Layout.topMargin: Theme.s1
-            text: "Project"
+            spacing: Theme.s1
+
+            WButton {
+                Layout.fillWidth: true
+                Layout.preferredHeight: Theme.control
+                text: root.inWynxi ? "New coding task" : "New task"
+                iconName: "plus"
+                variant: "secondary"
+                onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
+                ToolTip.visible: hovered
+                ToolTip.text: "Ctrl+N"
+            }
+            IconButton {
+                Layout.preferredWidth: Theme.control
+                Layout.preferredHeight: Theme.control
+                iconName: "search"
+                iconSize: 14
+                tooltip: "Search tasks"
+                shortcut: "Ctrl+K"
+                active: searchRow.visible
+                onClicked: {
+                    searchRow.visible = !searchRow.visible;
+                    if (searchRow.visible) Qt.callLater(root.focusSearch);
+                    else if (bridge) { search.text = ""; }
+                }
+            }
         }
 
+        Item {
+            id: searchRow
+            Layout.fillWidth: true
+            Layout.preferredHeight: visible ? Theme.control : 0
+            visible: !!(bridge && bridge.searchQuery)
+            Field {
+                id: search
+                anchors.fill: parent
+                iconName: "search"
+                placeholderText: "Search tasks"
+                font.pixelSize: Theme.caption
+                Component.onCompleted: text = bridge ? bridge.searchQuery : ""
+                onTextChanged: if (bridge) bridge.setSearch(text)
+                Keys.onEscapePressed: function(event) {
+                    if (text.length) { text = ""; event.accepted = true; }
+                    else { searchRow.visible = false; event.accepted = true; }
+                }
+            }
+        }
+
+        // -------------------------------------------------------- project
         AbstractButton {
             id: projectButton
             Layout.fillWidth: true
-            implicitHeight: 44
+            Layout.topMargin: Theme.s1
+            implicitHeight: 40
             hoverEnabled: true
             Accessible.name: bridge && bridge.projectName
                 ? "Project " + bridge.projectName + ". Change project"
@@ -215,45 +167,52 @@ Item {
 
             background: Rectangle {
                 radius: Theme.r2
-                color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : "transparent"
-                border.width: projectButton.visualFocus ? 1 : 0
-                border.color: Theme.accentEdge
+                color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : Theme.surface
+                border.width: 1
+                border.color: projectButton.visualFocus ? Theme.accentEdge : Theme.borderSubtle
             }
 
             contentItem: RowLayout {
                 spacing: Theme.s2
                 Icon {
-                    Layout.leftMargin: Theme.s2
+                    Layout.leftMargin: Theme.s3
                     Layout.preferredWidth: 14; Layout.preferredHeight: 14
                     name: bridge && bridge.projectPath ? "folderOpen" : "folder"
                     ink: bridge && bridge.projectPath ? Theme.textSecondary : Theme.textMuted
                 }
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: 1
+                    Layout.minimumWidth: 0
+                    spacing: 0
                     Text {
                         Layout.fillWidth: true
                         text: bridge && bridge.projectName ? bridge.projectName : "Open project"
                         color: bridge && bridge.projectPath ? Theme.textPrimary : Theme.textSecondary
                         font.family: Theme.sansFamily
-                        font.pixelSize: Theme.label
+                        font.pixelSize: Theme.caption
                         font.weight: Font.Medium
                         elide: Text.ElideMiddle
                     }
                     Text {
                         Layout.fillWidth: true
-                        text: bridge && bridge.projectPath ? bridge.projectParentLabel : "Choose a folder"
+                        text: bridge && bridge.projectPath
+                              ? (bridge.workspaceDock && bridge.workspaceDock.branch
+                                 ? bridge.workspaceDock.branch : bridge.projectParentLabel)
+                              : "Files, terminal and changes live in it"
                         color: Theme.textMuted
                         font.family: bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
                         font.pixelSize: Theme.micro
-                        elide: Text.ElideLeft
+                        // A branch reads from the front; a path reads from its
+                        // tail, so each is cut at the end that matters least.
+                        elide: bridge && bridge.workspaceDock && bridge.workspaceDock.branch
+                               ? Text.ElideRight : Text.ElideLeft
                     }
                 }
                 Icon {
-                    Layout.rightMargin: Theme.s2
+                    Layout.rightMargin: Theme.s3
                     Layout.preferredWidth: 10; Layout.preferredHeight: 10
                     name: "chevron"
-                    ink: Theme.textMuted
+                    ink: Theme.textDisabled
                 }
             }
 
@@ -274,6 +233,8 @@ Item {
                     }
                     var has = !!(bridge && bridge.projectPath);
                     list.push({ separator: true, hidden: !has });
+                    list.push({ id: "files", label: "Show files", icon: "folderOpen",
+                                shortcut: "Ctrl+Shift+E", hidden: !has });
                     list.push({ id: "reveal", label: "Reveal in file manager", icon: "launch", hidden: !has });
                     list.push({ id: "terminal", label: "Open terminal here", icon: "terminal", hidden: !has });
                     list.push({ id: "copy", label: "Copy path", icon: "copy", hidden: !has });
@@ -283,6 +244,7 @@ Item {
                 onPicked: function(id) {
                     if (!bridge) return;
                     if (id === "choose") bridge.chooseProject();
+                    else if (id === "files" && bridge.workspaceDock) bridge.workspaceDock.openTab("files");
                     else if (id === "reveal") bridge.revealPath(bridge.projectPath);
                     else if (id === "terminal") bridge.openTerminalHere();
                     else if (id === "copy") bridge.copyProjectPath();
@@ -292,16 +254,19 @@ Item {
             }
         }
 
+        // --------------------------------------------------------- history
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.s1
-            Layout.rightMargin: Theme.s1
-            Layout.topMargin: Theme.s1
-            SectionLabel { text: "Threads" }
+            Layout.leftMargin: Theme.s2
+            Layout.rightMargin: Theme.s2
+            Layout.topMargin: Theme.s2
+            SectionLabel { text: bridge && bridge.searchQuery ? "Results" : "Tasks" }
             Item { Layout.fillWidth: true }
             Text {
-                text: bridge && bridge.taskGroups ? String(bridge.taskGroups.reduce(function(total, group) { return total + group.items.length; }, 0)) : ""
-                color: Theme.textMuted
+                text: bridge && bridge.taskGroups
+                      ? String(bridge.taskGroups.reduce(function(total, group) { return total + group.items.length; }, 0))
+                      : ""
+                color: Theme.textDisabled
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.micro
             }
@@ -317,7 +282,7 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {
                 policy: ScrollBar.AsNeeded
-                contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.borderSubtle }
+                contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.borderStrong }
             }
 
             delegate: Column {
@@ -328,6 +293,8 @@ Item {
                 SectionLabel {
                     width: parent.width
                     text: modelData.title
+                    color: Theme.textDisabled
+                    font.pixelSize: Theme.micro
                     leftPadding: Theme.s2
                     topPadding: Theme.s1
                     bottomPadding: Theme.s1
@@ -354,13 +321,14 @@ Item {
                 visible: groups.count === 0
                 Text {
                     width: parent.width
-                    text: bridge && bridge.searchQuery ? "No matching threads" : "No threads yet"
+                    text: bridge && bridge.searchQuery ? "No matching tasks" : "No tasks yet"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                 }
                 Text {
                     width: parent.width
-                    text: bridge && bridge.searchQuery ? "Try a different search." : "New tasks are saved here automatically."
+                    text: bridge && bridge.searchQuery ? "Try a different search."
+                                                       : "New tasks are saved here automatically."
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     wrapMode: Text.WordWrap; lineHeight: 1.35
@@ -373,7 +341,7 @@ Item {
         AbstractButton {
             id: settingsButton
             Layout.fillWidth: true
-            Layout.preferredHeight: 34
+            Layout.preferredHeight: 32
             hoverEnabled: true
             Accessible.name: "Settings"
             onClicked: root.openSettings()
@@ -386,7 +354,7 @@ Item {
             contentItem: RowLayout {
                 spacing: Theme.s3
                 Icon {
-                    Layout.leftMargin: Theme.s2
+                    Layout.leftMargin: Theme.s3
                     Layout.preferredWidth: 14; Layout.preferredHeight: 14
                     name: "sliders"; ink: Theme.textMuted
                 }
@@ -396,7 +364,7 @@ Item {
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                 }
                 Item { Layout.fillWidth: true }
-                KeyHint { Layout.rightMargin: Theme.s1; keys: "Ctrl+," }
+                KeyHint { Layout.rightMargin: Theme.s2; keys: "Ctrl+," }
             }
             MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
         }
@@ -406,27 +374,13 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.s2
-        anchors.topMargin: Theme.s3
-        spacing: Theme.s2
+        anchors.topMargin: Theme.s2
+        spacing: Theme.s1
         visible: root.collapsed
 
-        Mark { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
-        Item { Layout.preferredHeight: Theme.s1 }
-
-        IconButton {
-            Layout.alignment: Qt.AlignHCenter
-            iconName: "chat"; tooltip: "Wynxo · Chat & Work"
-            active: !root.inWynxi
-            onClicked: if (root.inWynxi) root.newModeTask("chat")
+        Item { Layout.alignment: Qt.AlignHCenter; Layout.preferredHeight: 30; Layout.preferredWidth: 30
+            Mark { anchors.centerIn: parent; width: 18; height: 18 }
         }
-        IconButton {
-            Layout.alignment: Qt.AlignHCenter
-            iconName: "code"; tooltip: "Wynxi · Code"
-            active: root.inWynxi
-            onClicked: if (!root.inWynxi) root.newModeTask("codex")
-        }
-
-        Divider { Layout.fillWidth: true; Layout.topMargin: Theme.s1; Layout.bottomMargin: Theme.s1 }
 
         IconButton {
             Layout.alignment: Qt.AlignHCenter
@@ -437,8 +391,18 @@ Item {
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: "search"; tooltip: "Search"; shortcut: "Ctrl+K"
+            iconName: "search"; tooltip: "Search tasks"; shortcut: "Ctrl+K"
             onClicked: { root.collapseRequested(false); Qt.callLater(root.focusSearch); }
+        }
+
+        Divider { Layout.fillWidth: true; Layout.topMargin: Theme.s1; Layout.bottomMargin: Theme.s1 }
+
+        IconButton {
+            Layout.alignment: Qt.AlignHCenter
+            iconName: root.inWynxi ? "code" : "chat"
+            tooltip: root.inWynxi ? "Wynxi · Code" : "Wynxo · Chat & Work"
+            active: true
+            onClicked: root.collapseRequested(false)
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
@@ -449,6 +413,11 @@ Item {
 
         Item { Layout.fillHeight: true }
 
+        IconButton {
+            Layout.alignment: Qt.AlignHCenter
+            iconName: "panel"; tooltip: "Show sidebar"; shortcut: "Ctrl+B"
+            onClicked: root.collapseRequested(false)
+        }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
             iconName: "sliders"; tooltip: "Settings"; shortcut: "Ctrl+,"

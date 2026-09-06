@@ -16,6 +16,8 @@ Sheet {
 
     readonly property var commands: [
         { id: "new", group: "Task", label: "New task", detail: "Start a fresh task", icon: "plus", shortcut: "Ctrl+N" },
+        { id: "newcode", group: "Task", label: "New coding task", detail: "Wynxi, in the open project", icon: "code" },
+        { id: "compose", group: "Task", label: "Focus the composer", icon: "edit" },
         { id: "search", group: "Task", label: "Search tasks", detail: "Titles and message text", icon: "search", shortcut: "Ctrl+K" },
         { id: "next", group: "Task", label: "Next task", icon: "down", shortcut: "Alt+Down" },
         { id: "previous", group: "Task", label: "Previous task", icon: "up", shortcut: "Alt+Up" },
@@ -25,6 +27,15 @@ Sheet {
         { id: "pin", group: "Task", label: "Pin or unpin task", icon: "pin" },
         { id: "export", group: "Task", label: "Export task to Markdown", icon: "download" },
         { id: "clear", group: "Task", label: "Clear messages", detail: "Empty this task but keep it", icon: "trash" },
+
+        { id: "files", group: "Workspace", label: "Files", detail: "The project tree and file viewer", icon: "folder", shortcut: "Ctrl+Shift+E" },
+        { id: "terminal-panel", group: "Workspace", label: "Terminal", detail: "A real shell in the project", icon: "terminal", shortcut: "Ctrl+`" },
+        { id: "changes", group: "Workspace", label: "Changes", detail: "Uncommitted work, and its diff", icon: "branch", shortcut: "Ctrl+Shift+G" },
+        { id: "context", group: "Workspace", label: "Context", detail: "What the model can see", icon: "layers", shortcut: "Ctrl+Shift+K" },
+        { id: "activity", group: "Workspace", label: "Activity", detail: "The full run timeline", icon: "bolt", shortcut: "Ctrl+Shift+A" },
+        { id: "browser", group: "Workspace", label: "Browser", detail: "Read a page beside the task", icon: "globe", shortcut: "Ctrl+Shift+W" },
+        { id: "preview", group: "Workspace", label: "Preview", detail: "Images and captures, full size", icon: "image", shortcut: "Ctrl+Shift+U" },
+        { id: "dock", group: "Workspace", label: "Show or hide the workspace dock", icon: "panel", shortcut: "Ctrl+Shift+B" },
 
         { id: "project", group: "Project", label: "Open a project folder…", icon: "folder" },
         { id: "reveal", group: "Project", label: "Reveal project in file manager", icon: "launch" },
@@ -53,16 +64,50 @@ Sheet {
     property var filtered: []
     property int highlighted: 0
 
+    // A subsequence match, scored. `otm` finds "Open a terminal", and an exact
+    // prefix still wins over a scattered one.
+    function score(haystack, needle) {
+        if (!needle) return 1;
+        var at = haystack.indexOf(needle);
+        if (at === 0) return 1000;
+        if (at > 0) return 700 - at + (haystack.charAt(at - 1) === " " ? 120 : 0);
+        var position = 0, points = 0, previous = -2;
+        for (var i = 0; i < needle.length; i++) {
+            var found = haystack.indexOf(needle.charAt(i), position);
+            if (found < 0) return 0;
+            points += found === previous + 1 ? 12 : 4;
+            if (found === 0 || haystack.charAt(found - 1) === " ") points += 18;
+            previous = found;
+            position = found + 1;
+        }
+        return points;
+    }
+
     function refilter() {
         var needle = search.text.toLowerCase().trim();
-        var out = [];
-        var seen = "";
+        var scored = [];
         for (var i = 0; i < commands.length; i++) {
             var item = commands[i];
-            var hay = (item.label + " " + (item.detail || "") + " " + item.group).toLowerCase();
-            if (needle && hay.indexOf(needle) === -1) continue;
-            out.push({ command: item, heading: item.group === seen ? "" : item.group });
-            seen = item.group;
+            var label = item.label.toLowerCase();
+            var points = score(label, needle);
+            if (!points) {
+                // The detail and the group still match, at a lower weight, so
+                // "diff" finds Changes without putting it above a title match.
+                points = score(((item.detail || "") + " " + item.group).toLowerCase(), needle);
+                points = points ? Math.min(points, 240) : 0;
+            }
+            if (points) scored.push({ command: item, points: points, order: i });
+        }
+        // Searching ranks by score; an empty query keeps the authored order and
+        // its group headings, because that list is a menu, not a result set.
+        if (needle) scored.sort(function (a, b) { return b.points - a.points || a.order - b.order; });
+        var out = [];
+        var seen = "";
+        for (var j = 0; j < scored.length; j++) {
+            var command = scored[j].command;
+            var heading = needle ? "" : (command.group === seen ? "" : command.group);
+            out.push({ command: command, heading: heading });
+            seen = command.group;
         }
         filtered = out;
         highlighted = 0;

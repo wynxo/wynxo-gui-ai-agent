@@ -24,10 +24,20 @@ def tokens() -> dict[str, str]:
     return found
 
 
-def code_palette() -> dict[str, str]:
+def named_palette(name: str) -> dict[str, str]:
+    """One `readonly property var <name>: ({...})` block from Theme.qml."""
     text = THEME.read_text(encoding="utf-8")
-    block = text[text.index("codePalette"):text.index("// -------------------------------------------------------------- rhythm")]
-    return dict(re.findall(r'"(\w+)":\s*"(#[0-9a-fA-F]{6})"', block))
+    start = text.index(name + ": ({")
+    return dict(re.findall(r'"(\w+)":\s*"(#[0-9a-fA-F]{6})"',
+                           text[start:text.index("})", start)]))
+
+
+def code_palette() -> dict[str, str]:
+    return named_palette("codePalette")
+
+
+def terminal_palette() -> dict[str, str]:
+    return named_palette("terminalPalette")
 
 
 def theme_accents() -> dict[str, str]:
@@ -87,6 +97,27 @@ def test_syntax_colours_are_readable_in_a_code_block():
             f"{name} is {contrast(value, palette['surfaceSunken']):.2f}:1"
 
 
+def test_terminal_colours_are_readable_in_the_terminal_panel():
+    """ANSI output lands on the sunken surface and has to stay legible there;
+    a build log that loses its red is a build log you have to re-read."""
+    palette = tokens()
+    for name, value in terminal_palette().items():
+        assert contrast(value, palette["surfaceSunken"]) >= BODY, \
+            f"terminal {name} is {contrast(value, palette['surfaceSunken']):.2f}:1"
+
+
+def test_diff_ink_is_readable_on_its_own_row_fill_and_on_the_panel():
+    """Added and removed lines are tinted; the text on them still has to pass,
+    and a hunk header sits on the plain sunken surface."""
+    palette = tokens()
+    for ink, fill in (("diffAddInk", "diffAddFill"), ("diffRemoveInk", "diffRemoveFill")):
+        assert contrast(palette[ink], palette[fill]) >= BODY, \
+            f"{ink} on {fill} is {contrast(palette[ink], palette[fill]):.2f}:1"
+    for ink in ("diffAddInk", "diffRemoveInk", "diffHunk"):
+        assert contrast(palette[ink], palette["surfaceSunken"]) >= BODY, \
+            f"{ink} is {contrast(palette[ink], palette['surfaceSunken']):.2f}:1"
+
+
 def test_python_and_qml_agree_on_the_syntax_palette():
     from wynxo.markdown import DEFAULT_PALETTE
     assert set(DEFAULT_PALETTE) == set(code_palette())
@@ -96,11 +127,19 @@ def test_borders_are_visible_against_their_surfaces():
     palette = tokens()
     # Borders are non-text, so the lower bar applies — but they must be seen.
     assert contrast(palette["borderStrong"], palette["surface"]) >= 1.3
+    assert contrast(palette["border"], palette["surface"]) >= 1.15
     assert contrast(palette["borderSubtle"], palette["background"]) >= 1.15
 
 
-def test_text_on_the_accent_is_readable():
+def test_the_three_border_tiers_actually_differ():
+    """Three names for the same grey is three names too many."""
     palette = tokens()
+    subtle, middle, strong = (relative_luminance(palette[name])
+                              for name in ("borderSubtle", "border", "borderStrong"))
+    assert subtle < middle < strong
+
+
+def test_text_on_the_accent_is_readable():
     for name, value in theme_accents().items():
         # Theme.onAccent picks the dark ink above this luminance threshold.
         ink = "#101011" if relative_luminance(value) > 0.28 else "#f6f5f2"

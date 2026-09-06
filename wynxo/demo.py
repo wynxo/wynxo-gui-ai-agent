@@ -44,15 +44,18 @@ readable in the terminal pane. Both mention runtime options, so the likely cause
 is ordering in the options builder. I will summarise, then offer to edit rather
 than editing without being asked."""
 
+# title, age in seconds, pinned, mode. The mode is what the sidebar marks, so
+# the screenshots have to include more than one kind of task.
 CONVERSATIONS = [
-    ("Debug the failing runtime tests", 0, True),
-    ("Draw a mountain scene in KolourPaint", 2400, False),
-    ("Summarise this design document", 9000, False),
-    ("Plan the 1.0 release", 30 * 3600, False),
-    ("Rename the screenshots folder", 32 * 3600, False),
-    ("Explain this stack trace", 5 * 86400, False),
-    ("Compare two CSV exports", 12 * 86400, False),
-    ("Set up a Python project", 40 * 86400, False),
+    ("Debug the failing runtime tests", 0, True, "codex"),
+    ("Draw a mountain scene in KolourPaint", 2400, False, "work"),
+    ("Summarise this design document", 9000, False, "chat"),
+    ("Rewrite the composer layout", 26 * 3600, False, "codex"),
+    ("Plan the 1.0 release", 30 * 3600, False, "chat"),
+    ("Rename the screenshots folder", 32 * 3600, False, "work"),
+    ("Explain this stack trace", 5 * 86400, False, "chat"),
+    ("Compare two CSV exports", 12 * 86400, False, "chat"),
+    ("Set up a Python project", 40 * 86400, False, "codex"),
 ]
 
 CATALOG = [
@@ -179,10 +182,10 @@ class DemoController(WorkspaceController):
     def _seed(self):
         now = time.time()
         created = []
-        for title, age, pinned in CONVERSATIONS:
+        for title, age, pinned, mode in CONVERSATIONS:
             conversation = self.store.create_conversation(title, "qwen2.5vl:7b")
             self.store.set_messages(conversation["id"], [{"role": "user", "content": title}])
-            self.store.set_setting(self._mode_key(conversation["id"]), "chat")
+            self.store.set_setting(self._mode_key(conversation["id"]), mode)
             with self.store._lock, self.store._db:
                 self.store._db.execute("UPDATE conversations SET updated_at=?,created_at=?,pinned=? WHERE id=?",
                                        (now - age, now - age, 1 if pinned else 0, conversation["id"]))
@@ -190,10 +193,16 @@ class DemoController(WorkspaceController):
         self._apply_catalog()
         self._refresh_tasks()
 
-        self._working_directory = str(Path.home() / "Projects" / "wynxo-gui-ai-agent")
+        # The dock panels read a real folder, so a Files or Changes screenshot
+        # shows the real tree and the real diff rather than invented rows.
+        # Falls back to a plausible path when the checkout is not to hand.
+        checkout = Path(__file__).resolve().parent.parent
+        self._working_directory = str(checkout) if (checkout / "pyproject.toml").is_file() \
+            else str(Path.home() / "Projects" / "wynxo-gui-ai-agent")
         self._recent_projects = [self._working_directory,
                                  str(Path.home() / "Projects" / "portal-bridge"),
                                  str(Path.home() / "Projects" / "notes")]
+        self.dock.set_project(self._working_directory)
         self._task_id = created[0]["id"]
         self._task_title = created[0]["title"]
         self._task_mode = "chat"
@@ -203,6 +212,9 @@ class DemoController(WorkspaceController):
                              "load_ms": 812.0, "total_ms": 7360.0, "tokens_per_second": 18.6}
         self._token_rate = "18.6 tok/s"
 
+        if self.scene.startswith("dock-"):
+            self._seed_dock_scene(self.scene[len("dock-"):])
+            return
         if self.scene == "welcome":
             self._task_id = ""
             self._task_title = "New task"
@@ -275,6 +287,41 @@ class DemoController(WorkspaceController):
         self.activityChanged.emit()
         self.changed.emit()
 
+    def _seed_dock_scene(self, tab: str):
+        """A conversation with one dock panel open, for the README shots."""
+        self._task_mode, self._task_mode_locked = "codex", True
+        self.store.set_setting(self._mode_key(self._task_id), "codex")
+        self.messages.append_message("user", "Have a look at the composer and tell me what changed.")
+        for step in STEPS[:2]:
+            self.messages.append_activity(step)
+            self.messages.update_last_step(**{k: step[k] for k in ("state", "ms", "output")})
+            self.dock.record(step)
+            self.dock.record_update(**{k: step[k] for k in ("state", "ms", "output")})
+        self._seed_answer()
+        self.dock.setVisible(True)
+        self.dock.setTab(tab if tab in ("files", "terminal", "changes",
+                                        "context", "activity", "browser", "preview") else "files")
+        if tab == "files":
+            target = Path(self._working_directory) / "wynxo" / "ui" / "Wynxo" / "Composer.qml"
+            if target.is_file():
+                self.dock.openFile(str(target))
+                self.dock.revealFile(str(target))
+        elif tab == "changes":
+            self.dock.refreshChanges()
+        elif tab == "context":
+            self._attachments = [
+                ctx.make(ctx.FILE, "Composer.qml",
+                         path=str(Path(self._working_directory) / "wynxo/ui/Wynxo/Composer.qml"),
+                         text="Item {\n}\n" * 60, subtitle="403 lines · 14 KB"),
+                ctx.from_capture({"ok": True, "image": _SWATCH, "width": 2560, "height": 1440},
+                                 ctx.SCREENSHOT, title="Screen", detail="Full screen"),
+            ]
+            self.attachmentsChanged.emit()
+        elif tab == "terminal":
+            self.dock.startTerminal()
+        self.activityChanged.emit()
+        self.changed.emit()
+
     def _seed_context_scene(self):
         self._task_id = ""
         self._task_title = "New task"
@@ -337,4 +384,11 @@ SCENES = [
     ("16-wynxi-home", "empty-codex-locked", ""),
     ("17-work-home", "empty-work-locked", ""),
     ("18-chat-locked-home", "empty-chat-locked", ""),
+    ("19-dock-files", "dock-files", ""),
+    ("20-dock-terminal", "dock-terminal", ""),
+    ("21-dock-changes", "dock-changes", ""),
+    ("22-dock-browser", "dock-browser", ""),
+    ("23-dock-context", "dock-context", ""),
+    ("24-dock-activity", "dock-activity", ""),
+    ("25-system", "conversation", "system"),
 ]

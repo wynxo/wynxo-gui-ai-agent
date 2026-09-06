@@ -20,6 +20,7 @@ Popup {
     property bool showDetails: false
     onVisibleChanged: if (!visible) showDetails = false
     readonly property bool sensitive: bridge && bridge.permissionRisk === "sensitive"
+    readonly property bool isCommand: !!(bridge && bridge.permissionCommand)
 
     Overlay.modal: Rectangle { color: Theme.scrim }
 
@@ -54,7 +55,7 @@ Popup {
                 color: prompt.sensitive ? Theme.warningMuted : Theme.surfaceHover
                 Icon {
                     anchors.centerIn: parent
-                    name: prompt.sensitive ? "warning" : "cursor"
+                    name: prompt.isCommand ? "terminal" : prompt.sensitive ? "warning" : "cursor"
                     ink: prompt.sensitive ? Theme.warning : Theme.textSecondary
                     width: 17; height: 17
                 }
@@ -64,16 +65,20 @@ Popup {
                 spacing: 2
                 Text {
                     Layout.fillWidth: true
-                    text: "Allow this action?"
+                    text: prompt.isCommand ? "Wynxo wants to run a command"
+                        : prompt.sensitive ? "Wynxo wants to change something"
+                        : "Allow this action?"
                     color: Theme.textPrimary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.title - 2
                     font.weight: Font.DemiBold
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: prompt.sensitive
-                          ? "This can change or send something"
-                          : "Wynxo wants to act on your desktop"
+                    text: prompt.isCommand
+                          ? "It runs as you, with your files and your permissions."
+                        : prompt.sensitive
+                          ? "This can save, send or delete in whatever has focus."
+                          : "Wynxo wants to act on your desktop."
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     wrapMode: Text.WordWrap
@@ -94,10 +99,32 @@ Popup {
                 id: summary
                 anchors.fill: parent
                 anchors.margins: Theme.s3
-                text: bridge ? bridge.permissionSummary : ""
+                text: prompt.isCommand ? bridge.permissionCommand
+                                       : (bridge ? bridge.permissionSummary : "")
                 color: Theme.textPrimary
-                font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                wrapMode: Text.WordWrap; lineHeight: 1.45
+                font.family: prompt.isCommand ? Theme.monoFamily : Theme.sansFamily
+                font.pixelSize: prompt.isCommand ? Theme.code : Theme.label
+                wrapMode: prompt.isCommand ? Text.WrapAnywhere : Text.WordWrap
+                lineHeight: 1.45
+            }
+        }
+
+        // Where it runs. A command means something different in the project
+        // than in the home folder, so the prompt never leaves it implied.
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.s5
+            Layout.rightMargin: Theme.s5
+            Layout.topMargin: -Theme.s2
+            spacing: Theme.s2
+            visible: prompt.isCommand && !!bridge.permissionDirectory
+            Icon { name: "folderOpen"; ink: Theme.textDisabled; Layout.preferredWidth: 12; Layout.preferredHeight: 12 }
+            Text {
+                Layout.fillWidth: true
+                text: bridge ? bridge.permissionDirectory : ""
+                color: Theme.textMuted
+                font.family: Theme.monoFamily; font.pixelSize: Theme.micro
+                elide: Text.ElideMiddle
             }
         }
 
@@ -175,16 +202,16 @@ Popup {
             }
             Item { Layout.fillWidth: true }
             WButton {
-                text: "Decline"
+                text: "Deny"
                 variant: "secondary"
+                focus: true
                 onClicked: if (bridge) bridge.resolvePermission(false)
                 ToolTip.visible: hovered
-                ToolTip.text: "Decline · Esc"
+                ToolTip.text: "Deny · Esc"
             }
             WButton {
-                text: "Allow"
+                text: prompt.isCommand ? "Run once" : "Allow once"
                 variant: "primary"
-                focus: true
                 onClicked: if (bridge) bridge.resolvePermission(true)
             }
         }

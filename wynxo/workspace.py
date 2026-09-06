@@ -198,6 +198,19 @@ class WorkspaceController(Controller):
             self._task_mode_locked = False
             self._emit_mode()
 
+    def _grouped_tasks(self) -> list[dict]:
+        """The sidebar's groups, with each task's product on it.
+
+        Mode is a workspace concept, so it is added here rather than taught to
+        the base controller. The sidebar shows it as one small mark, not a
+        badge: it answers "which assistant was this?" at a glance.
+        """
+        groups = super()._grouped_tasks()
+        for group in groups:
+            group["items"] = [{**task, "mode": self._saved_mode(str(task.get("id", "")))}
+                              for task in group["items"]]
+        return groups
+
     @Slot(str)
     def openTask(self, task_id):
         super().openTask(task_id)

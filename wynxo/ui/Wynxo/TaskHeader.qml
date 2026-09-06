@@ -3,17 +3,23 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    A quiet desktop-workspace title bar.
+    A thin workspace title bar.
 
-    The task context stays on the left and transient run/connection controls stay
-    on the right. Chat / Work is a one-time choice for a fresh Wynxo task; once
-    selected it disappears instead of becoming permanent navigation chrome.
+    Left: where you are — the panel toggle, the product, the project, the task.
+    Right: what the machine is doing — run state, system, the dock toggle, and
+    an overflow for everything that is not a per-second concern.
+
+    Chat / Work is a one-time choice for a fresh Wynxo task; once selected it
+    disappears rather than becoming permanent navigation chrome.
 */
 Item {
     id: root
     property bool sidebarCollapsed: false
     property bool drawerOpen: false
+    property bool dockAvailable: true
+    property bool dockOpen: false
     signal toggleSidebar()
+    signal toggleDock()
     signal renameRequested()
     signal openSettings()
     signal openCommandPalette()
@@ -22,7 +28,9 @@ Item {
     signal clearRequested()
     signal modeRequested(string mode)
 
-    implicitHeight: 46
+    implicitHeight: Theme.headerHeight
+
+    function showSystem() { system.open(); }
 
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
@@ -30,6 +38,7 @@ Item {
     readonly property string resolvedMode: bridge ? bridge.taskMode : "chat"
     readonly property bool canChooseMode: root.homeMode && bridge
         && !bridge.taskModeLocked && bridge.taskMode !== "codex"
+    readonly property bool roomy: root.width > 820
 
     function requestMode(value) {
         if ((value !== "chat" && value !== "work") || !root.canChooseMode) return;
@@ -61,7 +70,7 @@ Item {
             Layout.preferredWidth: 30
             Layout.preferredHeight: 30
             iconSize: 14
-            iconName: "panel"
+            iconName: "panelLeft"
             tooltip: "Show sidebar"
             shortcut: "Ctrl+B"
             onClicked: root.toggleSidebar()
@@ -84,25 +93,85 @@ Item {
             Text {
                 visible: bridge && bridge.projectName
                 text: "/"
-                color: Theme.borderStrong
+                color: Theme.textDisabled
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.caption
             }
 
-            Text {
+            // The project is a button: it is where you are, and where you go
+            // to change it.
+            AbstractButton {
+                id: projectButton
                 visible: bridge && bridge.projectName
-                text: bridge ? bridge.projectName : ""
-                color: Theme.textMuted
-                font.family: Theme.monoFamily
-                font.pixelSize: Theme.caption
-                elide: Text.ElideMiddle
-                Layout.maximumWidth: Math.max(110, root.width * 0.22)
+                readonly property real budget: Math.max(110, Math.min(230, root.width * 0.24))
+                implicitHeight: 26
+                implicitWidth: Math.min(projectRow.implicitWidth + Theme.s2 * 2, budget)
+                Layout.maximumWidth: budget
+                hoverEnabled: true
+                Accessible.name: bridge ? "Project " + bridge.projectName : ""
+                onClicked: projectMenu.opened ? projectMenu.close() : projectMenu.open()
+                background: Rectangle {
+                    radius: Theme.r1
+                    color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : "transparent"
+                }
+                contentItem: Row {
+                    id: projectRow
+                    spacing: Theme.s1
+                    clip: true
+                    Text {
+                        id: projectLabel
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: bridge ? bridge.projectName : ""
+                        color: Theme.textMuted
+                        font.family: Theme.monoFamily
+                        font.pixelSize: Theme.caption
+                        elide: Text.ElideMiddle
+                        // The chevron's lane is reserved; the name gets the rest.
+                        width: Math.min(implicitWidth, projectButton.budget - 22)
+                    }
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "down"; ink: Theme.textDisabled
+                        width: 9; height: 9
+                    }
+                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+
+                WMenu {
+                    id: projectMenu
+                    menuWidth: 250
+                    property var recents: bridge ? bridge.recentProjects : []
+                    onAboutToShow: recents = bridge ? bridge.recentProjects : []
+                    items: {
+                        var list = [{ id: "choose", label: "Open folder…", icon: "folder" }];
+                        if (recents.length) {
+                            list.push({ separator: true });
+                            for (var i = 0; i < Math.min(recents.length, 5); i++)
+                                list.push({ id: "recent:" + recents[i].path, label: recents[i].name, icon: "clock" });
+                        }
+                        list.push({ separator: true });
+                        list.push({ id: "files", label: "Show files", icon: "folderOpen", shortcut: "Ctrl+Shift+E" });
+                        list.push({ id: "reveal", label: "Reveal in file manager", icon: "launch" });
+                        list.push({ id: "copy", label: "Copy path", icon: "copy" });
+                        list.push({ id: "clear", label: "Close project", icon: "close" });
+                        return list;
+                    }
+                    onPicked: function(id) {
+                        if (!bridge) return;
+                        if (id === "choose") bridge.chooseProject();
+                        else if (id === "files" && bridge.workspaceDock) bridge.workspaceDock.openTab("files");
+                        else if (id === "reveal") bridge.revealPath(bridge.projectPath);
+                        else if (id === "copy") bridge.copyProjectPath();
+                        else if (id === "clear") bridge.clearProject();
+                        else if (id.indexOf("recent:") === 0) bridge.openProject(id.substring(7));
+                    }
+                }
             }
 
             Text {
                 visible: !root.homeMode && bridge && bridge.taskId
                 text: "/"
-                color: Theme.borderStrong
+                color: Theme.textDisabled
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.caption
             }
@@ -112,8 +181,8 @@ Item {
                 visible: !root.homeMode
                 enabled: !!(bridge && bridge.taskId)
                 Layout.fillWidth: true
-                Layout.maximumWidth: Math.max(160, root.width * 0.42)
-                implicitHeight: 28
+                Layout.maximumWidth: Math.max(160, root.width * 0.38)
+                implicitHeight: 26
                 hoverEnabled: true
                 Accessible.name: "Rename this task"
                 onClicked: root.renameRequested()
@@ -124,6 +193,8 @@ Item {
                     border.color: Theme.accentEdge
                 }
                 contentItem: Text {
+                    leftPadding: Theme.s1
+                    rightPadding: Theme.s1
                     text: bridge ? bridge.taskTitle : ""
                     color: Theme.textPrimary
                     font.family: Theme.sansFamily
@@ -150,8 +221,8 @@ Item {
 
             Repeater {
                 model: [
-                    { id: "chat", label: "Chat", icon: "chat" },
-                    { id: "work", label: "Work", icon: "cursor" },
+                    { id: "chat", label: "Chat", icon: "chat", hint: "Answers, explanations, files you attach." },
+                    { id: "work", label: "Work", icon: "cursor", hint: "Runs commands and, when allowed, drives the screen." },
                 ]
                 delegate: AbstractButton {
                     id: choice
@@ -161,8 +232,12 @@ Item {
                     hoverEnabled: true
                     readonly property bool chosen: root.resolvedMode === modelData.id
                     Accessible.name: modelData.label
+                    Accessible.description: modelData.hint
                     Accessible.checked: chosen
                     onClicked: root.requestMode(modelData.id)
+                    ToolTip.visible: hovered
+                    ToolTip.text: modelData.hint
+                    ToolTip.delay: 500
                     background: Rectangle {
                         radius: Theme.r2
                         color: choice.hovered ? Theme.surfaceHover
@@ -197,9 +272,9 @@ Item {
         // ------------------------------------------------------- run state
         Rectangle {
             visible: bridge && bridge.busy
-            Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
+            Layout.preferredWidth: runRow.implicitWidth + Theme.s3 + Theme.s2
             Layout.preferredHeight: 28
-            Layout.maximumWidth: Math.max(110, root.width * 0.30)
+            Layout.maximumWidth: Math.max(110, root.width * 0.28)
             radius: Theme.r2
             color: Theme.surface
             border.width: 1
@@ -209,7 +284,7 @@ Item {
                 id: runRow
                 anchors.fill: parent
                 anchors.leftMargin: Theme.s3
-                anchors.rightMargin: Theme.s2
+                anchors.rightMargin: Theme.s1
                 spacing: Theme.s2
                 StatusDot {
                     tone: bridge && bridge.permissionPending ? Theme.warning : Theme.accent
@@ -251,13 +326,14 @@ Item {
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
                 }
             }
         }
 
         Chip {
             visible: !root.homeMode && bridge && root.resolvedMode === "work"
-                     && bridge.desktopEnabled && !bridge.busy && root.width > 760
+                     && bridge.desktopEnabled && !bridge.busy && root.roomy
             text: "Screen"
             iconName: "cursor"
             selected: true
@@ -276,17 +352,53 @@ Item {
             ToolTip.text: bridge ? bridge.endpoint + " — click to reconnect" : ""
         }
 
+        // ------------------------------------------------------ the system
         IconButton {
-            visible: !root.homeMode
+            id: systemButton
+            objectName: "systemButton"
+            iconName: "cpu"
+            iconSize: 14
+            tooltip: "System"
+            active: system.opened
+            onClicked: system.opened ? system.close() : system.open()
+
+            SystemPopover { id: system; anchorX: -width + systemButton.width }
+
+            // A dot instead of a badge: the connection is the only state worth
+            // reporting from a 30-pixel button.
+            Rectangle {
+                visible: !!(bridge && !bridge.online)
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 5
+                width: 5; height: 5; radius: 2.5
+                color: Theme.danger
+            }
+        }
+
+        Divider { vertical: true; visible: root.dockAvailable; Layout.leftMargin: Theme.s1; Layout.rightMargin: Theme.s1 }
+
+        IconButton {
+            objectName: "headerDockToggle"
+            visible: root.dockAvailable
+            iconSize: 14
+            iconName: "panel"
+            tooltip: root.dockOpen ? "Hide the workspace dock" : "Show the workspace dock"
+            shortcut: "Ctrl+Shift+B"
+            active: root.dockOpen
+            onClicked: root.toggleDock()
+        }
+
+        IconButton {
             iconName: "more"
-            tooltip: "Task actions"
+            tooltip: "More"
             active: overflow.opened
             onClicked: overflow.opened ? overflow.close() : overflow.open()
 
             WMenu {
                 id: overflow
                 anchorX: -menuWidth + parent.width
-                menuWidth: 250
+                menuWidth: 258
                 items: [
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
                     { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard" },

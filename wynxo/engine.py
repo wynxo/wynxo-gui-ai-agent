@@ -129,10 +129,18 @@ class OllamaClient:
 
     def running(self) -> list[str]:
         """Names of models Ollama currently holds in memory."""
+        return [entry["name"] for entry in self.resident()]
+
+    def resident(self) -> list[dict]:
+        """What Ollama holds in memory, with its size and GPU residency.
+
+        The System panel reports these figures verbatim; they come from Ollama
+        rather than being inferred from the model name or file size.
+        """
         data = self._json("GET", "/api/ps").get("models", [])
         if not isinstance(data, list):
             return []
-        return [m["name"] for m in data if isinstance(m, dict) and isinstance(m.get("name"), str)]
+        return [m for m in data if isinstance(m, dict) and isinstance(m.get("name"), str) and m["name"]]
 
     def delete(self, model: str) -> None:
         """Remove a downloaded model. Ollama answers with an empty 200 body."""

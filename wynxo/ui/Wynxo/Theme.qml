@@ -2,10 +2,14 @@ pragma Singleton
 import QtQuick
 
 /*!
-    Wynxo's interface tokens.
+    Wynxo's interface tokens. The only place colour, spacing, radius, type and
+    motion are decided.
 
-    A neutral graphite workspace keeps the chrome visible without turning every
-    panel into a card. Warm accent is reserved for focus and action state.
+    The workspace is a near-black graphite room with three columns in it. Depth
+    is carried by a handful of neutral steps rather than by shadows or glass:
+    the shell recedes, the conversation sits on the plate, and a panel lifts by
+    one step only when it has to. Accent is not decoration — it marks focus, the
+    send action and the current selection, and nothing else.
 */
 QtObject {
     id: theme
@@ -14,21 +18,31 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    readonly property color background:      "#1b1b1b"
-    readonly property color backgroundSoft:  "#141414"
-    readonly property color surface:         "#222222"
-    readonly property color surfaceRaised:   "#292929"
-    readonly property color surfaceHover:    "#303030"
-    readonly property color surfaceSelected: "#353535"
-    readonly property color surfaceSunken:   "#111111"
-    readonly property color scrim:           "#cc080808"
+    // Six neutral steps, close enough together that the interface reads as one
+    // material and far enough apart that a panel edge never needs a border to
+    // be legible.
+    readonly property color background:      "#191919"   // the plate: conversation
+    readonly property color backgroundSoft:  "#121212"   // the shell: sidebars, chrome
+    readonly property color surface:         "#202020"   // resting controls
+    readonly property color surfaceRaised:   "#262626"   // composer, popovers, cards
+    readonly property color surfaceHover:    "#2e2e2e"
+    readonly property color surfacePressed:  "#383838"
+    readonly property color surfaceSelected: "#333333"
+    readonly property color surfaceSunken:   "#0e0e0e"   // code, terminal, wells
+    readonly property color scrim:           "#cc070707"
 
-    readonly property color borderSubtle: "#353535"
-    readonly property color borderStrong: "#4a4a4a"
+    // Aliases kept so a component can say what it means.
+    readonly property color surfaceElevated: surfaceRaised
+    readonly property color panel:           backgroundSoft
 
-    readonly property color textPrimary:   "#f2f2ee"
-    readonly property color textSecondary: "#c8c8c2"
-    readonly property color textMuted:     "#9a9a94"
+    readonly property color borderSubtle: "#303030"
+    readonly property color border:       "#3b3b3b"
+    readonly property color borderStrong: "#4d4d4d"
+
+    readonly property color textPrimary:   "#f2f1ed"
+    readonly property color textSecondary: "#c6c5bf"
+    readonly property color textMuted:     "#97968f"
+    readonly property color textDisabled:  "#6a6a64"
     readonly property color textInverse:   "#111111"
 
     // Claude-like warmth as the default focus colour; Appearance can replace it.
@@ -46,11 +60,30 @@ QtObject {
     readonly property color successMuted: "#17231c"
     readonly property color warningMuted: "#282116"
     readonly property color dangerMuted:  "#2a1a18"
+    readonly property color infoMuted:    "#161d26"
+
+    // Diff ink. Restrained: a changed line should read as changed, not alarm.
+    readonly property color diffAddInk:    "#8fcf9f"
+    readonly property color diffRemoveInk: "#e08d80"
+    readonly property color diffAddFill:    "#152018"
+    readonly property color diffRemoveFill: "#221515"
+    readonly property color diffHunk:      "#7d9cc4"
 
     readonly property var codePalette: ({
         "text": "#e0dfda", "keyword": "#d5a6e6", "string": "#9dca9d",
         "number": "#dbaa7a", "comment": "#898983", "function": "#8dbbdd",
         "builtin": "#84c9bf", "punctuation": "#9c9c95"
+    })
+
+    // Terminal ink, resolved in Python against this map so ANSI keeps meaning
+    // without inventing sixteen colours the rest of the app does not know.
+    readonly property var terminalPalette: ({
+        "text": "#d8d7d2", "black": "#97968f", "red": "#e58476", "green": "#7acb96",
+        "yellow": "#d7ab5d", "blue": "#82abdd", "magenta": "#c2a0e4", "cyan": "#7fc8bf",
+        "white": "#d8d7d2", "brightBlack": "#b0afa8", "brightRed": "#f09c8e",
+        "brightGreen": "#94daaa", "brightYellow": "#e6c179", "brightBlue": "#9dc0e8",
+        "brightMagenta": "#d4b6ee", "brightCyan": "#98dad1", "brightWhite": "#f2f1ed",
+        "dim": "#97968f"
     })
 
     // -------------------------------------------------------------- rhythm
@@ -75,8 +108,11 @@ QtObject {
     readonly property int control: compact ? 30 : 32
     readonly property int controlSmall: compact ? 26 : 28
     readonly property int rowHeight: compact ? 32 : 35
+    readonly property int denseRow: compact ? 24 : 26     // file tree, diff, terminal
     readonly property int gutter: compact ? 16 : 22
-    readonly property int readingWidth: 860
+    readonly property int readingWidth: 780
+    readonly property int headerHeight: compact ? 42 : 46
+    readonly property int railWidth: 44                    // collapsed dock rail
 
     // ---------------------------------------------------------- typography
     readonly property string sansFamily: ready && bridge.systemFont ? systemSans : "Inter"
@@ -90,6 +126,7 @@ QtObject {
     readonly property int label:   Math.round(12.5 * scale)
     readonly property int caption: Math.round(11.5 * scale)
     readonly property int micro:   Math.round(10 * scale)
+    readonly property int code:    Math.round(12 * scale)
 
     // ------------------------------------------------------------- motion
     readonly property bool reducedMotion: ready && bridge.reducedMotion
@@ -101,9 +138,43 @@ QtObject {
     function stateColor(name) {
         if (name === "done") return success;
         if (name === "failed") return danger;
-        if (name === "declined") return warning;
+        if (name === "cancelled" || name === "declined") return warning;
         if (name === "waiting") return warning;
+        if (name === "queued") return textMuted;
         return accent;
+    }
+
+    // Activity states are also carried by a word and an icon; this is the
+    // shared vocabulary so a state never means two things in two panels.
+    function stateLabel(name) {
+        if (name === "done") return "done";
+        if (name === "failed") return "failed";
+        if (name === "cancelled" || name === "declined") return "cancelled";
+        if (name === "waiting") return "waiting for you";
+        if (name === "queued") return "queued";
+        return "running";
+    }
+
+    function stateIcon(name) {
+        if (name === "done") return "check";
+        if (name === "failed") return "warning";
+        if (name === "cancelled" || name === "declined") return "close";
+        if (name === "waiting") return "lock";
+        if (name === "queued") return "clock";
+        return "bolt";
+    }
+
+    // One family of shapes for file kinds, so the tree, the changes list and
+    // the context panel never disagree about what a `.py` file looks like.
+    function kindIcon(kind) {
+        if (kind === "folder") return "folder";
+        if (kind === "code") return "code";
+        if (kind === "config") return "sliders";
+        if (kind === "doc") return "file";
+        if (kind === "image") return "image";
+        if (kind === "diff") return "branch";
+        if (kind === "link") return "globe";
+        return "file";
     }
 
     function alpha(base, amount) {

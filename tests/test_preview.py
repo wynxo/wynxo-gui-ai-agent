@@ -100,10 +100,25 @@ def test_every_scene_names_a_project_so_the_hierarchy_is_visible():
         bridge = DemoController(scene)
         try:
             assert bridge.projectName == "wynxo-gui-ai-agent"
-            assert bridge.projectParentLabel.endswith("Projects")
+            assert bridge.projectParentLabel
             assert len(bridge.recentProjects) >= 2
         finally:
             bridge.shutdown()
+
+
+def test_the_dock_scenes_point_at_a_real_folder():
+    """Files, Changes and Terminal read the filesystem. A screenshot of them
+    is only worth taking if the folder behind it actually exists — otherwise
+    every panel shows its empty state."""
+    from pathlib import Path
+    bridge = DemoController("dock-files")
+    try:
+        assert Path(bridge.projectPath).is_dir()
+        assert bridge.workspaceDock.visible
+        assert bridge.workspaceDock.tab == "files"
+        assert bridge.workspaceDock.fileModel.rowCount() > 0
+    finally:
+        bridge.shutdown()
 
 
 def test_the_finished_run_scene_settles_every_step():

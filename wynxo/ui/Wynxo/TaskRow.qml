@@ -1,18 +1,23 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! One compact thread in the sidebar. */
+/*! One task in the sidebar: its title, which assistant ran it, and — on
+    hover or from the keyboard — what you can do with it. */
 AbstractButton {
     id: row
     property var entry: ({})
     readonly property bool current: bridge && entry.id === bridge.taskId
+    readonly property string mode: entry.mode || "chat"
     signal renameRequested()
     signal deleteRequested()
 
     height: Theme.rowHeight
     hoverEnabled: true
     Accessible.role: Accessible.ListItem
-    Accessible.name: (entry.title || "") + (entry.pinned ? ", pinned" : "")
+    Accessible.name: (entry.title || "")
+                     + (row.mode === "codex" ? ", Wynxi coding task"
+                        : row.mode === "work" ? ", desktop task" : "")
+                     + (entry.pinned ? ", pinned" : "")
     Accessible.description: entry.preview || ""
     Accessible.selected: current
     onClicked: if (bridge) bridge.openTask(entry.id)
@@ -36,18 +41,29 @@ AbstractButton {
     }
 
     contentItem: Item {
+        // Chat is the default and gets no mark; only the two modes that behave
+        // differently earn one, so the list stays quiet.
+        Icon {
+            id: modeIcon
+            visible: row.mode !== "chat"
+            x: Theme.s3
+            anchors.verticalCenter: parent.verticalCenter
+            name: row.mode === "codex" ? "code" : "cursor"
+            ink: row.current ? Theme.textSecondary : Theme.textDisabled
+            width: 11; height: 11
+        }
         Icon {
             id: pinIcon
-            visible: !!row.entry.pinned
-            x: Theme.s2
+            visible: !!row.entry.pinned && !modeIcon.visible
+            x: Theme.s3
             anchors.verticalCenter: parent.verticalCenter
             name: "pin"
-            ink: Theme.textMuted
+            ink: Theme.textDisabled
             width: 11; height: 11
         }
         Text {
             anchors.left: parent.left
-            anchors.leftMargin: row.entry.pinned ? Theme.s2 + 16 : Theme.s3
+            anchors.leftMargin: modeIcon.visible || pinIcon.visible ? Theme.s3 + 17 : Theme.s3
             anchors.right: parent.right
             anchors.rightMargin: 30
             anchors.verticalCenter: parent.verticalCenter
@@ -67,7 +83,7 @@ AbstractButton {
         anchors.verticalCenter: parent.verticalCenter
         width: 26; height: 26; iconSize: 12
         iconName: "moreVertical"
-        tooltip: "Thread actions"
+        tooltip: "Task actions"
         opacity: row.hovered || row.visualFocus || moreMenu.opened ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
