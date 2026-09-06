@@ -2,8 +2,8 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    Agent output stays typographic and left aligned. Reasoning is a disclosure,
-    code is rendered by CodeBlock, and the actual answer gets the visual weight.
+    Agent output is content first: no avatar, no decorative byline, no bubble.
+    Only live state, optional reasoning and the result itself remain.
 */
 Item {
     id: root
@@ -25,7 +25,7 @@ Item {
     implicitHeight: column.implicitHeight
     property bool thoughtOpen: false
     Accessible.role: Accessible.StaticText
-    Accessible.name: (root.streaming ? "Wynxo is replying: " : "Wynxo said: ") + root.body
+    Accessible.name: (root.streaming ? "Agent is replying: " : "Agent said: ") + root.body
 
     Column {
         id: column
@@ -33,28 +33,20 @@ Item {
         spacing: Theme.s3
 
         Row {
+            visible: root.streaming
+            height: visible ? 16 : 0
             spacing: Theme.s2
-            height: 18
-            Text {
-                text: "✦"
-                color: root.streaming ? Theme.accent : Theme.textMuted
-                font.family: Theme.sansFamily
-                font.pixelSize: 12
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Text {
-                text: bridge && bridge.taskMode === "codex" ? "Wynxi" : "Wynxo"
-                color: Theme.textSecondary
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.caption
-                font.weight: Font.DemiBold
-                anchors.verticalCenter: parent.verticalCenter
-            }
             StatusDot {
-                visible: root.streaming
                 width: 6; height: 6
                 tone: Theme.accent
-                pulsing: root.streaming
+                pulsing: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+            Text {
+                text: bridge && bridge.taskMode === "codex" ? "Wynxi is working" : "Wynxo is working"
+                color: Theme.textMuted
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.micro
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
@@ -67,7 +59,7 @@ Item {
             AbstractButton {
                 id: thoughtHeader
                 width: Math.min(thoughtRow.implicitWidth + Theme.s2 * 2, parent.width)
-                height: 24
+                height: 23
                 hoverEnabled: true
                 Accessible.name: thoughtLabel.text
                 onClicked: root.thoughtOpen = !root.thoughtOpen
@@ -91,7 +83,7 @@ Item {
                         id: thoughtLabel
                         anchors.verticalCenter: parent.verticalCenter
                         text: !root.thinkDone ? "Thinking…"
-                            : root.thinkSeconds > 0 ? "Reasoned for " + root.thinkSeconds.toFixed(1) + "s"
+                            : root.thinkSeconds > 0 ? "Thought for " + root.thinkSeconds.toFixed(1) + "s"
                             : "Reasoning"
                         color: Theme.textMuted
                         font.family: Theme.monoFamily
@@ -167,16 +159,19 @@ Item {
             visible: opacity > 0 && root.body.length > 0
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
-                width: 26; height: 26; iconSize: 12; iconName: "copy"; tooltip: "Copy response"
+                width: 26; height: 26; iconSize: 12
+                iconName: "copy"; tooltip: "Copy response"
                 onClicked: if (bridge) bridge.copyText(root.body)
             }
             IconButton {
-                width: 26; height: 26; iconSize: 12; iconName: "retry"; tooltip: "Regenerate"; shortcut: "Ctrl+R"
+                width: 26; height: 26; iconSize: 12
+                iconName: "retry"; tooltip: "Regenerate"; shortcut: "Ctrl+R"
                 enabled: bridge && bridge.canRegenerate
                 onClicked: if (bridge) bridge.regenerate()
             }
             IconButton {
-                width: 26; height: 26; iconSize: 12; iconName: "branch"; tooltip: "Branch from here"
+                width: 26; height: 26; iconSize: 12
+                iconName: "branch"; tooltip: "Branch from here"
                 onClicked: root.branched()
             }
             Text {
@@ -208,6 +203,7 @@ Item {
             onLinkClicked: function(link) { root.linkClicked(link); }
         }
     }
+
     Component {
         id: codeBlock
         CodeBlock {
