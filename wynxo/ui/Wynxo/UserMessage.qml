@@ -10,6 +10,8 @@ Item {
 
     implicitHeight: card.height
     property bool editing: false
+    Accessible.role: Accessible.StaticText
+    Accessible.name: "You said: " + root.body
 
     Rectangle {
         id: card

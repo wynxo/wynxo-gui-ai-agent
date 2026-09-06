@@ -25,6 +25,8 @@ Item {
 
     implicitHeight: column.implicitHeight
     property bool thoughtOpen: false
+    Accessible.role: Accessible.StaticText
+    Accessible.name: (root.streaming ? "Wynxo is replying: " : "Wynxo said: ") + root.body
 
     Column {
         id: column

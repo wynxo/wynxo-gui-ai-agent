@@ -15,6 +15,7 @@ Item {
     property color tone: Theme.accent
     implicitWidth: 64
     implicitHeight: 64
+    Accessible.ignored: true   // Decorative; the label beside it carries the name.
 
     Canvas {
         id: rings

@@ -7,6 +7,8 @@ Item {
     property color tone: Theme.accent
     implicitHeight: 3
     implicitWidth: 120
+    Accessible.role: Accessible.ProgressBar
+    Accessible.name: Math.round(Math.max(0, Math.min(1, value)) * 100) + " percent"
 
     Rectangle {
         anchors.fill: parent

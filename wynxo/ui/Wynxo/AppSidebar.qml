@@ -127,6 +127,9 @@ Item {
                         property bool current: bridge && modelData.id === bridge.taskId
                         color: current ? Theme.surfaceSelected
                              : rowMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                        border.width: chatRow.activeFocus ? 2 : 0
+                        border.color: Theme.accentEdge
+                        activeFocusOnTab: true
                         Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
                         Rectangle {
@@ -213,8 +216,11 @@ Item {
                             }
                         }
                         Keys.onReturnPressed: bridge && bridge.openTask(chatRow.modelData.id)
+                        Keys.onSpacePressed: bridge && bridge.openTask(chatRow.modelData.id)
                         Accessible.role: Accessible.ListItem
-                        Accessible.name: modelData.title
+                        Accessible.name: modelData.title + (modelData.pinned ? ", pinned" : "")
+                        Accessible.description: modelData.preview || ""
+                        Accessible.selected: chatRow.current
                     }
                 }
             }

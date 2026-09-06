@@ -13,6 +13,13 @@ Item {
     property bool live: false
 
     implicitHeight: card.height
+    Accessible.role: Accessible.List
+    Accessible.name: {
+        var parts = [];
+        for (var i = 0; i < steps.length; i++)
+            parts.push((steps[i].summary || steps[i].label) + ", " + steps[i].state);
+        return "Desktop activity: " + parts.join("; ");
+    }
 
     Rectangle {
         id: card

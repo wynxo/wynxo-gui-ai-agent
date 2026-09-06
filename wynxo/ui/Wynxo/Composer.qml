@@ -89,6 +89,9 @@ Item {
                     topPadding: Theme.s2
                     bottomPadding: Theme.s2
                     background: Item {}
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: "Message to Wynxo"
+                    Accessible.description: placeholderText
 
                     Keys.onReturnPressed: function(event) {
                         if (event.modifiers & Qt.ShiftModifier) { event.accepted = false; return; }

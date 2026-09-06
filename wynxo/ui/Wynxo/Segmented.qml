@@ -57,6 +57,9 @@ Item {
                     font.weight: index === root.currentIndex ? Font.DemiBold : Font.Medium
                     Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                 }
+                Accessible.role: Accessible.RadioButton
+                Accessible.name: modelData.label
+                Accessible.checked: index === root.currentIndex
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor

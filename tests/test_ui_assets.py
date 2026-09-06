@@ -90,3 +90,39 @@ def test_renderers_are_told_when_the_palette_changes():
         assert "onPaletteChanged" in text, f"{name} ignores palette changes"
     controller = (Path(__file__).resolve().parents[1] / "wynxo" / "controller.py").read_text()
     assert controller.count("self.paletteChanged.emit()") == 2
+
+
+def test_interactive_components_carry_accessible_names():
+    """A screen reader should not meet a wall of unnamed rectangles."""
+    required = {
+        "WButton.qml", "IconButton.qml", "Chip.qml", "Toggle.qml", "Segmented.qml",
+        "Composer.qml", "AppSidebar.qml", "UserMessage.qml", "AssistantMessage.qml",
+        "ToolActivity.qml", "Meter.qml",
+    }
+    for name in sorted(required):
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert "Accessible." in text, f"{name} exposes nothing to assistive technology"
+
+
+def test_status_is_never_carried_by_colour_alone():
+    """Activity rows pair colour with an icon, a word and motion."""
+    text = (MODULE / "ToolActivity.qml").read_text(encoding="utf-8")
+    for word in ('"waiting for you"', '"declined"', "modelData.icon", "pulsing:"):
+        assert word in text
+
+
+def test_reduced_motion_gates_every_behaviour_and_looping_animation():
+    offenders = []
+    for path in list(MODULE.glob("*.qml")) + [UI / "Main.qml"]:
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("Behavior on ") and "enabled:" not in line:
+                window = " ".join(lines[number - 1:number + 2])
+                if "enabled: !Theme.reducedMotion" not in window:
+                    offenders.append(f"{path.name}:{number}")
+            if stripped.startswith("SequentialAnimation on ") or stripped.startswith("RotationAnimator on "):
+                window = " ".join(lines[number - 1:number + 4])
+                if "reducedMotion" not in window and "animate" not in window:
+                    offenders.append(f"{path.name}:{number}")
+    assert offenders == [], "ungated animation: " + ", ".join(offenders)
