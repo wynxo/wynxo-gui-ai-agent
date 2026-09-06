@@ -56,6 +56,14 @@ def test_workspace_auto_opens_from_an_explicit_multistep_plan():
     assert "if (!bridge || !root.dock || root.userSelectedWorkspaceTab)" in dock
 
 
+def test_manual_workspace_choice_resets_when_task_changes():
+    dock = source("WorkspaceDock.qml")
+    assert "observedTaskId" in dock
+    assert "taskId !== root.observedTaskId" in dock
+    assert "root.userSelectedWorkspaceTab = false" in dock
+    assert "root.planSelected = false" in dock
+
+
 def test_plan_rail_indicator_uses_plan_state_not_activity_count():
     rail = source("DockTabBar.qml")
     assert "bridge.planSteps.length >= 2" in rail
