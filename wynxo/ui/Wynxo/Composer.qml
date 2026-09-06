@@ -5,7 +5,7 @@ import QtQuick.Layouts
 /*!
     Say what you want done.
 
-    The empty-state composer is intentionally compact in Chat and Work. Codex
+    The empty-state composer is intentionally compact in Chat and Work. Wynxi
     expands it into a small project console: the selected folder is always
     visible, Terminal is one click away, and common coding jobs can seed a
     precise agent prompt without turning the home screen into a dashboard.
@@ -35,7 +35,7 @@ Item {
         input.forceActiveFocus();
     }
 
-    readonly property string mode: bridge && bridge.desktopEnabled ? "work" : WorkspaceMode.current
+    readonly property string mode: bridge ? bridge.taskMode : "chat"
     readonly property bool codexMode: root.mode === "codex"
     readonly property bool workMode: root.mode === "work"
     readonly property bool canSend: input.text.trim().length > 0 && bridge && bridge.online && !bridge.connecting
@@ -67,7 +67,7 @@ Item {
             anchors.margins: root.shellPadding
             spacing: root.hasAttachments || root.codexMode ? Theme.s2 : 0
 
-            // ----------------------------------------------------- Codex bar
+            // ----------------------------------------------------- Wynxi bar
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: codexProjectRow.implicitHeight + Theme.s2 * 2
@@ -107,7 +107,7 @@ Item {
                             Layout.fillWidth: true
                             text: bridge && bridge.projectPath
                                 ? bridge.projectLabel
-                                : "Choose a folder so Codex knows what it may inspect, edit, run, and test."
+                                : "Choose a folder so Wynxi knows what it may inspect, edit, run, and test."
                             color: Theme.textMuted
                             font.family: Theme.sansFamily
                             font.pixelSize: Theme.micro
@@ -392,7 +392,7 @@ Item {
                         bottomPadding: root.homeMode ? 7 : Theme.s2
                         background: Item {}
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: root.codexMode ? "Coding task for Wynxo" : "Message to Wynxo"
+                        Accessible.name: root.codexMode ? "Coding task for Wynxi" : "Message to Wynxo"
                         Accessible.description: placeholderText
 
                         Keys.onReturnPressed: function(event) {
