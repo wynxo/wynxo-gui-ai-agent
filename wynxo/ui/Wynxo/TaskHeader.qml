@@ -3,12 +3,12 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Where you are, what is happening, and one menu.
+    Where you are, what is happening, and which kind of assistant you want.
 
-    The empty task deliberately becomes much quieter: it keeps only the
-    sidebar affordance, connection state when something is wrong, and a
-    centered Chat / Work switch. Once a conversation starts the regular task
-    breadcrumb and controls return.
+    Chat is the quiet conversational surface, Work owns visual desktop control,
+    and Codex is the project-first coding surface. The selector stays centered
+    on the home screen and remains available in wide active conversations; on
+    narrow windows the same three modes live in the overflow menu.
 */
 Item {
     id: root
@@ -28,29 +28,42 @@ Item {
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
     readonly property bool connecting: bridge && bridge.connectionState === "connecting"
+    readonly property string resolvedMode: bridge && bridge.desktopEnabled ? "work" : WorkspaceMode.current
+
+    function requestMode(value) {
+        if (value !== "chat" && value !== "work" && value !== "codex") return;
+        if (!bridge || bridge.connecting || bridge.busy) return;
+        if (value === root.resolvedMode && !(value !== "work" && bridge.desktopEnabled)) return;
+        WorkspaceMode.current = value;
+        root.modeRequested(value);
+    }
+
+    Shortcut { sequences: ["Ctrl+1"]; onActivated: root.requestMode("chat") }
+    Shortcut { sequences: ["Ctrl+2"]; onActivated: root.requestMode("work") }
+    Shortcut { sequences: ["Ctrl+3"]; onActivated: root.requestMode("codex") }
 
     Rectangle {
         anchors.fill: parent
         color: Theme.background
     }
 
-    // The home-mode switch is intentionally independent of the row below so it
-    // stays geometrically centered even when a sidebar toggle or status chip is
-    // visible on one side.
+    // Independent from the row below so left/right status controls never knock
+    // the mode switch off the geometric center of the workspace.
     Segmented {
-        id: homeModeSwitch
-        visible: root.homeMode
+        id: modeSwitch
+        visible: root.homeMode || root.width >= 960
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.verticalCenter: parent.verticalCenter
-        width: Math.min(220, Math.max(176, root.width - 160))
+        width: root.homeMode ? Math.min(300, Math.max(220, root.width - 150)) : 292
         height: 36
-        z: 3
+        z: 4
         options: [
-            { id: "chat", label: "Chat", detail: "Talk to the model without screen control" },
-            { id: "work", label: "Work", detail: "Let Wynxo inspect and act on your desktop" },
+            { id: "chat", label: "Chat", detail: "Conversation and local non-visual tools" },
+            { id: "work", label: "Work", detail: "Visual desktop control with Ollama" },
+            { id: "codex", label: "Codex", detail: "Project-aware coding, commands, edits and tests" },
         ]
-        current: bridge && bridge.desktopEnabled ? "work" : "chat"
-        onSelected: function(value) { root.modeRequested(value); }
+        current: root.resolvedMode
+        onSelected: function(value) { root.requestMode(value); }
     }
 
     RowLayout {
@@ -78,7 +91,8 @@ Item {
             AbstractButton {
                 id: titleButton
                 Layout.fillWidth: true
-                Layout.maximumWidth: implicitWidth
+                Layout.maximumWidth: Math.min(implicitWidth,
+                    modeSwitch.visible ? Math.max(120, root.width * 0.23) : Math.max(180, root.width * 0.48))
                 implicitHeight: Theme.controlSmall
                 implicitWidth: titleText.implicitWidth + Theme.s2 * 2
                 hoverEnabled: true
@@ -117,9 +131,6 @@ Item {
             Item { Layout.fillWidth: true }
         }
 
-        // In the empty state the regular breadcrumb is gone, so this spacer
-        // keeps status controls pinned to the right without moving the centered
-        // Chat / Work switch.
         Item { visible: root.homeMode; Layout.fillWidth: true }
 
         // ------------------------------------------------------- run state
@@ -127,7 +138,7 @@ Item {
             visible: !root.homeMode && bridge && bridge.busy
             Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
             Layout.preferredHeight: Theme.controlSmall
-            Layout.maximumWidth: Math.max(120, root.width * 0.38)
+            Layout.maximumWidth: Math.max(120, root.width * (modeSwitch.visible ? 0.26 : 0.38))
             radius: Theme.r2
             color: Theme.surfaceRaised
             border.width: 1
@@ -148,13 +159,14 @@ Item {
                     Layout.fillWidth: true
                     text: !bridge ? ""
                         : bridge.permissionPending ? "Waiting for you"
+                        : root.resolvedMode === "codex" ? "Coding"
                         : bridge.desktopEnabled ? "Working on your screen" : "Running"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                     elide: Text.ElideRight
                 }
                 Text {
-                    visible: bridge && bridge.tokenRate !== "—" && root.width > 720
+                    visible: bridge && bridge.tokenRate !== "—" && root.width > 1080
                     text: bridge ? bridge.tokenRate : ""
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.micro
@@ -186,11 +198,9 @@ Item {
             }
         }
 
-        // ------------------------------------------------ screen control on
-        // In an active conversation this is still a useful direct status. On
-        // the home screen the Chat / Work switch owns the same choice instead.
         Chip {
-            visible: !root.homeMode && bridge && bridge.desktopEnabled && !bridge.busy && root.width > 480
+            visible: !root.homeMode && bridge && bridge.desktopEnabled && !bridge.busy
+                     && root.width > 720 && !modeSwitch.visible
             text: "Screen control"
             iconName: "cursor"
             selected: true
@@ -200,7 +210,6 @@ Item {
         }
 
         // ------------------------------------------------------ connection
-        // Quiet when everything works.
         Chip {
             visible: root.needsAttention || root.connecting
             text: root.connecting ? "Connecting" : "Ollama offline"
@@ -221,8 +230,12 @@ Item {
             WMenu {
                 id: overflow
                 anchorX: -menuWidth + parent.width
-                menuWidth: 262
+                menuWidth: 270
                 items: [
+                    { id: "modeChat", label: "Chat mode", icon: "chat", shortcut: "Ctrl+1", disabled: root.resolvedMode === "chat" },
+                    { id: "modeWork", label: "Work mode", icon: "desktop", shortcut: "Ctrl+2", disabled: root.resolvedMode === "work" },
+                    { id: "modeCodex", label: "Codex mode", icon: "code", shortcut: "Ctrl+3", disabled: root.resolvedMode === "codex" },
+                    { separator: true },
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
                     { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard" },
                     { separator: true },
@@ -237,7 +250,10 @@ Item {
                     { id: "settings", label: "Settings", icon: "sliders", shortcut: "Ctrl+," },
                 ]
                 onPicked: function(id) {
-                    if (id === "palette") root.openCommandPalette();
+                    if (id === "modeChat") root.requestMode("chat");
+                    else if (id === "modeWork") root.requestMode("work");
+                    else if (id === "modeCodex") root.requestMode("codex");
+                    else if (id === "palette") root.openCommandPalette();
                     else if (id === "shortcuts") root.openShortcuts();
                     else if (id === "rename") root.renameRequested();
                     else if (id === "settings") root.openSettings();
