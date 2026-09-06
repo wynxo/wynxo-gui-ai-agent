@@ -28,11 +28,11 @@ QtObject {
 
     readonly property color textPrimary:   "#f2f2ee"
     readonly property color textSecondary: "#c8c8c2"
-    readonly property color textMuted:     "#92928c"
+    readonly property color textMuted:     "#9a9a94"
     readonly property color textInverse:   "#111111"
 
     // Claude-like warmth as the default focus colour; Appearance can replace it.
-    readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#d97757"
+    readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#df7e5e"
     readonly property color accentHover: Qt.lighter(accent, 1.08)
     readonly property color accentMuted: Qt.rgba(accent.r, accent.g, accent.b, 0.12)
     readonly property color accentEdge: Qt.rgba(accent.r, accent.g, accent.b, 0.44)
