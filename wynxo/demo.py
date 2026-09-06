@@ -156,7 +156,14 @@ class DemoController(Controller):
         store.set_setting("model", "qwen2.5vl:7b")
         store.set_setting("permission_mode", "safe")
         store.set_setting("favorite_models", [entry["name"] for entry in CATALOG if entry["favorite"]])
-        super().__init__(store=store, desktop=DemoDesktop(scene in ("desktop", "conversation")),
+        theme = {
+            "empty-violet": "Violet",
+            "empty-ember": "Ember",
+            "conversation-ion": "Ion",
+        }.get(scene)
+        if theme:
+            store.set_setting("theme", theme)
+        super().__init__(store=store, desktop=DemoDesktop(scene in ("desktop", "conversation", "run")),
                          autoconnect=False)
         self._preview_directory = Path(directory)
         self.scene = scene
@@ -209,12 +216,12 @@ class DemoController(Controller):
             self._onboarded = False
             self.changed.emit()
             return
-        if self.scene == "empty":
+        if self.scene.startswith("empty"):
             self._task_id = ""
             self._task_title = "New task"
             self.changed.emit()
             return
-        if self.scene == "context":
+        if self.scene.startswith("context"):
             self._seed_context_scene()
             return
 
@@ -320,5 +327,11 @@ SCENES = [
     ("08-settings", "conversation", "settings"),
     ("09-command-palette", "conversation", "palette"),
     ("10-quick-bar", "empty", "quickbar"),
+    # Capture onboarding before the model picker can remain open from another
+    # snapshot state. This also mirrors a true first launch more faithfully.
     ("11-welcome", "welcome", "welcome"),
+    ("12-appearance", "conversation", "appearanceSettings"),
+    ("13-violet-home", "empty-violet", ""),
+    ("14-ember-home", "empty-ember", ""),
+    ("15-ion-conversation", "conversation-ion", ""),
 ]
