@@ -26,13 +26,7 @@ from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
 
 
 def validate_workspace_endpoint(endpoint: str) -> str:
-    """Validate an explicit Ollama origin without forcing it to loopback.
-
-    Accepted examples include ``http://127.0.0.1:11434``,
-    ``http://192.168.1.50:11434`` and ``https://ollama.home.arpa``. A bare host
-    is intentionally not guessed: users should be able to see exactly whether
-    traffic is HTTP or HTTPS. Redirects remain disabled in :class:`OllamaClient`.
-    """
+    """Validate an explicit Ollama origin without forcing it to loopback."""
     value = str(endpoint or "").strip()
     if not value or any(ord(c) < 33 for c in value):
         raise ValueError("Enter an Ollama URL such as http://192.168.1.50:11434")
@@ -53,9 +47,6 @@ def validate_workspace_endpoint(endpoint: str) -> str:
         raise ValueError("Ollama port must be between 1 and 65535")
 
     host = parsed.hostname
-    # urlsplit removes IPv6 brackets, so add them back when rebuilding the
-    # origin. Host names are normalized to lower case; IP literals are kept
-    # canonical where Python can parse them.
     try:
         address = ipaddress.ip_address(host)
         host = f"[{address.compressed}]" if address.version == 6 else address.compressed
@@ -94,13 +85,15 @@ def endpoint_scope(endpoint: str) -> str:
 
 class WorkspaceController(Controller):
     modeChanged = Signal()
+    endpointChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
 
     def __init__(self, *args, **kwargs):
         self._task_mode = "chat"
         self._task_mode_locked = False
-        # The core Ollama transport keeps redirects/proxies disabled; the
-        # desktop workspace supplies the less surprising host policy.
+        # OllamaClient resolves this name at construction time. Swap only the
+        # endpoint policy; redirects and environment proxies remain disabled by
+        # the transport itself.
         engine_module.validate_endpoint = validate_workspace_endpoint
         super().__init__(*args, **kwargs)
 
@@ -133,11 +126,11 @@ class WorkspaceController(Controller):
     def productName(self):
         return "Wynxi" if self._task_mode == "codex" else "Wynxo"
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=endpointChanged)
     def endpointScope(self):
         return endpoint_scope(self._endpoint)
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=endpointChanged)
     def endpointScopeLabel(self):
         return {
             "local": "This computer",
@@ -146,7 +139,7 @@ class WorkspaceController(Controller):
             "invalid": "Invalid address",
         }.get(endpoint_scope(self._endpoint), "Server")
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=endpointChanged)
     def endpointPrivacyHint(self):
         scope = endpoint_scope(self._endpoint)
         if scope == "local":
@@ -156,6 +149,13 @@ class WorkspaceController(Controller):
         if scope == "remote":
             return "This Ollama server is outside the local network. Use HTTPS or a trusted private tunnel for sensitive chats, files and screenshots."
         return "Enter a complete Ollama server URL."
+
+    @Slot(str, result=bool)
+    def setEndpoint(self, endpoint):
+        result = super().setEndpoint(endpoint)
+        if result:
+            self.endpointChanged.emit()
+        return result
 
     @Slot(str, result=bool)
     def setTaskMode(self, mode):
@@ -174,7 +174,6 @@ class WorkspaceController(Controller):
 
     @Slot(str)
     def newTaskMode(self, mode):
-        """Start a fresh task in a product-specific mode."""
         mode = str(mode or "").strip().lower()
         if mode not in self.VALID_TASK_MODES or self._busy:
             return
@@ -223,11 +222,6 @@ class WorkspaceController(Controller):
             self.modeChanged.emit()
 
     def _start_run(self, history):
-        """Run visual desktop tools only inside a Work task.
-
-        Non-visual local tools still come from the base AgentEngine when the
-        model supports tools, which keeps Wynxi useful for project commands.
-        """
         self._busy = True
         self._clear_error()
         self._status = "Thinking"
