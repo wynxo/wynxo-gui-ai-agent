@@ -16,7 +16,6 @@ Sheet {
     height: Math.min(620, parent ? parent.height - Theme.s6 : 620)
     signal openModelManager()
 
-    // Named so callers do not depend on the order of the rail.
     readonly property int generalPage: 0
     readonly property int modelPage: 1
     readonly property int agentPage: 2
@@ -47,7 +46,6 @@ Sheet {
         anchors.fill: parent
         spacing: 0
 
-        // ------------------------------------------------------ page rail
         Rectangle {
             Layout.preferredWidth: 186
             Layout.fillHeight: true
@@ -111,7 +109,6 @@ Sheet {
             }
         }
 
-        // ---------------------------------------------------------- pages
         ScrollView {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -119,12 +116,8 @@ Sheet {
             contentWidth: availableWidth
             ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
 
-            // The wrapper gives the scroll view a content height that includes
-            // padding, so the last control never sits flush against the edge.
             Item {
                 width: sheet.width - 186
-                // The page on screen sets the scroll height; a short page must
-                // not inherit the scroll range of the tallest one.
                 readonly property Item current: stack.children[sheet.page] || null
                 implicitHeight: (current ? current.implicitHeight : 0) + Theme.s5 + Theme.s7
 
@@ -139,8 +132,8 @@ Sheet {
                     Column {
                         spacing: Theme.s6
                         Group {
-                            title: "Ollama"
-                            description: "Wynxo talks to Ollama on this computer. No account, no API key, no cloud."
+                            title: "Ollama server"
+                            description: "Connect to Ollama on this computer, another machine on your LAN, or a server you trust. Wynxo never follows server redirects."
                             Row {
                                 width: parent.width
                                 spacing: Theme.s2
@@ -148,17 +141,20 @@ Sheet {
                                     id: endpointField
                                     width: parent.width - saveEndpoint.width - Theme.s2
                                     mono: true
-                                    placeholderText: "http://127.0.0.1:11434"
+                                    placeholderText: "http://192.168.1.50:11434"
+                                    Accessible.name: "Ollama server URL"
                                     onAccepted: if (bridge) bridge.setEndpoint(text)
                                 }
                                 WButton {
                                     id: saveEndpoint
                                     text: "Save and reconnect"
                                     variant: "primary"
+                                    enabled: bridge && !bridge.busy
                                     onClicked: if (bridge) bridge.setEndpoint(endpointField.text)
                                 }
                             }
                             Row {
+                                width: parent.width
                                 spacing: Theme.s2
                                 StatusDot {
                                     anchors.verticalCenter: parent.verticalCenter
@@ -167,17 +163,61 @@ Sheet {
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: bridge && bridge.online
-                                          ? bridge.models.length + " local model" + (bridge.models.length === 1 ? "" : "s") + " available"
+                                          ? bridge.models.length + " model" + (bridge.models.length === 1 ? "" : "s") + " available"
                                           : "Not connected"
                                     color: bridge && bridge.online ? Theme.textSecondary : Theme.textMuted
                                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                                 }
+                                Rectangle {
+                                    visible: !!bridge
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    implicitWidth: scopeLabel.implicitWidth + Theme.s2 * 2
+                                    implicitHeight: 22
+                                    radius: Theme.r1
+                                    color: Theme.surfaceRaised
+                                    border.width: 1
+                                    border.color: Theme.borderSubtle
+                                    Text {
+                                        id: scopeLabel
+                                        anchors.centerIn: parent
+                                        text: bridge ? bridge.endpointScopeLabel : "Server"
+                                        color: Theme.textSecondary
+                                        font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                                    }
+                                }
+                                Item { width: Theme.s1; height: 1 }
                                 WButton {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "Reconnect"; iconName: "retry"; variant: "ghost"
                                     compactPadding: true
                                     implicitHeight: Theme.controlSmall
                                     onClicked: if (bridge) bridge.refreshModels()
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                text: bridge ? bridge.endpointPrivacyHint : ""
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                            Rectangle {
+                                width: parent.width
+                                visible: bridge && bridge.endpointScope === "remote"
+                                         && String(bridge.endpoint).indexOf("http://") === 0
+                                implicitHeight: insecureText.implicitHeight + Theme.s3 * 2
+                                radius: Theme.r2
+                                color: Theme.warningMuted
+                                border.width: 1
+                                border.color: Theme.alpha(Theme.warning, 0.35)
+                                Text {
+                                    id: insecureText
+                                    anchors.fill: parent
+                                    anchors.margins: Theme.s3
+                                    text: "This remote server uses plain HTTP. Prefer HTTPS, Tailscale/WireGuard, or another trusted private tunnel before sending screenshots or sensitive files."
+                                    color: Theme.textSecondary
+                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                    wrapMode: Text.WordWrap; lineHeight: 1.45
                                 }
                             }
                         }
@@ -309,7 +349,7 @@ Sheet {
                         spacing: Theme.s6
                         Group {
                             title: "Local copilot"
-                            description: "Ask Wynxo to open apps, run commands, inspect files or help with code. Local tools work without screen control. Commands run in your workspace folder, or your home folder when none is selected. Choose how actions are approved below."
+                            description: "Ask Wynxo to open apps, run commands, inspect files or help with code. Tools execute on this computer even when Ollama inference runs on another server. Commands run in your workspace folder, or your home folder when none is selected."
                         }
                         Group {
                             title: "Screen control"
@@ -561,14 +601,15 @@ Sheet {
                     Column {
                         spacing: Theme.s6
                         Group {
-                            title: "What stays on this computer"
+                            title: "Privacy & data path"
+                            description: bridge ? bridge.endpointPrivacyHint : ""
                             Repeater {
                                 model: [
-                                    { icon: "layers", line: "Inference runs through your local Ollama server." },
-                                    { icon: "chat", line: "Tasks are stored in a private SQLite file." },
-                                    { icon: "camera", line: "Screenshots go to your local model and are never saved to history." },
-                                    { icon: "lock", line: "No account, no API key, no telemetry, no hosted backend." },
-                                    { icon: "shield", line: "Only loopback Ollama addresses are accepted; redirects are refused." },
+                                    { icon: "layers", line: "Inference is sent only to the Ollama server URL you configure above." },
+                                    { icon: "chat", line: "Task history stays in Wynxo's private SQLite database on this computer." },
+                                    { icon: "camera", line: "Screenshots are not written to chat history, but a model request can send them to your configured Ollama server." },
+                                    { icon: "lock", line: "Wynxo has no account, API key requirement, telemetry service, or hosted backend of its own." },
+                                    { icon: "shield", line: "Server redirects and environment proxy settings are refused by the Ollama transport." },
                                 ]
                                 delegate: RowLayout {
                                     required property var modelData
@@ -635,8 +676,8 @@ Sheet {
                             title: "About"
                             Text {
                                 width: parent.width
-                                text: "Wynxo " + (bridge ? bridge.appVersion : "") + " — a local copilot for the Linux desktop, "
-                                      + "powered entirely by Ollama. Desktop backend: " + (bridge ? bridge.desktopBackend : "") + ".\n\n"
+                                text: "Wynxo " + (bridge ? bridge.appVersion : "") + " — an Ollama-powered copilot for the Linux desktop. "
+                                      + "Inference can run locally or on a server you choose. Desktop backend: " + (bridge ? bridge.desktopBackend : "") + ".\n\n"
                                       + "Interface type is Inter; code is set in JetBrains Mono, both under the SIL Open Font "
                                       + "License. Wynxo is an independent project and is not affiliated with Ollama or any AI vendor."
                                 color: Theme.textMuted
@@ -650,7 +691,6 @@ Sheet {
         }
     }
 
-    // ------------------------------------------------------------ helpers
     component Group: Column {
         property string title: ""
         property string description: ""
@@ -679,7 +719,6 @@ Sheet {
         }
     }
 
-    // Settings that most people never open should not take up room by default.
     component Disclosure: Column {
         id: disclosure
         property string title: ""
