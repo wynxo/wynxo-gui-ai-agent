@@ -3,8 +3,11 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Dense workspace header. Project and task context stay on the left; run,
-    mode and connection state stay on the right. Nothing floats in the middle.
+    A quiet desktop-workspace title bar.
+
+    The task context stays on the left and transient run/connection controls stay
+    on the right. Chat / Work is a one-time choice for a fresh Wynxo task; once
+    selected it disappears instead of becoming permanent navigation chrome.
 */
 Item {
     id: root
@@ -19,7 +22,7 @@ Item {
     signal clearRequested()
     signal modeRequested(string mode)
 
-    implicitHeight: Theme.compact ? 44 : 48
+    implicitHeight: 46
 
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
@@ -38,8 +41,11 @@ Item {
         anchors.fill: parent
         color: Theme.background
         Rectangle {
-            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-            height: 1; color: Theme.borderSubtle
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.borderSubtle
         }
     }
 
@@ -61,10 +67,27 @@ Item {
             onClicked: root.toggleSidebar()
         }
 
+        // ---------------------------------------------------- task context
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: root.sidebarCollapsed && !root.drawerOpen ? Theme.s1 : Theme.s2
             spacing: Theme.s2
+
+            Text {
+                text: bridge && bridge.taskMode === "codex" ? "Wynxi" : "Wynxo"
+                color: Theme.textSecondary
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.label
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                visible: bridge && bridge.projectName
+                text: "/"
+                color: Theme.borderStrong
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.caption
+            }
 
             Text {
                 visible: bridge && bridge.projectName
@@ -73,10 +96,11 @@ Item {
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.caption
                 elide: Text.ElideMiddle
-                Layout.maximumWidth: Math.max(120, root.width * 0.22)
+                Layout.maximumWidth: Math.max(110, root.width * 0.22)
             }
+
             Text {
-                visible: bridge && bridge.projectName && !root.homeMode
+                visible: !root.homeMode && bridge && bridge.taskId
                 text: "/"
                 color: Theme.borderStrong
                 font.family: Theme.sansFamily
@@ -88,7 +112,7 @@ Item {
                 visible: !root.homeMode
                 enabled: !!(bridge && bridge.taskId)
                 Layout.fillWidth: true
-                Layout.maximumWidth: Math.max(180, root.width * 0.48)
+                Layout.maximumWidth: Math.max(160, root.width * 0.42)
                 implicitHeight: 28
                 hoverEnabled: true
                 Accessible.name: "Rename this task"
@@ -115,24 +139,68 @@ Item {
                 }
             }
 
-            Text {
-                visible: root.homeMode
-                text: root.resolvedMode === "codex" ? "Coding workspace" : "New task"
-                color: Theme.textSecondary
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.label
-                font.weight: Font.Medium
-            }
-
             Item { Layout.fillWidth: true }
         }
 
+        // -------------------------------------------- one-time Chat / Work
+        Row {
+            id: modeChoice
+            visible: root.canChooseMode
+            spacing: 2
+
+            Repeater {
+                model: [
+                    { id: "chat", label: "Chat", icon: "chat" },
+                    { id: "work", label: "Work", icon: "cursor" },
+                ]
+                delegate: AbstractButton {
+                    id: choice
+                    required property var modelData
+                    width: choiceRow.implicitWidth + Theme.s3 * 2
+                    height: 30
+                    hoverEnabled: true
+                    readonly property bool chosen: root.resolvedMode === modelData.id
+                    Accessible.name: modelData.label
+                    Accessible.checked: chosen
+                    onClicked: root.requestMode(modelData.id)
+                    background: Rectangle {
+                        radius: Theme.r2
+                        color: choice.hovered ? Theme.surfaceHover
+                             : choice.chosen ? Theme.surfaceSelected : "transparent"
+                        border.width: choice.chosen || choice.visualFocus ? 1 : 0
+                        border.color: choice.visualFocus ? Theme.accentEdge : Theme.borderSubtle
+                    }
+                    contentItem: Row {
+                        id: choiceRow
+                        anchors.centerIn: parent
+                        spacing: Theme.s2
+                        Icon {
+                            name: choice.modelData.icon
+                            ink: choice.chosen ? Theme.textPrimary : Theme.textMuted
+                            width: 13; height: 13
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: choice.modelData.label
+                            color: choice.chosen ? Theme.textPrimary : Theme.textSecondary
+                            font.family: Theme.sansFamily
+                            font.pixelSize: Theme.caption
+                            font.weight: choice.chosen ? Font.Medium : Font.Normal
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                }
+            }
+        }
+
+        // ------------------------------------------------------- run state
         Rectangle {
             visible: bridge && bridge.busy
             Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
             Layout.preferredHeight: 28
-            Layout.maximumWidth: Math.max(120, root.width * 0.34)
-            radius: Theme.r1
+            Layout.maximumWidth: Math.max(110, root.width * 0.30)
+            radius: Theme.r2
             color: Theme.surface
             border.width: 1
             border.color: Theme.borderSubtle
@@ -151,7 +219,7 @@ Item {
                 Text {
                     text: !bridge ? ""
                         : bridge.permissionPending ? "Waiting"
-                        : root.resolvedMode === "codex" ? "Running code task"
+                        : root.resolvedMode === "codex" ? "Running"
                         : root.resolvedMode === "work" ? "Working" : "Generating"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily
@@ -159,15 +227,15 @@ Item {
                     elide: Text.ElideRight
                 }
                 Text {
-                    visible: bridge && bridge.tokenRate !== "—" && root.width > 1040
+                    visible: bridge && bridge.tokenRate !== "—" && root.width > 1080
                     text: bridge ? bridge.tokenRate : ""
                     color: Theme.textMuted
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.micro
                 }
                 AbstractButton {
-                    implicitWidth: 36
-                    implicitHeight: 22
+                    implicitWidth: 34
+                    implicitHeight: 21
                     hoverEnabled: true
                     Accessible.name: "Stop"
                     onClicked: if (bridge) bridge.stop()
@@ -180,42 +248,22 @@ Item {
                         color: Theme.danger
                         font.family: Theme.sansFamily
                         font.pixelSize: Theme.micro
-                        font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
                     }
-                    MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
                 }
             }
         }
 
-        Segmented {
-            visible: root.canChooseMode
-            Layout.preferredWidth: 146
-            Layout.preferredHeight: 30
-            options: [
-                { id: "chat", label: "Chat" },
-                { id: "work", label: "Work" },
-            ]
-            current: root.resolvedMode
-            onSelected: function(value) { root.requestMode(value); }
-        }
-
         Chip {
-            visible: bridge && root.resolvedMode === "codex"
-            text: "Code"
-            iconName: "code"
-            selected: true
-        }
-
-        Chip {
-            visible: bridge && root.resolvedMode === "work" && bridge.desktopEnabled && !bridge.busy && root.width > 720
+            visible: !root.homeMode && bridge && root.resolvedMode === "work"
+                     && bridge.desktopEnabled && !bridge.busy && root.width > 760
             text: "Screen"
             iconName: "cursor"
             selected: true
             onClicked: root.openAgentSettings()
             ToolTip.visible: hovered
-            ToolTip.text: bridge ? "Screen control · " + bridge.permissionModeLabel : ""
+            ToolTip.text: bridge ? "Permission mode: " + bridge.permissionModeLabel : ""
         }
 
         Chip {
@@ -225,10 +273,11 @@ Item {
             tone: root.connecting ? Theme.textMuted : Theme.danger
             onClicked: if (bridge) bridge.refreshModels()
             ToolTip.visible: hovered
-            ToolTip.text: bridge ? bridge.endpoint + " · click to reconnect" : ""
+            ToolTip.text: bridge ? bridge.endpoint + " — click to reconnect" : ""
         }
 
         IconButton {
+            visible: !root.homeMode
             iconName: "more"
             tooltip: "Task actions"
             active: overflow.opened
@@ -237,7 +286,7 @@ Item {
             WMenu {
                 id: overflow
                 anchorX: -menuWidth + parent.width
-                menuWidth: 260
+                menuWidth: 250
                 items: [
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
                     { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard" },
@@ -245,7 +294,7 @@ Item {
                     { id: "rename", label: "Rename task", icon: "edit", disabled: !(bridge && bridge.taskId) },
                     { id: "pin", label: bridge && bridge.taskPinned ? "Unpin task" : "Pin task", icon: "pin", disabled: !(bridge && bridge.taskId) },
                     { id: "duplicate", label: "Duplicate task", icon: "duplicate", shortcut: "Ctrl+D", disabled: !(bridge && bridge.taskId) },
-                    { id: "export", label: "Export to Markdown", icon: "download", disabled: !(bridge && bridge.hasMessages) },
+                    { id: "export", label: "Export Markdown", icon: "download", disabled: !(bridge && bridge.hasMessages) },
                     { separator: true },
                     { id: "regenerate", label: "Regenerate", icon: "retry", shortcut: "Ctrl+R", disabled: !(bridge && bridge.canRegenerate) },
                     { id: "clear", label: "Clear messages", icon: "trash", disabled: !(bridge && bridge.hasMessages) },
