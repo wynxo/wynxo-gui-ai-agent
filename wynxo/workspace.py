@@ -8,18 +8,25 @@ existing private settings table so old databases need no migration.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Property, Slot
+import time
+
+from PySide6.QtCore import Property, Signal, Slot
 
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
 
 
 class WorkspaceController(Controller):
+    modeChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
 
     def __init__(self, *args, **kwargs):
         self._task_mode = "chat"
         self._task_mode_locked = False
         super().__init__(*args, **kwargs)
+
+    def _emit_mode(self) -> None:
+        self.modeChanged.emit()
+        self.changed.emit()
 
     @staticmethod
     def _mode_key(task_id: str) -> str:
@@ -34,15 +41,15 @@ class WorkspaceController(Controller):
         if target:
             self.store.set_setting(self._mode_key(target), self._task_mode)
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=modeChanged)
     def taskMode(self):
         return self._task_mode
 
-    @Property(bool, notify=Controller.changed)
+    @Property(bool, notify=modeChanged)
     def taskModeLocked(self):
         return bool(self._task_id or self._task_mode_locked)
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=modeChanged)
     def productName(self):
         return "Wynxi" if self._task_mode == "codex" else "Wynxo"
 
@@ -56,48 +63,48 @@ class WorkspaceController(Controller):
             return mode == self._task_mode
         self._task_mode = mode
         self._task_mode_locked = True
-        self.changed.emit()
+        self._emit_mode()
         if mode == "work" and not self.desktopEnabled:
             self.toggleDesktop()
         return True
 
     @Slot(str)
     def newTaskMode(self, mode):
-        """Start a fresh task in a product-specific mode.
-
-        Wynxo normally opens unlocked so Chat / Work can be chosen in the
-        header. Wynxi calls this with ``codex`` and starts locked immediately.
-        """
+        """Start a fresh task in a product-specific mode."""
         mode = str(mode or "").strip().lower()
-        if mode not in self.VALID_TASK_MODES:
+        if mode not in self.VALID_TASK_MODES or self._busy:
             return
         super().newTask()
         if self._task_id or self._busy:
             return
+        # Controller.newTask() resets conversation state but intentionally knows
+        # nothing about product state, so reset that layer before choosing.
+        self._task_mode = "chat"
+        self._task_mode_locked = False
         if mode == "chat":
-            self._task_mode = "chat"
-            self._task_mode_locked = False
-            self.changed.emit()
+            self._emit_mode()
         else:
             self.setTaskMode(mode)
 
     @Slot()
     def newTask(self):
+        if self._busy:
+            super().newTask()
+            return
         super().newTask()
-        if not self._task_id and not self._busy:
+        if not self._task_id:
             self._task_mode = "chat"
             self._task_mode_locked = False
-            self.changed.emit()
+            self._emit_mode()
 
     @Slot(str)
     def openTask(self, task_id):
-        before = self._task_id
         super().openTask(task_id)
         if self._task_id != task_id:
             return
         self._task_mode = self._saved_mode(task_id)
         self._task_mode_locked = True
-        self.changed.emit()
+        self._emit_mode()
         # A Work chat should feel like a Work chat when reopened. Reconnect the
         # desktop only for that mode; Chat and Wynxi never gain visual control
         # just because a portal session happens to exist.
@@ -112,10 +119,11 @@ class WorkspaceController(Controller):
         if was_new and not self._task_mode_locked:
             self._task_mode = "chat"
             self._task_mode_locked = True
-            self.changed.emit()
+            self._emit_mode()
         super().send(text)
         if was_new and self._task_id:
             self._persist_task_mode()
+            self.modeChanged.emit()
 
     def _start_run(self, history):
         """Run visual desktop tools only inside a Work task.
@@ -132,7 +140,6 @@ class WorkspaceController(Controller):
         self._turn_had_message = False
         self._activity = []
         self._session_auto = False
-        import time
         self._run_started = time.monotonic()
         self._run_metrics = _blank_metrics()
         self.activityChanged.emit()
@@ -165,7 +172,7 @@ class WorkspaceController(Controller):
             self._task_mode = mode
             self._task_mode_locked = True
             self._persist_task_mode()
-            self.changed.emit()
+            self._emit_mode()
 
     @Slot(str)
     def duplicateTaskById(self, task_id):
@@ -178,7 +185,7 @@ class WorkspaceController(Controller):
             self._task_mode = mode
             self._task_mode_locked = True
             self._persist_task_mode()
-            self.changed.emit()
+            self._emit_mode()
 
     @Slot(int)
     def branchFrom(self, row):
@@ -191,4 +198,4 @@ class WorkspaceController(Controller):
             self._task_mode = mode
             self._task_mode_locked = True
             self._persist_task_mode()
-            self.changed.emit()
+            self._emit_mode()
