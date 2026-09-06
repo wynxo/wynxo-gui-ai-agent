@@ -3,12 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    A task chooses its surface once.
-
-    New Wynxo tasks expose a small Chat / Work choice at the left edge of the
-    header. The moment one is chosen (or the first Chat message is sent), the
-    choice disappears and becomes part of that task. Wynxi is entered from the
-    product switch in the sidebar and is always a coding task.
+    Dense workspace header. Project and task context stay on the left; run,
+    mode and connection state stay on the right. Nothing floats in the middle.
 */
 Item {
     id: root
@@ -23,7 +19,7 @@ Item {
     signal clearRequested()
     signal modeRequested(string mode)
 
-    implicitHeight: Theme.compact ? 46 : 52
+    implicitHeight: Theme.compact ? 44 : 48
 
     readonly property bool homeMode: bridge && !bridge.hasMessages
     readonly property bool needsAttention: bridge && !bridge.online
@@ -41,6 +37,10 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.background
+        Rectangle {
+            anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+            height: 1; color: Theme.borderSubtle
+        }
     }
 
     RowLayout {
@@ -52,64 +52,59 @@ Item {
         IconButton {
             objectName: "headerSidebarToggle"
             visible: root.sidebarCollapsed && !root.drawerOpen
-            iconName: root.sidebarCollapsed ? "panel" : "panelLeft"
-            tooltip: root.sidebarCollapsed ? "Show sidebar" : "Hide sidebar"
+            Layout.preferredWidth: 30
+            Layout.preferredHeight: 30
+            iconSize: 14
+            iconName: "panel"
+            tooltip: "Show sidebar"
             shortcut: "Ctrl+B"
             onClicked: root.toggleSidebar()
         }
 
-        // The only mode chooser. It lives on one side instead of floating in
-        // the centre, and vanishes permanently for this task after selection.
-        Segmented {
-            id: modeSwitch
-            visible: root.canChooseMode
-            Layout.preferredWidth: 184
-            Layout.preferredHeight: 34
-            Layout.leftMargin: root.sidebarCollapsed ? Theme.s1 : Theme.s2
-            options: [
-                { id: "chat", label: "Chat", detail: "Conversation and local tools" },
-                { id: "work", label: "Work", detail: "Desktop control with Ollama" },
-            ]
-            current: root.resolvedMode
-            onSelected: function(value) { root.requestMode(value); }
-        }
-
-        // -------------------------------------------------- the breadcrumb
         RowLayout {
-            visible: !root.homeMode
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.s2
+            Layout.leftMargin: root.sidebarCollapsed && !root.drawerOpen ? Theme.s1 : Theme.s2
             spacing: Theme.s2
+
+            Text {
+                visible: bridge && bridge.projectName
+                text: bridge ? bridge.projectName : ""
+                color: Theme.textMuted
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.caption
+                elide: Text.ElideMiddle
+                Layout.maximumWidth: Math.max(120, root.width * 0.22)
+            }
+            Text {
+                visible: bridge && bridge.projectName && !root.homeMode
+                text: "/"
+                color: Theme.borderStrong
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.caption
+            }
 
             AbstractButton {
                 id: titleButton
+                visible: !root.homeMode
+                enabled: !!(bridge && bridge.taskId)
                 Layout.fillWidth: true
                 Layout.maximumWidth: Math.max(180, root.width * 0.48)
-                implicitHeight: Theme.controlSmall
-                implicitWidth: titleText.implicitWidth + Theme.s2 * 2
+                implicitHeight: 28
                 hoverEnabled: true
-                enabled: !!(bridge && bridge.taskId)
                 Accessible.name: "Rename this task"
                 onClicked: root.renameRequested()
-                ToolTip.visible: hovered && enabled
-                ToolTip.text: "Rename"
-                ToolTip.delay: 700
-
                 background: Rectangle {
-                    radius: Theme.r2
+                    radius: Theme.r1
                     color: titleButton.hovered && titleButton.enabled ? Theme.surfaceHover : "transparent"
-                    border.width: titleButton.visualFocus ? 2 : 0
+                    border.width: titleButton.visualFocus ? 1 : 0
                     border.color: Theme.accentEdge
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                 }
                 contentItem: Text {
-                    id: titleText
-                    text: bridge && bridge.hasMessages ? bridge.taskTitle : (bridge ? bridge.productName : "Wynxo")
+                    text: bridge ? bridge.taskTitle : ""
                     color: Theme.textPrimary
                     font.family: Theme.sansFamily
-                    font.pixelSize: Theme.heading
+                    font.pixelSize: Theme.label
                     font.weight: Font.Medium
-                    font.letterSpacing: -0.1
                     verticalAlignment: Text.AlignVCenter
                     elide: Text.ElideRight
                 }
@@ -119,22 +114,28 @@ Item {
                     cursorShape: titleButton.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 }
             }
+
+            Text {
+                visible: root.homeMode
+                text: root.resolvedMode === "codex" ? "Coding workspace" : "New task"
+                color: Theme.textSecondary
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.label
+                font.weight: Font.Medium
+            }
+
             Item { Layout.fillWidth: true }
         }
 
-        Item { visible: root.homeMode; Layout.fillWidth: true }
-
-        // ------------------------------------------------------- run state
         Rectangle {
-            visible: !root.homeMode && bridge && bridge.busy
+            visible: bridge && bridge.busy
             Layout.preferredWidth: runRow.implicitWidth + Theme.s3 * 2
-            Layout.preferredHeight: Theme.controlSmall
-            Layout.maximumWidth: Math.max(120, root.width * 0.38)
-            radius: Theme.r2
-            color: Theme.surfaceRaised
+            Layout.preferredHeight: 28
+            Layout.maximumWidth: Math.max(120, root.width * 0.34)
+            radius: Theme.r1
+            color: Theme.surface
             border.width: 1
             border.color: Theme.borderSubtle
-            clip: true
 
             RowLayout {
                 id: runRow
@@ -145,41 +146,40 @@ Item {
                 StatusDot {
                     tone: bridge && bridge.permissionPending ? Theme.warning : Theme.accent
                     pulsing: true
+                    width: 7; height: 7
                 }
                 Text {
-                    Layout.fillWidth: true
                     text: !bridge ? ""
-                        : bridge.permissionPending ? "Waiting for you"
-                        : root.resolvedMode === "codex" ? "Coding"
-                        : root.resolvedMode === "work" ? "Working on your screen" : "Running"
+                        : bridge.permissionPending ? "Waiting"
+                        : root.resolvedMode === "codex" ? "Running code task"
+                        : root.resolvedMode === "work" ? "Working" : "Generating"
                     color: Theme.textSecondary
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
                     elide: Text.ElideRight
                 }
                 Text {
-                    visible: bridge && bridge.tokenRate !== "—" && root.width > 1080
+                    visible: bridge && bridge.tokenRate !== "—" && root.width > 1040
                     text: bridge ? bridge.tokenRate : ""
                     color: Theme.textMuted
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.micro
                 }
-                Divider { vertical: true; Layout.preferredHeight: 14 }
                 AbstractButton {
-                    implicitWidth: stopLabel.implicitWidth + Theme.s2
+                    implicitWidth: 36
                     implicitHeight: 22
                     hoverEnabled: true
                     Accessible.name: "Stop"
                     onClicked: if (bridge) bridge.stop()
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Stop everything · Esc"
                     background: Rectangle {
                         radius: Theme.r1
                         color: parent.hovered ? Theme.dangerMuted : "transparent"
                     }
                     contentItem: Text {
-                        id: stopLabel
                         text: "Stop"
                         color: Theme.danger
-                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                        font.family: Theme.sansFamily
+                        font.pixelSize: Theme.micro
                         font.weight: Font.Medium
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -189,18 +189,35 @@ Item {
             }
         }
 
+        Segmented {
+            visible: root.canChooseMode
+            Layout.preferredWidth: 146
+            Layout.preferredHeight: 30
+            options: [
+                { id: "chat", label: "Chat" },
+                { id: "work", label: "Work" },
+            ]
+            current: root.resolvedMode
+            onSelected: function(value) { root.requestMode(value); }
+        }
+
         Chip {
-            visible: !root.homeMode && bridge && root.resolvedMode === "work"
-                     && bridge.desktopEnabled && !bridge.busy && root.width > 720
-            text: "Screen control"
+            visible: bridge && root.resolvedMode === "codex"
+            text: "Code"
+            iconName: "code"
+            selected: true
+        }
+
+        Chip {
+            visible: bridge && root.resolvedMode === "work" && bridge.desktopEnabled && !bridge.busy && root.width > 720
+            text: "Screen"
             iconName: "cursor"
             selected: true
             onClicked: root.openAgentSettings()
             ToolTip.visible: hovered
-            ToolTip.text: bridge ? "Permission mode: " + bridge.permissionModeLabel + " — click to change" : ""
+            ToolTip.text: bridge ? "Screen control · " + bridge.permissionModeLabel : ""
         }
 
-        // ------------------------------------------------------ connection
         Chip {
             visible: root.needsAttention || root.connecting
             text: root.connecting ? "Connecting" : "Ollama offline"
@@ -208,20 +225,19 @@ Item {
             tone: root.connecting ? Theme.textMuted : Theme.danger
             onClicked: if (bridge) bridge.refreshModels()
             ToolTip.visible: hovered
-            ToolTip.text: bridge ? bridge.endpoint + " — click to reconnect" : ""
+            ToolTip.text: bridge ? bridge.endpoint + " · click to reconnect" : ""
         }
 
         IconButton {
-            visible: !root.homeMode
             iconName: "more"
-            tooltip: "More actions"
+            tooltip: "Task actions"
             active: overflow.opened
             onClicked: overflow.opened ? overflow.close() : overflow.open()
 
             WMenu {
                 id: overflow
                 anchorX: -menuWidth + parent.width
-                menuWidth: 270
+                menuWidth: 260
                 items: [
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
                     { id: "shortcuts", label: "Keyboard shortcuts", icon: "keyboard" },
