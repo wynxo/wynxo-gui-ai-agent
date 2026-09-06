@@ -14,6 +14,11 @@ AbstractButton {
     signal openModelManager()
     // Set by the surface that hosts the button; it knows how much room it has.
     property bool compact: false
+    // Preview scenes replace the bridge object in-place. Closing an anchored
+    // picker on that controller swap also prevents a stale popup from surviving
+    // a workspace/account reset in any host that rebinds the controller.
+    property var controllerIdentity: bridge
+    onControllerIdentityChanged: if (popover.opened) popover.close()
 
     // The handful worth showing without a search box: current, favourites,
     // then recents, in the order the catalogue already ranks them.
