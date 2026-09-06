@@ -52,6 +52,9 @@ class Store:
         """)
         self._db.commit()
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(conversations)")}
+        if "archived" not in columns:
+            self._db.execute("ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+            self._db.commit()
         if "pinned" not in columns:
             self._db.execute("ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
             self._db.commit()
@@ -59,7 +62,7 @@ class Store:
     def create_conversation(self, title: str = "New conversation", model: str = "") -> dict:
         now = time.time()
         item = {"id": uuid.uuid4().hex, "title": title.strip()[:200] or "New conversation",
-                "model": model, "created_at": now, "updated_at": now, "pinned": 0}
+                "model": model, "created_at": now, "updated_at": now, "pinned": 0, "archived": 0}
         with self._lock, self._db:
             self._db.execute("INSERT INTO conversations (id,title,model,created_at,updated_at,pinned) "
                              "VALUES (:id,:title,:model,:created_at,:updated_at,:pinned)", item)
@@ -83,6 +86,8 @@ class Store:
             message = json.loads(payload)
         except (ValueError, TypeError):
             return ""
+        if not isinstance(message, dict):
+            return ""
         role = message.get("role", "")
         if role == "tool":
             return "Desktop actions"
@@ -103,23 +108,32 @@ class Store:
 
     def search(self, query: str, limit: int = 60) -> list[dict]:
         """Conversations whose title or message text contains ``query``."""
-        needle = str(query or "").strip().lower()
+        limit = max(0, int(limit))
+        if not limit:
+            return []
+        needle = str(query or "").strip().casefold()
         if not needle:
             return self.list_conversations()[:limit]
         results = []
         for conversation in self.list_conversations():
-            if needle in conversation["title"].lower() or needle in conversation["preview"].lower():
-                results.append({**conversation, "match": "title"})
-                continue
-            with self._lock:
-                rows = self._db.execute(
-                    "SELECT payload FROM messages WHERE conversation_id=? AND lower(payload) LIKE ? LIMIT 1",
-                    (conversation["id"], f"%{needle}%")).fetchone()
-            if rows:
-                results.append({**conversation, "match": "message"})
-            if len(results) >= limit:
-                break
+            match = "title" if needle in conversation["title"].casefold() else ""
+            if not match:
+                # Search decoded text, not JSON syntax, keys or SQL wildcards.
+                for message in self.get_messages(conversation["id"]):
+                    if any(needle in str(message.get(field, "")).casefold()
+                           for field in ("content", "thinking")):
+                        match = "message"
+                        break
+            if match:
+                results.append({**conversation, "match": match})
+                if len(results) >= limit:
+                    break
         return results
+
+    def set_archived(self, conversation_id: str, archived: bool) -> None:
+        with self._lock, self._db:
+            self._db.execute("UPDATE conversations SET archived=? WHERE id=?",
+                             (int(bool(archived)), conversation_id))
 
     def get_conversation(self, conversation_id: str) -> dict | None:
         with self._lock:

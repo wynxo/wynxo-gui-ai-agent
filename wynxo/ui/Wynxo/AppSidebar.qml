@@ -13,6 +13,8 @@ Item {
     property bool collapsed: false
     signal newChat()
     signal openSettings()
+    signal openModels()
+    signal openCommands()
     signal renameRequested(string id, string title)
     signal deleteRequested(string id, string title)
 
@@ -21,6 +23,13 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: Theme.backgroundSoft
+        Rectangle {
+            anchors.top: parent.top; width: parent.width; height: 180
+            gradient: Gradient {
+                GradientStop { position: 0; color: Theme.alpha(Theme.accent, 0.07) }
+                GradientStop { position: 1; color: "transparent" }
+            }
+        }
         Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.borderSubtle }
     }
 
@@ -59,7 +68,7 @@ Item {
             visible: !root.collapsed
             text: "New chat"
             iconName: "plus"
-            variant: "secondary"
+            variant: "primary"
             onClicked: root.newChat()
         }
         IconButton {
@@ -80,6 +89,12 @@ Item {
             // start from whatever query is already active.
             Component.onCompleted: text = bridge ? bridge.searchQuery : ""
             onTextChanged: bridge && bridge.setSearch(text)
+            Connections {
+                target: bridge
+                function onTasksChanged() {
+                    if (search.text !== bridge.searchQuery) search.text = bridge.searchQuery;
+                }
+            }
             Keys.onEscapePressed: { text = ""; }
         }
         IconButton {
@@ -87,6 +102,30 @@ Item {
             visible: root.collapsed
             iconName: "search"; tooltip: "Search chats · Ctrl+K"
             onClicked: { root.collapsed = false; root.focusSearch(); }
+        }
+
+        Segmented {
+            Layout.fillWidth: true
+            visible: !root.collapsed
+            options: [{id: "all", label: "Chats"}, {id: "pinned", label: "Pinned"}, {id: "archived", label: "Archive"}]
+            current: bridge ? bridge.chatFilter : "all"
+            onSelected: function(value) { bridge && bridge.setChatFilter(value); }
+        }
+        RowLayout {
+            Layout.fillWidth: true
+            visible: !root.collapsed
+            Text {
+                Layout.fillWidth: true
+                text: "YOUR WORKSPACE"
+                color: Theme.textMuted
+                font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                font.letterSpacing: 1.2
+            }
+            Text {
+                text: bridge ? bridge.visibleChatCount : "0"
+                color: Theme.textSecondary
+                font.family: Theme.monoFamily; font.pixelSize: Theme.micro
+            }
         }
 
         // ----------------------------------------------------------- list
@@ -125,11 +164,13 @@ Item {
                         id: chatRow
                         required property var modelData
                         width: groups.width
-                        height: Theme.rowHeight
+                        height: Theme.compact ? Theme.rowHeight : 62
                         radius: Theme.r2
                         property bool current: bridge && modelData.id === bridge.taskId
+                        readonly property bool hovered: rowHover.hovered || activeFocus || moreMenu.opened
+                        HoverHandler { id: rowHover }
                         color: current ? Theme.surfaceSelected
-                             : rowMouse.containsMouse ? Theme.surfaceHover : "transparent"
+                             : chatRow.hovered ? Theme.surfaceHover : "transparent"
                         border.width: chatRow.activeFocus ? 2 : 0
                         border.color: Theme.accentEdge
                         activeFocusOnTab: true
@@ -153,8 +194,8 @@ Item {
                         }
                         Text {
                             x: Theme.s3 + 22
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - (Theme.s3 + 22) - (rowMouse.containsMouse ? 62 : Theme.s3)
+                            y: Theme.compact ? (parent.height - height) / 2 : 12
+                            width: parent.width - (Theme.s3 + 22) - (chatRow.hovered ? 62 : Theme.s3)
                             text: modelData.title
                             elide: Text.ElideRight
                             color: chatRow.current ? Theme.textPrimary : Theme.textSecondary
@@ -163,12 +204,22 @@ Item {
                             font.weight: chatRow.current ? Font.Medium : Font.Normal
                         }
 
+                        Text {
+                            visible: !Theme.compact
+                            x: Theme.s3 + 22; y: 34
+                            width: parent.width - x - Theme.s3
+                            text: modelData.preview || "Empty conversation"
+                            elide: Text.ElideRight
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+
                         Row {
                             anchors.right: parent.right
                             anchors.rightMargin: 2
                             anchors.verticalCenter: parent.verticalCenter
                             spacing: 0
-                            opacity: rowMouse.containsMouse || moreMenu.opened ? 1 : 0
+                            opacity: chatRow.hovered || moreMenu.opened ? 1 : 0
                             visible: opacity > 0
                             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
                             IconButton {
@@ -192,6 +243,7 @@ Item {
                                         { id: "rename", label: "Rename", icon: "edit" },
                                         { id: "pin", label: chatRow.modelData.pinned ? "Unpin" : "Pin", icon: "pin" },
                                         { id: "duplicate", label: "Duplicate", icon: "duplicate" },
+                                        { id: "archive", label: chatRow.modelData.archived ? "Restore chat" : "Archive chat", icon: "folder" },
                                         { separator: true },
                                         { id: "delete", label: "Delete", icon: "trash", danger: true },
                                     ]
@@ -200,6 +252,7 @@ Item {
                                         if (id === "rename") root.renameRequested(chatRow.modelData.id, chatRow.modelData.title);
                                         else if (id === "pin") bridge.togglePin(chatRow.modelData.id);
                                         else if (id === "duplicate") bridge.duplicateTaskById(chatRow.modelData.id);
+                                        else if (id === "archive") bridge.toggleArchive(chatRow.modelData.id);
                                         else if (id === "delete") root.deleteRequested(chatRow.modelData.id, chatRow.modelData.title);
                                     }
                                 }
@@ -209,7 +262,7 @@ Item {
                         MouseArea {
                             id: rowMouse
                             anchors.fill: parent
-                            anchors.rightMargin: 56
+                            anchors.rightMargin: chatRow.hovered ? 56 : 0
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -219,6 +272,7 @@ Item {
                             }
                         }
                         Keys.onReturnPressed: bridge && bridge.openTask(chatRow.modelData.id)
+                        Keys.onMenuPressed: moreMenu.open()
                         Keys.onSpacePressed: bridge && bridge.openTask(chatRow.modelData.id)
                         Accessible.role: Accessible.ListItem
                         Accessible.name: modelData.title + (modelData.pinned ? ", pinned" : "")
@@ -237,7 +291,9 @@ Item {
                 spacing: Theme.s2
                 visible: groups.count === 0
                 Text {
-                    text: bridge && bridge.searchQuery ? "No chats match" : "No chats yet"
+                    text: bridge && bridge.searchQuery ? "No chats match"
+                          : bridge && bridge.chatFilter === "archived" ? "Archive is empty"
+                          : bridge && bridge.chatFilter === "pinned" ? "No pinned chats" : "No chats yet"
                     color: Theme.textSecondary
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
                 }
@@ -245,6 +301,8 @@ Item {
                     width: parent.width
                     text: bridge && bridge.searchQuery
                           ? "Try a different word."
+                          : bridge && bridge.chatFilter === "archived" ? "Archived chats stay saved. Restore them whenever you need."
+                          : bridge && bridge.chatFilter === "pinned" ? "Pin a chat from its menu to keep it close."
                           : "Start one and it will be saved here, on this computer."
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
@@ -255,6 +313,47 @@ Item {
 
         Item { visible: root.collapsed; Layout.fillHeight: true }
 
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 126
+            visible: !root.collapsed
+            radius: Theme.r3
+            color: Theme.surface
+            border.color: Theme.borderSubtle
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: Theme.s3; spacing: Theme.s2
+                RowLayout {
+                    Layout.fillWidth: true
+                    Rectangle { width: 6; height: 6; radius: 3; color: bridge && bridge.online ? Theme.success : Theme.warning }
+                    Text {
+                        Layout.fillWidth: true
+                        text: bridge && bridge.online ? "Ollama connected" : "Ollama offline"
+                        color: Theme.textSecondary
+                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    }
+                    IconButton { width: 24; height: 24; iconSize: 13; iconName: "retry"; tooltip: "Refresh models"; onClicked: bridge && bridge.refreshModels() }
+                }
+                WButton {
+                    Layout.fillWidth: true
+                    text: bridge ? bridge.modelShortName : "Choose model"
+                    iconName: "layers"; variant: "secondary"
+                    onClicked: root.openModels()
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: bridge ? bridge.runtimePreset + " · " + Math.round(bridge.contextFraction * 100) + "% context" : "Local workspace"
+                    color: Theme.textMuted
+                    elide: Text.ElideRight
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                }
+            }
+        }
+        WButton {
+            Layout.fillWidth: true
+            visible: !root.collapsed
+            text: "Command palette"; iconName: "search"; variant: "ghost"
+            onClicked: root.openCommands()
+        }
         Divider { Layout.fillWidth: true }
 
         // --------------------------------------------------------- footer

@@ -353,6 +353,7 @@ class Controller(QObject):
     tasksChanged = Signal()
     activityChanged = Signal()
     attachmentsChanged = Signal()
+    draftChanged = Signal()
     regionChanged = Signal()
     paletteChanged = Signal()
     catalogChanged = Signal()
@@ -444,6 +445,8 @@ class Controller(QObject):
         self._error_actions: list[dict] = []
         self._activity: list[dict] = []
         self._attachments: list[dict] = []
+        self._draft_text = ""
+        self._drafts: dict[str, tuple[str, list[dict]]] = {}
         self._history: list[dict] = []
         self._task_id = ""
         self._task_title = "New chat"
@@ -451,6 +454,7 @@ class Controller(QObject):
         self._think_started = 0.0
         self._think_seconds = 0.0
         self._search = ""
+        self._chat_filter = "all"
         self._tasks = self.store.list_conversations()
         self._desktop_status = self.desktop.status()
         self._jobs: set[Job] = set()
@@ -747,15 +751,47 @@ class Controller(QObject):
     # round trip that also looks inside the messages themselves.
     DEEP_SEARCH_LENGTH = 3
 
+    @Property(str, notify=tasksChanged)
+    def chatFilter(self): return self._chat_filter
+
+    @Property(int, notify=tasksChanged)
+    def visibleChatCount(self): return len(self._matching_tasks())
+
+    @Slot(str)
+    def setChatFilter(self, value):
+        if value not in ("all", "pinned", "archived") or value == self._chat_filter:
+            return
+        self._chat_filter = value
+        self.tasksChanged.emit()
+
     def _matching_tasks(self) -> list[dict]:
-        needle = self._search.strip().lower()
-        if not needle:
-            return self._tasks
-        if len(needle) >= self.DEEP_SEARCH_LENGTH:
-            return self.store.search(needle)
-        return [task for task in self._tasks
-                if needle in str(task.get("title", "")).lower()
-                or needle in str(task.get("preview", "")).lower()]
+        needle = self._search.strip().casefold()
+        tasks = self._tasks
+        if needle:
+            if len(needle) >= self.DEEP_SEARCH_LENGTH:
+                tasks = self.store.search(needle, limit=len(self._tasks))
+            else:
+                tasks = [task for task in tasks
+                         if needle in str(task.get("title", "")).casefold()
+                         or needle in str(task.get("preview", "")).casefold()]
+        return [task for task in tasks
+                if bool(task.get("archived")) == (self._chat_filter == "archived")
+                and (self._chat_filter != "pinned" or task.get("pinned"))]
+
+    @Slot(str)
+    def toggleArchive(self, task_id):
+        if self._busy:
+            self.toast.emit("Stop the current task before archiving chats.")
+            return
+        task = self.store.get_conversation(task_id)
+        if not task:
+            return
+        archived = not bool(task.get("archived"))
+        self.store.set_archived(task_id, archived)
+        if archived and task_id == self._task_id:
+            self.newTask()
+        self._refresh_tasks()
+        self.toast.emit("Chat archived" if archived else "Chat restored")
 
     def _grouped_tasks(self) -> list[dict]:
         buckets: dict[str, list] = {}
@@ -1105,11 +1141,32 @@ class Controller(QObject):
         self._run_metrics = _blank_metrics()
         self._status = "Ready when you are"
 
+    @Property(str, notify=draftChanged)
+    def draftText(self): return self._draft_text
+
+    @Slot(str)
+    def setDraft(self, text):
+        self._draft_text = str(text)
+
+    def _save_draft(self):
+        if self._draft_text or self._attachments:
+            self._drafts[self._task_id] = (self._draft_text, list(self._attachments))
+        else:
+            self._drafts.pop(self._task_id, None)
+
+    def _restore_draft(self):
+        text, attachments = self._drafts.pop(self._task_id, ("", []))
+        self._draft_text = text
+        self._attachments = attachments
+        self.draftChanged.emit()
+        self.attachmentsChanged.emit()
+
     @Slot()
     def newTask(self):
         if self._busy:
             self.toast.emit("Stop the current task before starting another.")
             return
+        self._save_draft()
         self._task_id = ""
         self._task_title = "New chat"
         self._history = []
@@ -1117,7 +1174,8 @@ class Controller(QObject):
         self.messages.replace([])
         self._reset_run_state()
         self._clear_error()
-        self.clearAttachments()
+        self.cancelRegion()
+        self._restore_draft()
         self.activityChanged.emit()
         self.changed.emit()
         self.focusComposer.emit()
@@ -1130,8 +1188,15 @@ class Controller(QObject):
         task = self.store.get_conversation(task_id)
         if not task:
             return
+        switching = task_id != self._task_id
+        if switching:
+            self._save_draft()
+            self.cancelRegion()
+        self._clear_error()
         self._task_id = task_id
         self._task_title = task["title"]
+        if switching:
+            self._restore_draft()
         self._history = self.store.get_messages(task_id)
         self.messages.replace(self._history)
         self._recount_history_tokens()
@@ -1145,7 +1210,10 @@ class Controller(QObject):
         if self._busy:
             return
         self.store.delete_conversation(task_id)
+        self._drafts.pop(task_id, None)
         if task_id == self._task_id:
+            self._draft_text = ""
+            self.clearAttachments()
             self.newTask()
         self._refresh_tasks()
         self.toast.emit("Chat deleted")
@@ -1156,7 +1224,7 @@ class Controller(QObject):
             return
         self.store.rename_conversation(task_id, str(title).strip()[:200])
         if task_id == self._task_id:
-            self._task_title = str(title).strip()[:120]
+            self._task_title = str(title).strip()[:200]
         self._refresh_tasks()
         self.changed.emit()
 
@@ -1537,6 +1605,9 @@ class Controller(QObject):
                             [{"label": "Retry", "action": "retry"},
                              {"label": "Connection settings", "action": "settings"}])
             return
+        self._drafts.pop(self._task_id, None)
+        self._draft_text = ""
+        self.draftChanged.emit()
         if not self._task_id:
             task = self.store.create_conversation(derive_title(text), self._model)
             self._task_id, self._task_title = task["id"], task["title"]

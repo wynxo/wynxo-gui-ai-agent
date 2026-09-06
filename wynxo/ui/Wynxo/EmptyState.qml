@@ -1,14 +1,22 @@
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls
 
 /*! The new-chat screen. Useful immediately; no marketing copy. */
-Item {
+Flickable {
     id: root
+    clip: true
+    contentWidth: width
+    contentHeight: welcome.height + Theme.s6 * 2
+    boundsBehavior: Flickable.StopAtBounds
+    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
     signal templateChosen(string prompt)
 
     ColumnLayout {
-        anchors.centerIn: parent
-        width: Math.min(parent.width - Theme.s7 * 2, 640)
+        id: welcome
+        x: (root.width - width) / 2
+        y: Math.max(Theme.s6, (root.height - height) / 2)
+        width: Math.min(root.width - Theme.s6, 640)
         spacing: 0
 
         Orb {
@@ -32,6 +40,9 @@ Item {
 
         Text {
             Layout.alignment: Qt.AlignHCenter
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
             text: bridge && bridge.online
                   ? "Local AI, running on your machine."
                   : "Start Ollama to begin. Everything stays on this computer."
@@ -54,6 +65,13 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 52
                     radius: Theme.r2
+                    activeFocusOnTab: true
+                    border.width: activeFocus ? 2 : 1
+                    border.color: activeFocus ? Theme.accent : Theme.borderSubtle
+                    Keys.onReturnPressed: root.templateChosen(modelData.prompt)
+                    Keys.onSpacePressed: root.templateChosen(modelData.prompt)
+                    Accessible.role: Accessible.Button
+                    Accessible.name: modelData.title
                     color: area.containsMouse ? Theme.surfaceHover : Theme.surface
                     Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 

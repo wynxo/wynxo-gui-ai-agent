@@ -130,3 +130,41 @@ def test_search_matches_titles_and_message_bodies(tmp_path):
     assert len(store.search("")) == 2
     assert store.search("nothing here") == []
     store.close()
+
+
+def test_search_limits_literals_and_unicode(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    for i in range(5):
+        store.create_conversation(f"Matching title {i}")
+    assert len(store.search("Matching", limit=2)) == 2
+    assert store.search("Matching", limit=0) == []
+    assert store.search("", limit=-1) == []
+    special = store.create_conversation("Other")
+    store.set_messages(special["id"], [
+        {"role": "user", "content": "100% a_b Straße ПРИВЕТ"},
+        {"role": "assistant", "content": "Later reply"},
+    ])
+    for query in ("%", "a_b", "STRASSE", "привет"):
+        assert [item["id"] for item in store.search(query)] == [special["id"]]
+    assert store.search("role") == []
+    store.close()
+
+
+def test_archive_migration_and_restore_preserve_history(tmp_path):
+    import sqlite3
+    path = tmp_path / "history.sqlite3"
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE conversations (id TEXT PRIMARY KEY, title TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL, updated_at REAL NOT NULL)")
+        db.execute("INSERT INTO conversations VALUES ('old', 'Old chat', 'local', 1, 2)")
+    store = Store(path)
+    assert store.get_conversation("old")["archived"] == 0
+    history = [{"role": "user", "content": "Keep me"}]
+    store.set_messages("old", history)
+    store.set_archived("old", True)
+    store.close()
+    store = Store(path)
+    assert store.get_conversation("old")["archived"] == 1
+    assert store.get_messages("old") == history
+    store.set_archived("old", False)
+    assert store.get_conversation("old")["archived"] == 0
+    store.close()
