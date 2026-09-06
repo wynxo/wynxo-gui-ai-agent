@@ -18,8 +18,8 @@ Item {
         height: (root.editing ? editor.implicitHeight + Theme.s4 * 2 + 44 : text.implicitHeight + Theme.s4 * 2)
         radius: Theme.r3
         color: Theme.surfaceRaised
-        border.width: 1
-        border.color: root.editing ? Theme.accentEdge : Theme.borderSubtle
+        border.width: root.editing ? 1 : 0
+        border.color: Theme.accentEdge
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
         TextEdit {

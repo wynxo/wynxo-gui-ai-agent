@@ -252,8 +252,6 @@ Item {
                     Layout.preferredHeight: modelColumn.implicitHeight + Theme.s4 * 2
                     radius: Theme.r2
                     color: Theme.surface
-                    border.width: 1
-                    border.color: Theme.borderSubtle
                     ColumnLayout {
                         id: modelColumn
                         anchors.fill: parent

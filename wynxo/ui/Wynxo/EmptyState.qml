@@ -54,11 +54,8 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: 52
                     radius: Theme.r2
-                    color: area.containsMouse ? Theme.surfaceHover : "transparent"
-                    border.width: 1
-                    border.color: area.containsMouse ? Theme.borderStrong : Theme.borderSubtle
+                    color: area.containsMouse ? Theme.surfaceHover : Theme.surface
                     Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                    Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
                     Row {
                         anchors.fill: parent

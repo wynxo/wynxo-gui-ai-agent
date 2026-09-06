@@ -24,8 +24,19 @@ TextEdit {
     selectedTextColor: Theme.onAccent
     font.family: Theme.sansFamily
     font.pixelSize: Theme.body
-    text: bridge ? bridge.renderMarkdown(rendered) : rendered
+    text: view.render(revision)
     onLinkActivated: function(link) { view.linkClicked(link); }
+
+    // Prose is rendered in Python, so changing the accent has to re-run the
+    // binding. `revision` exists only to make that dependency explicit.
+    property int revision: 0
+    function render(revision) {
+        return bridge ? bridge.renderMarkdown(rendered) : rendered;
+    }
+    Connections {
+        target: bridge
+        function onPaletteChanged() { view.revision++; }
+    }
 
     property string rendered: ""
     onSourceChanged: {

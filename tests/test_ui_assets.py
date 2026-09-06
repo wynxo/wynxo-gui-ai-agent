@@ -72,3 +72,21 @@ def test_the_interface_loads_headless():
                             capture_output=True, text=True, timeout=120, env=environment)
     assert result.returncode == 0, result.stderr
     assert "failed to load" not in result.stderr
+
+
+def test_the_theme_follows_the_bridge_by_binding_not_assignment():
+    """A one-time assignment silently stops tracking; the preview runner and a
+    live accent change both depend on this staying a binding."""
+    text = (UI / "Main.qml").read_text(encoding="utf-8")
+    assert 'Binding { target: Theme; property: "bridge"; value: bridge }' in text
+    assert "Theme.bridge = bridge" not in text
+
+
+def test_renderers_are_told_when_the_palette_changes():
+    """Markdown and code are rendered in Python, so a theme change has to
+    invalidate what is already on screen."""
+    for name in ("Markdown.qml", "CodeBlock.qml"):
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert "onPaletteChanged" in text, f"{name} ignores palette changes"
+    controller = (Path(__file__).resolve().parents[1] / "wynxo" / "controller.py").read_text()
+    assert controller.count("self.paletteChanged.emit()") == 2

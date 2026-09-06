@@ -30,20 +30,33 @@ ApplicationWindow {
     readonly property bool inspectorDocked: wide && inspectorOpen
 
     // ------------------------------------------------------------- setup
+    // A binding rather than an assignment, so the theme keeps following the
+    // bridge — including when a preview run swaps it out underneath us.
+    Binding { target: Theme; property: "bridge"; value: bridge }
+
     Component.onCompleted: {
-        Theme.bridge = bridge;
         Theme.systemSans = window.font.family;
-        // Syntax colours are part of the theme, so the highlighter uses them too.
-        if (bridge) {
-            bridge.setCodePalette(Theme.codePalette);
-            bridge.setHtmlPalette({
-                "text": Theme.textPrimary, "muted": Theme.textSecondary,
-                "faint": Theme.textMuted, "accent": Theme.accent,
-                "codeBackground": Theme.surfaceSunken, "border": Theme.borderStrong,
-                "rule": Theme.borderSubtle
-            });
-        }
+        window.pushPalettes();
         if (bridge && !bridge.onboarded) onboarding.open();
+    }
+
+    // Markdown and code are rendered in Python, so the renderers need the same
+    // palette the rest of the interface uses — including after an accent change.
+    function pushPalettes() {
+        if (!Theme.bridge) return;
+        Theme.bridge.setCodePalette(Theme.codePalette);
+        Theme.bridge.setHtmlPalette({
+            "text": Theme.textPrimary, "muted": Theme.textSecondary,
+            "faint": Theme.textMuted, "accent": Theme.accent,
+            "codeBackground": Theme.surfaceSunken, "border": Theme.borderStrong,
+            "rule": Theme.borderSubtle
+        });
+    }
+
+    Connections {
+        target: Theme
+        function onAccentChanged() { window.pushPalettes(); }
+        function onBridgeChanged() { window.pushPalettes(); }
     }
 
     onActiveChanged: if (bridge) bridge.setWindowActive(active)

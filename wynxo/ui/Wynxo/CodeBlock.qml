@@ -73,22 +73,31 @@ Rectangle {
         anchors.right: parent.right
         anchors.margins: Theme.s3
         anchors.topMargin: Theme.s3
-        implicitHeight: Math.min(text.implicitHeight, 520)
+        implicitHeight: Math.min(codeText.implicitHeight, 520)
         height: implicitHeight
-        contentWidth: text.implicitWidth
-        contentHeight: text.implicitHeight
+        contentWidth: codeText.implicitWidth
+        contentHeight: codeText.implicitHeight
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         TextEdit {
-            id: text
+            id: codeText
             readOnly: true
             selectByMouse: true
             textFormat: root.streaming ? TextEdit.PlainText : TextEdit.RichText
-            text: root.streaming ? root.code
-                                 : (bridge ? bridge.highlight(root.code, root.language) : root.code)
+            // `revision` exists only so a palette change re-runs this binding.
+            property int revision: 0
+            text: codeText.render(revision)
+            function render(revision) {
+                if (root.streaming || !bridge) return root.code;
+                return bridge.highlight(root.code, root.language);
+            }
+            Connections {
+                target: bridge
+                function onPaletteChanged() { codeText.revision++; }
+            }
             color: Theme.codePalette.text
             selectionColor: Theme.accent
             selectedTextColor: Theme.onAccent

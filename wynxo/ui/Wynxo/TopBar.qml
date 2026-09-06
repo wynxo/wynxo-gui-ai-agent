@@ -45,8 +45,9 @@ Item {
                 text: bridge ? bridge.taskTitle : "Wynxo"
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
-                font.pixelSize: Theme.heading
+                font.pixelSize: Theme.heading + 1
                 font.weight: Font.Medium
+                font.letterSpacing: -0.2
                 elide: Text.ElideRight
                 MouseArea {
                     anchors.fill: parent

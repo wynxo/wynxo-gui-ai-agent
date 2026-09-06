@@ -354,6 +354,7 @@ class Controller(QObject):
     activityChanged = Signal()
     attachmentsChanged = Signal()
     regionChanged = Signal()
+    paletteChanged = Signal()
     catalogChanged = Signal()
     permissionChanged = Signal()
     toast = Signal(str)
@@ -1815,6 +1816,7 @@ class Controller(QObject):
     @Slot("QVariantMap")
     def setHtmlPalette(self, palette):
         self._html_palette = {**md.HTML_PALETTE, **self._palette_hex(palette)}
+        self.paletteChanged.emit()
 
     @Slot(str, str, result=str)
     def highlight(self, code, language):
@@ -1824,6 +1826,7 @@ class Controller(QObject):
     @Slot("QVariantMap")
     def setCodePalette(self, palette):
         self._code_palette = {**md.DEFAULT_PALETTE, **self._palette_hex(palette)}
+        self.paletteChanged.emit()
 
     @Slot(str)
     def copyText(self, text):
