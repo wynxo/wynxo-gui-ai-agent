@@ -3,11 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Product navigation, project context, and task history.
-
-    Wynxo is the Chat / Work product. Wynxi is the coding product. Switching
-    products starts a fresh task in that product instead of mutating the mode of
-    an existing conversation, so every saved task keeps its identity forever.
+    Codex-style project navigator: product, project and threads in one compact
+    rail. No oversized product cards and no decorative dashboard chrome.
 */
 Item {
     id: root
@@ -19,159 +16,74 @@ Item {
     signal deleteRequested(string id, string title)
     signal collapseRequested(bool value)
 
-    function focusSearch() { search.forceActiveFocus(); search.selectAll(); }
     readonly property bool inWynxi: bridge && bridge.taskMode === "codex"
+    function focusSearch() { search.forceActiveFocus(); search.selectAll(); }
 
-    Rectangle {
-        anchors.fill: parent
-        color: Theme.backgroundSoft
-    }
+    Rectangle { anchors.fill: parent; color: Theme.backgroundSoft }
+    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.borderSubtle }
 
     // ------------------------------------------------------------ expanded
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Theme.s3
-        anchors.topMargin: Theme.s4
-        spacing: Theme.s3
+        anchors.margins: Theme.s2
+        anchors.topMargin: Theme.s3
+        spacing: Theme.s2
         visible: !root.collapsed
 
-        // Small app mark — product names live in the switch immediately below.
         RowLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Theme.s2
-            Layout.bottomMargin: Theme.s1
+            Layout.leftMargin: Theme.s1
             spacing: Theme.s2
-            Mark { Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
+            Mark { Layout.preferredWidth: 20; Layout.preferredHeight: 20 }
             Text {
                 Layout.fillWidth: true
-                text: bridge ? bridge.productName : "Wynxo"
+                text: "Wynxo"
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.heading
                 font.weight: Font.DemiBold
-                font.letterSpacing: 0.1
-                elide: Text.ElideRight
             }
             IconButton {
                 Layout.preferredWidth: 28; Layout.preferredHeight: 28
-                iconSize: 14
                 objectName: "sidebarCollapseButton"
-                iconName: "panelLeft"; tooltip: "Collapse sidebar"; shortcut: "Ctrl+B"
+                iconName: "panelLeft"
+                iconSize: 13
+                tooltip: "Collapse sidebar"
+                shortcut: "Ctrl+B"
                 onClicked: root.collapseRequested(true)
             }
         }
 
-        // ---------------------------------------------------- product switch
-        ColumnLayout {
+        Segmented {
             Layout.fillWidth: true
-            spacing: 2
-
-            AbstractButton {
-                id: wynxoProduct
-                Layout.fillWidth: true
-                implicitHeight: 42
-                hoverEnabled: true
-                readonly property bool chosen: !root.inWynxi
-                Accessible.name: "Wynxo. Chat and Work"
-                Accessible.checked: chosen
-                onClicked: if (!chosen) root.newModeTask("chat")
-                background: Rectangle {
-                    radius: Theme.r2
-                    color: wynxoProduct.chosen ? Theme.surfaceSelected
-                         : wynxoProduct.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: wynxoProduct.visualFocus ? 2 : 0
-                    border.color: Theme.accentEdge
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                }
-                contentItem: RowLayout {
-                    spacing: Theme.s3
-                    Icon {
-                        Layout.leftMargin: Theme.s2
-                        name: "chat"
-                        ink: wynxoProduct.chosen ? Theme.textPrimary : Theme.textMuted
-                        Layout.preferredWidth: 16; Layout.preferredHeight: 16
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text {
-                            text: "Wynxo"
-                            color: Theme.textPrimary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                            font.weight: Font.Medium
-                        }
-                        Text {
-                            text: "Chat & Work"
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                        }
-                    }
-                }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
-            }
-
-            AbstractButton {
-                id: wynxiProduct
-                Layout.fillWidth: true
-                implicitHeight: 42
-                hoverEnabled: true
-                readonly property bool chosen: root.inWynxi
-                Accessible.name: "Wynxi. Coding workspace"
-                Accessible.checked: chosen
-                onClicked: if (!chosen) root.newModeTask("codex")
-                background: Rectangle {
-                    radius: Theme.r2
-                    color: wynxiProduct.chosen ? Theme.surfaceSelected
-                         : wynxiProduct.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: wynxiProduct.visualFocus ? 2 : 0
-                    border.color: Theme.accentEdge
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                }
-                contentItem: RowLayout {
-                    spacing: Theme.s3
-                    Icon {
-                        Layout.leftMargin: Theme.s2
-                        name: "code"
-                        ink: wynxiProduct.chosen ? Theme.accent : Theme.textMuted
-                        Layout.preferredWidth: 16; Layout.preferredHeight: 16
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text {
-                            text: "Wynxi"
-                            color: Theme.textPrimary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                            font.weight: Font.Medium
-                        }
-                        Text {
-                            text: "Code with Ollama"
-                            color: Theme.textMuted
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
-                        }
-                    }
-                }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+            Layout.preferredHeight: 30
+            options: [
+                { id: "wynxo", label: "Chat" },
+                { id: "wynxi", label: "Code" },
+            ]
+            current: root.inWynxi ? "wynxi" : "wynxo"
+            onSelected: function(value) {
+                if (value === "wynxi" && !root.inWynxi) root.newModeTask("codex");
+                else if (value === "wynxo" && root.inWynxi) root.newModeTask("chat");
             }
         }
 
-        // ------------------------------------------------------ new + find
         WButton {
             Layout.fillWidth: true
-            Layout.topMargin: Theme.s1
-            text: root.inWynxi ? "New coding task" : "New chat"
-            iconName: root.inWynxi ? "code" : "edit"
-            variant: "ghost"
+            Layout.preferredHeight: 34
+            text: root.inWynxi ? "New coding task" : "New task"
+            iconName: "plus"
+            variant: "secondary"
             onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
             ToolTip.visible: hovered
-            ToolTip.text: (root.inWynxi ? "New Wynxi task" : "New Wynxo task") + " · Ctrl+N"
+            ToolTip.text: "Ctrl+N"
         }
 
         Field {
             id: search
             Layout.fillWidth: true
             iconName: "search"
-            placeholderText: "Search chats"
+            placeholderText: "Search threads"
             font.pixelSize: Theme.caption
             Component.onCompleted: text = bridge ? bridge.searchQuery : ""
             onTextChanged: if (bridge) bridge.setSearch(text)
@@ -182,118 +94,123 @@ Item {
         }
 
         // ---------------------------------------------------------- project
-        SectionLabel { Layout.fillWidth: true; Layout.leftMargin: Theme.s2; text: "Workspace" }
-
-        Rectangle {
-            id: projectCard
+        SectionLabel {
             Layout.fillWidth: true
-            Layout.preferredHeight: projectColumn.implicitHeight + Theme.s2 * 2
-            radius: Theme.r2
-            color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : "transparent"
-            Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+            Layout.leftMargin: Theme.s1
+            Layout.topMargin: Theme.s1
+            text: "Project"
+        }
 
-            Column {
-                id: projectColumn
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Theme.s2
-                anchors.rightMargin: Theme.s2
-                spacing: 2
-                Row {
-                    width: parent.width
-                    spacing: Theme.s2
-                    Icon {
-                        name: bridge && bridge.projectPath ? "folderOpen" : "folder"
-                        ink: bridge && bridge.projectPath ? Theme.textSecondary : Theme.textMuted
-                        width: 14; height: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
+        AbstractButton {
+            id: projectButton
+            Layout.fillWidth: true
+            implicitHeight: 42
+            hoverEnabled: true
+            Accessible.name: bridge && bridge.projectName
+                ? "Project " + bridge.projectName + ". Change project"
+                : "Choose a project folder"
+            onClicked: projectMenu.opened ? projectMenu.close() : projectMenu.open()
+
+            background: Rectangle {
+                radius: Theme.r1
+                color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : "transparent"
+                border.width: projectButton.visualFocus ? 1 : 0
+                border.color: Theme.accentEdge
+            }
+
+            contentItem: RowLayout {
+                spacing: Theme.s2
+                Icon {
+                    Layout.leftMargin: Theme.s2
+                    name: bridge && bridge.projectPath ? "folderOpen" : "folder"
+                    ink: bridge && bridge.projectPath ? Theme.textSecondary : Theme.textMuted
+                    Layout.preferredWidth: 14; Layout.preferredHeight: 14
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
                     Text {
-                        width: parent.width - 14 - Theme.s2 - 14
-                        text: bridge && bridge.projectName ? bridge.projectName : "No project folder"
+                        Layout.fillWidth: true
+                        text: bridge && bridge.projectName ? bridge.projectName : "Open a folder"
                         color: bridge && bridge.projectPath ? Theme.textPrimary : Theme.textSecondary
                         font.family: Theme.sansFamily
                         font.pixelSize: Theme.label
                         font.weight: Font.Medium
                         elide: Text.ElideMiddle
-                        anchors.verticalCenter: parent.verticalCenter
                     }
-                    Icon {
-                        name: "down"; ink: Theme.textMuted; width: 12; height: 12
-                        anchors.verticalCenter: parent.verticalCenter
+                    Text {
+                        Layout.fillWidth: true
+                        text: bridge && bridge.projectPath ? bridge.projectParentLabel : "Set the workspace for tools"
+                        color: Theme.textMuted
+                        font.family: bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
+                        font.pixelSize: Theme.micro
+                        elide: Text.ElideLeft
                     }
                 }
-                Text {
-                    width: parent.width
-                    leftPadding: 14 + Theme.s2
-                    text: bridge && bridge.projectPath ? bridge.projectParentLabel
-                                                       : "Choose one to give tasks a place"
-                    color: Theme.textMuted
-                    font.family: bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
-                    font.pixelSize: Theme.micro
-                    elide: Text.ElideLeft
+                Icon {
+                    Layout.rightMargin: Theme.s2
+                    name: "chevron"
+                    ink: Theme.textMuted
+                    Layout.preferredWidth: 11; Layout.preferredHeight: 11
                 }
             }
+            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
 
-            AbstractButton {
-                id: projectButton
-                anchors.fill: parent
-                hoverEnabled: true
-                Accessible.name: bridge && bridge.projectName
-                                 ? "Project " + bridge.projectName + ". Change project"
-                                 : "Choose a project folder"
-                onClicked: projectMenu.opened ? projectMenu.close() : projectMenu.open()
-                background: Rectangle {
-                    radius: Theme.r2; color: "transparent"
-                    border.width: projectButton.visualFocus ? 2 : 0
-                    border.color: Theme.accentEdge
+            WMenu {
+                id: projectMenu
+                menuWidth: Math.max(250, projectButton.width)
+                property var recents: bridge ? bridge.recentProjects : []
+                onAboutToShow: recents = bridge ? bridge.recentProjects : []
+                items: {
+                    var list = [{ id: "choose", label: "Open folder…", icon: "folder" }];
+                    var recent = recents;
+                    if (recent.length) {
+                        list.push({ separator: true });
+                        for (var i = 0; i < Math.min(recent.length, 5); i++)
+                            list.push({ id: "recent:" + recent[i].path, label: recent[i].name, icon: "clock" });
+                    }
+                    var has = !!(bridge && bridge.projectPath);
+                    list.push({ separator: true, hidden: !has });
+                    list.push({ id: "terminal", label: "Open terminal", icon: "terminal", hidden: !has });
+                    list.push({ id: "reveal", label: "Reveal in files", icon: "launch", hidden: !has });
+                    list.push({ id: "copy", label: "Copy path", icon: "copy", hidden: !has });
+                    list.push({ id: "clear", label: "Close project", icon: "close", hidden: !has });
+                    return list;
                 }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
-
-                WMenu {
-                    id: projectMenu
-                    menuWidth: Math.max(240, projectCard.width)
-                    property var recents: bridge ? bridge.recentProjects : []
-                    onAboutToShow: recents = bridge ? bridge.recentProjects : []
-                    items: {
-                        var list = [{ id: "choose", label: "Open folder…", icon: "folder" }];
-                        var recent = recents;
-                        if (recent.length) {
-                            list.push({ separator: true });
-                            for (var i = 0; i < Math.min(recent.length, 5); i++)
-                                list.push({ id: "recent:" + recent[i].path,
-                                            label: recent[i].name, icon: "clock" });
-                        }
-                        var has = !!(bridge && bridge.projectPath);
-                        list.push({ separator: true, hidden: !has });
-                        list.push({ id: "reveal", label: "Reveal in file manager", icon: "launch", hidden: !has });
-                        list.push({ id: "terminal", label: "Open a terminal here", icon: "terminal", hidden: !has });
-                        list.push({ id: "copy", label: "Copy path", icon: "copy", hidden: !has });
-                        list.push({ id: "clear", label: "Close project", icon: "close", hidden: !has });
-                        return list;
-                    }
-                    onPicked: function(id) {
-                        if (!bridge) return;
-                        if (id === "choose") bridge.chooseProject();
-                        else if (id === "reveal") bridge.revealPath(bridge.projectPath);
-                        else if (id === "terminal") bridge.openTerminalHere();
-                        else if (id === "copy") bridge.copyProjectPath();
-                        else if (id === "clear") bridge.clearProject();
-                        else if (id.indexOf("recent:") === 0) bridge.openProject(id.substring(7));
-                    }
+                onPicked: function(id) {
+                    if (!bridge) return;
+                    if (id === "choose") bridge.chooseProject();
+                    else if (id === "terminal") bridge.openTerminalHere();
+                    else if (id === "reveal") bridge.revealPath(bridge.projectPath);
+                    else if (id === "copy") bridge.copyProjectPath();
+                    else if (id === "clear") bridge.clearProject();
+                    else if (id.indexOf("recent:") === 0) bridge.openProject(id.substring(7));
                 }
             }
         }
 
-        // ----------------------------------------------------------- tasks
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.s1
+            Layout.topMargin: Theme.s1
+            spacing: Theme.s2
+            SectionLabel { text: "Threads" }
+            Item { Layout.fillWidth: true }
+            Text {
+                visible: bridge && bridge.taskGroups && bridge.taskGroups.length > 0
+                text: bridge ? bridge.taskGroups.length : ""
+                color: Theme.textMuted
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.micro
+            }
+        }
+
         ListView {
             id: groups
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.topMargin: Theme.s1
             clip: true
-            spacing: Theme.s3
+            spacing: Theme.s2
             model: bridge ? bridge.taskGroups : []
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar {
@@ -309,7 +226,8 @@ Item {
                 SectionLabel {
                     width: parent.width
                     text: modelData.title
-                    leftPadding: Theme.s2
+                    leftPadding: Theme.s1
+                    topPadding: Theme.s1
                     bottomPadding: Theme.s1
                 }
 
@@ -327,65 +245,61 @@ Item {
 
             Column {
                 anchors.top: parent.top
-                anchors.topMargin: Theme.s4
+                anchors.topMargin: Theme.s3
                 x: Theme.s2
                 width: parent.width - Theme.s4
                 spacing: Theme.s2
                 visible: groups.count === 0
                 Text {
                     width: parent.width
-                    text: bridge && bridge.searchQuery ? "Nothing matches" : "Your chats appear here"
+                    text: bridge && bridge.searchQuery ? "No matching threads" : "No threads yet"
                     color: Theme.textSecondary
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
                 }
                 Text {
                     width: parent.width
-                    text: bridge && bridge.searchQuery
-                          ? "Search covers titles and message text."
-                          : "Start one and it is saved here, on this computer."
+                    text: bridge && bridge.searchQuery ? "Search covers titles and messages." : "Start a task above."
                     color: Theme.textMuted
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                    wrapMode: Text.WordWrap; lineHeight: 1.4
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
+                    wrapMode: Text.WordWrap
                 }
             }
         }
 
-        Divider { Layout.fillWidth: true }
+        Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: Theme.borderSubtle }
 
-        RowLayout {
+        AbstractButton {
+            id: settingsButton
             Layout.fillWidth: true
-            spacing: 0
-            AbstractButton {
-                id: settingsButton
-                Layout.fillWidth: true
-                Layout.preferredHeight: Theme.rowHeight
-                hoverEnabled: true
-                Accessible.name: "Settings"
-                onClicked: root.openSettings()
-                background: Rectangle {
-                    radius: Theme.r2
-                    color: settingsButton.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: settingsButton.visualFocus ? 2 : 0
-                    border.color: Theme.accentEdge
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                }
-                contentItem: Row {
-                    leftPadding: Theme.s2
-                    spacing: Theme.s3
-                    Icon {
-                        name: "sliders"; ink: Theme.textMuted; width: 14; height: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                    Text {
-                        text: "Settings"
-                        color: Theme.textSecondary
-                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+            Layout.preferredHeight: 34
+            hoverEnabled: true
+            Accessible.name: "Settings"
+            onClicked: root.openSettings()
+            background: Rectangle {
+                radius: Theme.r1
+                color: settingsButton.hovered ? Theme.surfaceHover : "transparent"
+                border.width: settingsButton.visualFocus ? 1 : 0
+                border.color: Theme.accentEdge
             }
-            KeyHint { keys: "Ctrl+," }
+            contentItem: RowLayout {
+                spacing: Theme.s2
+                Icon {
+                    Layout.leftMargin: Theme.s2
+                    name: "sliders"; ink: Theme.textMuted
+                    Layout.preferredWidth: 13; Layout.preferredHeight: 13
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Settings"
+                    color: Theme.textSecondary
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.caption
+                }
+                KeyHint { Layout.rightMargin: Theme.s1; keys: "Ctrl+," }
+            }
+            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
         }
     }
 
@@ -393,48 +307,42 @@ Item {
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: Theme.s2
-        anchors.topMargin: Theme.s4
+        anchors.topMargin: Theme.s3
         spacing: Theme.s2
         visible: root.collapsed
 
         Mark { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
         Item { Layout.preferredHeight: Theme.s1 }
-
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: "chat"; tooltip: "Wynxo · Chat & Work"
+            iconName: "chat"; tooltip: "Chat"
             active: !root.inWynxi
             onClicked: if (root.inWynxi) root.newModeTask("chat")
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: "code"; tooltip: "Wynxi · Code with Ollama"
+            iconName: "code"; tooltip: "Code"
             active: root.inWynxi
             onClicked: if (!root.inWynxi) root.newModeTask("codex")
         }
-
-        Item { Layout.preferredHeight: Theme.s1 }
+        Rectangle { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 24; Layout.preferredHeight: 1; color: Theme.borderSubtle }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: root.inWynxi ? "code" : "plus"
-            tooltip: root.inWynxi ? "New coding task" : "New chat"
-            shortcut: "Ctrl+N"
+            iconName: "plus"; tooltip: "New task"; shortcut: "Ctrl+N"
             onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: "search"; tooltip: "Search tasks"; shortcut: "Ctrl+K"
+            iconName: "search"; tooltip: "Search threads"; shortcut: "Ctrl+K"
             onClicked: { root.collapseRequested(false); root.focusSearch(); }
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
             iconName: bridge && bridge.projectPath ? "folderOpen" : "folder"
-            tooltip: bridge && bridge.projectLabel ? "Project · " + bridge.projectLabel : "Choose a project folder"
-            onClicked: { root.collapseRequested(false); }
+            tooltip: bridge && bridge.projectLabel ? bridge.projectLabel : "Choose project"
+            onClicked: root.collapseRequested(false)
         }
-
         Item { Layout.fillHeight: true }
-
         IconButton {
             Layout.alignment: Qt.AlignHCenter
             iconName: "sliders"; tooltip: "Settings"; shortcut: "Ctrl+,"
