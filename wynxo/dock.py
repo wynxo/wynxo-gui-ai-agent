@@ -848,11 +848,21 @@ class DockController(QObject):
 
     @Slot(str)
     def runInTerminal(self, command):
-        """Show a command in the terminal and run it there, opening the panel."""
+        """Show a command in the terminal and run it there, opening the panel.
+
+        Called from a menu the user opened, so it uses `openTab` rather than
+        `suggest`: a suggestion is refused once a tab has been chosen by hand,
+        and refusing to honour a click would be the wrong kind of consistent.
+        """
         command = str(command or "").strip()
         if not command:
             return
-        self.suggest("terminal", open_dock=True)
+        if self._tab != "terminal" or not self._visible:
+            self._tab_pinned = True
+            self._remember("dock_tab_pinned", True)
+            self._select_tab("terminal")
+            self.setVisible(True)
+            self.changed.emit()
         self.startTerminal()
         self.sendTerminal(command)
 

@@ -75,29 +75,44 @@ Item {
             }
 
             // ------------------------------------------- markdown and text
-            ScrollView {
+            Flickable {
+                id: prose
                 anchors.fill: parent
                 anchors.margins: Theme.s4
                 visible: root.kind === "markdown" || root.kind === "text"
+                contentWidth: width
+                contentHeight: (root.kind === "markdown" ? markdown.contentHeight
+                                                         : plain.contentHeight) + Theme.s4
+                boundsBehavior: Flickable.StopAtBounds
                 clip: true
-                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-
-                Markdown {
-                    width: parent.width
-                    visible: root.kind === "markdown"
-                    text: root.kind === "markdown" ? (root.item.body || "") : ""
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                    contentItem: Rectangle { implicitWidth: 4; radius: 2; color: Theme.borderStrong }
                 }
-            }
 
-            Text {
-                anchors.fill: parent
-                anchors.margins: Theme.s4
-                visible: root.kind === "text"
-                text: root.item && root.item.body ? root.item.body : ""
-                textFormat: Text.PlainText
-                color: Theme.textSecondary
-                font.family: Theme.monoFamily; font.pixelSize: Theme.code
-                wrapMode: Text.WordWrap
+                // `source` is the Markdown; `text` is what Python renders from
+                // it. Setting `text` here would print the source instead.
+                Markdown {
+                    id: markdown
+                    width: prose.width - Theme.s2
+                    visible: root.kind === "markdown"
+                    source: root.kind === "markdown" ? (root.item.body || "") : ""
+                }
+
+                TextEdit {
+                    id: plain
+                    width: prose.width - Theme.s2
+                    visible: root.kind === "text"
+                    text: root.kind === "text" ? (root.item.body || "") : ""
+                    textFormat: TextEdit.PlainText
+                    readOnly: true
+                    selectByMouse: true
+                    color: Theme.textSecondary
+                    selectionColor: Theme.accent
+                    selectedTextColor: Theme.onAccent
+                    font.family: Theme.monoFamily; font.pixelSize: Theme.code
+                    wrapMode: TextEdit.Wrap
+                }
             }
 
             EmptyState {

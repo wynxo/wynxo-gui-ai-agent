@@ -273,3 +273,16 @@ def test_changes_are_read_from_git_and_a_diff_opens(application, store, tmp_path
         assert dock.diffRows == []
     finally:
         dock.shutdown()
+
+
+def test_running_a_command_in_the_terminal_opens_that_panel(dock, project):
+    """A menu the user opened is a decision, not a hint: `suggest` would be
+    refused once they had chosen a tab, and a click must not be."""
+    dock.set_project(str(project))
+    dock.setTab("changes")                     # the user has now chosen
+    dock.runInTerminal("echo hello")
+    try:
+        assert dock.tab == "terminal"
+        assert dock.visible is True
+    finally:
+        dock.restartTerminal()
