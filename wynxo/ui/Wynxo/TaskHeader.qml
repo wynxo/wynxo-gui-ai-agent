@@ -33,7 +33,11 @@ Item {
     function requestMode(value) {
         if (value !== "chat" && value !== "work" && value !== "codex") return;
         if (!bridge || bridge.connecting || bridge.busy) return;
-        if (value === root.resolvedMode && !(value !== "work" && bridge.desktopEnabled)) return;
+        if (value === root.resolvedMode) {
+            // A failed/denied Work connection leaves the tab selected so the
+            // user can see what they asked for; clicking it again must retry.
+            if (value !== "work" || bridge.desktopEnabled) return;
+        }
         WorkspaceMode.current = value;
         root.modeRequested(value);
     }
@@ -233,7 +237,7 @@ Item {
                 menuWidth: 270
                 items: [
                     { id: "modeChat", label: "Chat mode", icon: "chat", shortcut: "Ctrl+1", disabled: root.resolvedMode === "chat" },
-                    { id: "modeWork", label: "Work mode", icon: "desktop", shortcut: "Ctrl+2", disabled: root.resolvedMode === "work" },
+                    { id: "modeWork", label: "Work mode", icon: "desktop", shortcut: "Ctrl+2", disabled: root.resolvedMode === "work" && bridge && bridge.desktopEnabled },
                     { id: "modeCodex", label: "Codex mode", icon: "code", shortcut: "Ctrl+3", disabled: root.resolvedMode === "codex" },
                     { separator: true },
                     { id: "palette", label: "Command palette", icon: "command", shortcut: "Ctrl+Shift+P" },
