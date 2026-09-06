@@ -3,27 +3,28 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    Where you are, and what you have been doing.
+    Product navigation, project context, and task history.
 
-    The project comes first because it frames everything below it: a task list
-    without a place is just a chat history. Collapsed, the sidebar keeps the
-    four things worth a click — new task, search, project, settings.
+    Wynxo is the Chat / Work product. Wynxi is the coding product. Switching
+    products starts a fresh task in that product instead of mutating the mode of
+    an existing conversation, so every saved task keeps its identity forever.
 */
 Item {
     id: root
     property bool collapsed: false
     signal newTask()
+    signal newModeTask(string mode)
     signal openSettings()
     signal renameRequested(string id, string title)
     signal deleteRequested(string id, string title)
     signal collapseRequested(bool value)
 
     function focusSearch() { search.forceActiveFocus(); search.selectAll(); }
+    readonly property bool inWynxi: bridge && bridge.taskMode === "codex"
 
     Rectangle {
         anchors.fill: parent
         color: Theme.backgroundSoft
-
     }
 
     // ------------------------------------------------------------ expanded
@@ -34,7 +35,7 @@ Item {
         spacing: Theme.s3
         visible: !root.collapsed
 
-        // Wordmark. Small, once, and never animated.
+        // Small app mark — product names live in the switch immediately below.
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s2
@@ -43,12 +44,12 @@ Item {
             Mark { Layout.preferredWidth: 24; Layout.preferredHeight: 24 }
             Text {
                 Layout.fillWidth: true
-                text: "Wynxo"
+                text: bridge ? bridge.productName : "Wynxo"
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.heading
                 font.weight: Font.DemiBold
-                font.letterSpacing: 0.2
+                font.letterSpacing: 0.1
                 elide: Text.ElideRight
             }
             IconButton {
@@ -60,16 +61,110 @@ Item {
             }
         }
 
+        // ---------------------------------------------------- product switch
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 2
+
+            AbstractButton {
+                id: wynxoProduct
+                Layout.fillWidth: true
+                implicitHeight: 42
+                hoverEnabled: true
+                readonly property bool chosen: !root.inWynxi
+                Accessible.name: "Wynxo. Chat and Work"
+                Accessible.checked: chosen
+                onClicked: if (!chosen) root.newModeTask("chat")
+                background: Rectangle {
+                    radius: Theme.r2
+                    color: wynxoProduct.chosen ? Theme.surfaceSelected
+                         : wynxoProduct.hovered ? Theme.surfaceHover : "transparent"
+                    border.width: wynxoProduct.visualFocus ? 2 : 0
+                    border.color: Theme.accentEdge
+                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                }
+                contentItem: RowLayout {
+                    spacing: Theme.s3
+                    Icon {
+                        Layout.leftMargin: Theme.s2
+                        name: "chat"
+                        ink: wynxoProduct.chosen ? Theme.textPrimary : Theme.textMuted
+                        Layout.preferredWidth: 16; Layout.preferredHeight: 16
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            text: "Wynxo"
+                            color: Theme.textPrimary
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: "Chat & Work"
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+                    }
+                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+            }
+
+            AbstractButton {
+                id: wynxiProduct
+                Layout.fillWidth: true
+                implicitHeight: 42
+                hoverEnabled: true
+                readonly property bool chosen: root.inWynxi
+                Accessible.name: "Wynxi. Coding workspace"
+                Accessible.checked: chosen
+                onClicked: if (!chosen) root.newModeTask("codex")
+                background: Rectangle {
+                    radius: Theme.r2
+                    color: wynxiProduct.chosen ? Theme.surfaceSelected
+                         : wynxiProduct.hovered ? Theme.surfaceHover : "transparent"
+                    border.width: wynxiProduct.visualFocus ? 2 : 0
+                    border.color: Theme.accentEdge
+                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                }
+                contentItem: RowLayout {
+                    spacing: Theme.s3
+                    Icon {
+                        Layout.leftMargin: Theme.s2
+                        name: "code"
+                        ink: wynxiProduct.chosen ? Theme.accent : Theme.textMuted
+                        Layout.preferredWidth: 16; Layout.preferredHeight: 16
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+                        Text {
+                            text: "Wynxi"
+                            color: Theme.textPrimary
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                            font.weight: Font.Medium
+                        }
+                        Text {
+                            text: "Code with Ollama"
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+                    }
+                }
+                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+            }
+        }
+
         // ------------------------------------------------------ new + find
         WButton {
             Layout.fillWidth: true
             Layout.topMargin: Theme.s1
-            text: "New chat"
-            iconName: "edit"
+            text: root.inWynxi ? "New coding task" : "New chat"
+            iconName: root.inWynxi ? "code" : "edit"
             variant: "ghost"
-            onClicked: root.newTask()
+            onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
             ToolTip.visible: hovered
-            ToolTip.text: "New task · Ctrl+N"
+            ToolTip.text: (root.inWynxi ? "New Wynxi task" : "New Wynxo task") + " · Ctrl+N"
         }
 
         Field {
@@ -78,8 +173,6 @@ Item {
             iconName: "search"
             placeholderText: "Search chats"
             font.pixelSize: Theme.caption
-            // The docked sidebar and the drawer are separate instances; both
-            // start from whatever query is already active.
             Component.onCompleted: text = bridge ? bridge.searchQuery : ""
             onTextChanged: if (bridge) bridge.setSearch(text)
             Keys.onEscapePressed: function(event) {
@@ -232,7 +325,6 @@ Item {
                 }
             }
 
-            // Empty and no-result states.
             Column {
                 anchors.top: parent.top
                 anchors.topMargin: Theme.s4
@@ -306,12 +398,28 @@ Item {
         visible: root.collapsed
 
         Mark { Layout.alignment: Qt.AlignHCenter; Layout.preferredWidth: 18; Layout.preferredHeight: 18 }
-        Item { Layout.preferredHeight: Theme.s2 }
+        Item { Layout.preferredHeight: Theme.s1 }
 
         IconButton {
             Layout.alignment: Qt.AlignHCenter
-            iconName: "plus"; tooltip: "New task"; shortcut: "Ctrl+N"
-            onClicked: root.newTask()
+            iconName: "chat"; tooltip: "Wynxo · Chat & Work"
+            active: !root.inWynxi
+            onClicked: if (root.inWynxi) root.newModeTask("chat")
+        }
+        IconButton {
+            Layout.alignment: Qt.AlignHCenter
+            iconName: "code"; tooltip: "Wynxi · Code with Ollama"
+            active: root.inWynxi
+            onClicked: if (!root.inWynxi) root.newModeTask("codex")
+        }
+
+        Item { Layout.preferredHeight: Theme.s1 }
+        IconButton {
+            Layout.alignment: Qt.AlignHCenter
+            iconName: root.inWynxi ? "code" : "plus"
+            tooltip: root.inWynxi ? "New coding task" : "New chat"
+            shortcut: "Ctrl+N"
+            onClicked: root.inWynxi ? root.newModeTask("codex") : root.newTask()
         }
         IconButton {
             Layout.alignment: Qt.AlignHCenter
@@ -332,6 +440,5 @@ Item {
             iconName: "sliders"; tooltip: "Settings"; shortcut: "Ctrl+,"
             onClicked: root.openSettings()
         }
-
     }
 }
