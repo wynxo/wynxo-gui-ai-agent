@@ -1,13 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*!
-    One task in the sidebar.
-
-    Row actions stay hidden until hover or focus so the list reads as a list.
-    The text lane is a fixed width whether or not they are showing, so nothing
-    reflows under the pointer.
-*/
+/*! One compact thread in the sidebar. */
 AbstractButton {
     id: row
     property var entry: ({})
@@ -26,38 +20,36 @@ AbstractButton {
     background: Rectangle {
         radius: Theme.r2
         color: row.current ? Theme.surfaceSelected
-             : row.hovered || actionsShowing ? Theme.surfaceHover : "transparent"
-        border.width: row.visualFocus ? 2 : 0
+             : row.hovered || moreMenu.opened ? Theme.surfaceHover : "transparent"
+        border.width: row.visualFocus ? 1 : 0
         border.color: Theme.accentEdge
-        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
-        // Selection marker: shape as well as colour.
         Rectangle {
-            x: 0; anchors.verticalCenter: parent.verticalCenter
-            width: 2; height: row.current ? 14 : 0
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: 2
+            height: row.current ? 16 : 0
             radius: 1
             color: Theme.accent
-            Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.base; easing.type: Theme.easing } }
+            Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
         }
     }
 
-    readonly property bool actionsShowing: moreMenu.opened
-
     contentItem: Item {
         Icon {
-            id: glyph
+            id: pinIcon
+            visible: !!row.entry.pinned
             x: Theme.s2
             anchors.verticalCenter: parent.verticalCenter
-            name: row.entry.pinned ? "pin" : "chat"
-            ink: row.current ? Theme.accent : Theme.textMuted
-            width: 13; height: 13
+            name: "pin"
+            ink: Theme.textMuted
+            width: 11; height: 11
         }
         Text {
-            anchors.left: glyph.right
-            anchors.leftMargin: Theme.s2 + 2
+            anchors.left: parent.left
+            anchors.leftMargin: row.entry.pinned ? Theme.s2 + 16 : Theme.s3
             anchors.right: parent.right
-            // The lane never changes width, so hovering does not shift text.
-            anchors.rightMargin: 28
+            anchors.rightMargin: 30
             anchors.verticalCenter: parent.verticalCenter
             text: row.entry.title || ""
             elide: Text.ElideRight
@@ -71,11 +63,11 @@ AbstractButton {
     IconButton {
         id: more
         anchors.right: parent.right
-        anchors.rightMargin: 1
+        anchors.rightMargin: 2
         anchors.verticalCenter: parent.verticalCenter
-        width: 26; height: 26; iconSize: 13
+        width: 26; height: 26; iconSize: 12
         iconName: "moreVertical"
-        tooltip: "Task actions"
+        tooltip: "Thread actions"
         opacity: row.hovered || row.visualFocus || moreMenu.opened ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
@@ -104,7 +96,7 @@ AbstractButton {
 
     MouseArea {
         anchors.fill: parent
-        anchors.rightMargin: 28
+        anchors.rightMargin: 30
         acceptedButtons: Qt.RightButton
         cursorShape: Qt.PointingHandCursor
         onClicked: moreMenu.open()
