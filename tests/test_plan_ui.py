@@ -15,22 +15,32 @@ def test_plan_components_are_registered():
     assert "PlanTaskRow 1.0 PlanTaskRow.qml" in qmldir
 
 
-def test_plan_reads_real_persisted_conversation_steps():
+def test_plan_is_agent_authored_and_persisted_workspace_state():
     plan = source("PlanPanel.qml")
-    assert "bridge.messageModel" in plan
-    assert 'required property string kind' in plan
-    assert 'required property var steps' in plan
-    assert 'kind === "activity"' in plan
-    # Plan must not invent task text from the prompt: the stored activity rows
-    # reconstructed by Controller.Messages are its source of truth.
+    workspace = (ROOT / "wynxo" / "workspace.py").read_text(encoding="utf-8")
+    assert "bridge.planSteps" in plan
+    assert '"update_plan"' in workspace
+    assert "task_plan:" in workspace
+    assert "_saved_plan" in workspace
+    assert "_persist_plan" in workspace
     assert "derive_title" not in plan
-    assert "split(" not in plan
+    assert "bridge.messageModel" not in plan
 
 
-def test_plan_row_exposes_agent_execution_states():
+def test_plan_tool_is_low_risk_and_not_desktop_activity():
+    workspace = (ROOT / "wynxo" / "workspace.py").read_text(encoding="utf-8")
+    assert 'engine_module._NONVISUAL.add("update_plan")' in workspace
+    assert 'engine_module.LOW_RISK.add("update_plan")' in workspace
+    assert 'event.get("name") == "update_plan"' in workspace
+    assert "_strip_plan_history" in workspace
+
+
+def test_plan_row_exposes_agent_plan_states():
     row = source("PlanTaskRow.qml")
-    for label in ("Completed", "Running", "Waiting", "Failed", "Skipped", "Pending"):
+    for label in ("Completed", "Running", "Failed", "Skipped", "Pending"):
         assert label in row
+    for state in ("completed", "in_progress", "failed", "skipped", "pending"):
+        assert state in row
     assert "Theme.stateColor" in row
     assert "StatusDot" in row
 
@@ -42,7 +52,6 @@ def test_workspace_auto_opens_plan_only_for_multistep_runs():
     assert "steps.length >= 2" in dock
     assert "root.planSelected = true" in dock
     assert "root.dock.setVisible(true)" in dock
-    # Once the user picks a workspace surface, automatic selection is disabled.
     assert "if (!bridge || !root.dock || root.userSelectedWorkspaceTab)" in dock
 
 
