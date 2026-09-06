@@ -9,6 +9,8 @@ Button {
     property color activeTint: Theme.textPrimary
     property bool active: false
     property real iconSize: Math.round(width * 0.48)
+    // Small icons need a heavier stroke to keep the same optical weight.
+    property real iconWeight: iconSize <= 13 ? 2.1 : 1.6
     property string tooltip: ""
 
     implicitWidth: Theme.control
@@ -24,6 +26,7 @@ Button {
     contentItem: Icon {
         name: control.iconName
         ink: control.active || control.hovered ? control.activeTint : control.tint
+        weight: control.iconWeight
         width: control.iconSize; height: control.iconSize
         anchors.centerIn: parent
         Behavior on ink { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
