@@ -57,6 +57,13 @@ Item {
                     font.weight: index === root.currentIndex ? Font.DemiBold : Font.Medium
                     Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                 }
+                activeFocusOnTab: true
+                Keys.onReturnPressed: root.selected(modelData.id)
+                Keys.onSpacePressed: root.selected(modelData.id)
+                Rectangle {
+                    anchors.fill: parent; radius: Theme.r1; color: "transparent"
+                    border.width: parent.activeFocus ? 2 : 0; border.color: Theme.accent
+                }
                 Accessible.role: Accessible.RadioButton
                 Accessible.name: modelData.label
                 Accessible.checked: index === root.currentIndex

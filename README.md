@@ -40,6 +40,18 @@ set in the app's own type scale. Fenced code becomes a card with syntax
 highlighting, copy, and save. Reasoning from a thinking model collapses to a
 single line — *Thought for 8.2s* — instead of burying the answer.
 
+**Workspace navigation**
+The sidebar shows message previews, chat counts, and separate Chats, Pinned,
+and Archive views. Archive a conversation from its row menu and restore it
+later without losing its history. The footer gives quick access to the model
+picker, connection refresh, runtime summary, and command palette.
+
+Unsent text and attachments follow their conversation when switching chats.
+These drafts last for the current app session only; they are not saved after
+closing Wynxo. Search matches literal text, including Unicode, without treating
+`%` or `_` as wildcards. On smaller windows, the starter actions scroll within
+the welcome screen so the title bar and composer remain accessible.
+
 **Local context**
 Attach files, folders, images, the clipboard, a whole screen, a screen region
 you drag out, or the active window. Everything appears as a removable chip

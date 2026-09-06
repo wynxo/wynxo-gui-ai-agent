@@ -110,13 +110,15 @@ ApplicationWindow {
 
         AppSidebar {
             id: sidebar
-            Layout.preferredWidth: window.sidebarCollapsed ? 60 : 264
+            Layout.preferredWidth: window.sidebarCollapsed ? 60 : 284
             Layout.fillHeight: true
             visible: window.medium
             collapsed: window.sidebarCollapsed
             onCollapsedChanged: window.sidebarCollapsed = collapsed
             onNewChat: bridge && bridge.newTask()
             onOpenSettings: settings.show(0)
+            onOpenModels: models.open()
+            onOpenCommands: palette.open()
             onRenameRequested: function(id, title) { renameSheet.show(id, title); }
             onDeleteRequested: function(id, title) { deleteSheet.show(id, title); }
             Behavior on Layout.preferredWidth {
@@ -298,6 +300,8 @@ ApplicationWindow {
             anchors.fill: parent
             onNewChat: { bridge && bridge.newTask(); sidebarDrawer.close(); }
             onOpenSettings: { sidebarDrawer.close(); settings.show(0); }
+            onOpenModels: { sidebarDrawer.close(); models.open(); }
+            onOpenCommands: { sidebarDrawer.close(); palette.open(); }
             onRenameRequested: function(id, title) { sidebarDrawer.close(); renameSheet.show(id, title); }
             onDeleteRequested: function(id, title) { sidebarDrawer.close(); deleteSheet.show(id, title); }
         }

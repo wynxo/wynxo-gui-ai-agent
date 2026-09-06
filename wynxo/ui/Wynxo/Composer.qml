@@ -19,6 +19,12 @@ Item {
 
     implicitHeight: shell.height
 
+    Connections {
+        target: bridge
+        function onDraftChanged() { input.text = bridge.draftText; }
+    }
+    Component.onCompleted: if (bridge) input.text = bridge.draftText
+
     function focusInput() { input.forceActiveFocus(); }
     function insert(prompt) { input.text = prompt; input.cursorPosition = input.length; input.forceActiveFocus(); }
 
@@ -74,6 +80,7 @@ Item {
                 TextArea {
                     id: input
                     objectName: "composer"
+                    onTextChanged: bridge && bridge.setDraft(text)
                     placeholderText: bridge && bridge.desktopEnabled
                                      ? "Describe what to do on your screen…"
                                      : "Ask Wynxo anything…"
