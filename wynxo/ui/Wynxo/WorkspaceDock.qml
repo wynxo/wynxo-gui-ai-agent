@@ -95,9 +95,13 @@ Item {
             var steps = bridge.planSteps || [];
             // update_plan requires at least two steps. Publishing one therefore
             // means the agent has explicitly decided this is multi-step work.
-            if (steps.length >= 2 && !root.dock.visible) {
+            // Every WorkspaceDock instance selects Plan locally; the backend
+            // visibility flag is shared by the desktop dock and compact drawer,
+            // so using it as a selection guard could leave the visible instance
+            // stuck on Files when the hidden instance handled the signal first.
+            if (steps.length >= 2) {
                 root.planSelected = true;
-                root.dock.setVisible(true);
+                if (!root.dock.visible) root.dock.setVisible(true);
             }
         }
     }
