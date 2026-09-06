@@ -3,17 +3,14 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    The full catalogue: what is installed, what it costs on disk, what it can
-    do — and downloading or deleting it.
-
-    Switching models day to day does not come through here; that is the picker
-    in the composer. This is the place you come to when the answer is "install
-    something else".
+    Models belong to the configured Ollama server. That server may be this
+    computer, a homelab machine, or another trusted host; the UI never pretends
+    a remote catalogue or download lives on the Wynxo machine.
 */
 Sheet {
     id: sheet
     title: "Models"
-    subtitle: "Installed locally with Ollama"
+    subtitle: bridge ? "Installed on Ollama · " + bridge.endpointScopeLabel : "Installed on Ollama"
     width: Math.min(720, parent ? parent.width - Theme.s7 : 720)
     height: Math.min(600, parent ? parent.height - Theme.s7 : 600)
 
@@ -81,14 +78,12 @@ Sheet {
 
                 contentItem: RowLayout {
                     spacing: Theme.s3
-
                     Icon {
                         Layout.leftMargin: Theme.s3
                         name: modelData.selected ? "check" : "layers"
                         ink: modelData.selected ? Theme.accent : Theme.textMuted
                         Layout.preferredWidth: 16; Layout.preferredHeight: 16
                     }
-
                     ColumnLayout {
                         Layout.fillWidth: true
                         spacing: 2
@@ -118,7 +113,6 @@ Sheet {
                             elide: Text.ElideRight
                         }
                     }
-
                     Row {
                         Layout.rightMargin: Theme.s1
                         spacing: 0
@@ -135,13 +129,12 @@ Sheet {
                         }
                         IconButton {
                             width: 30; height: 30; iconSize: 14
-                            iconName: "trash"; tooltip: "Delete from disk"
+                            iconName: "trash"; tooltip: "Delete from Ollama server"
                             enabled: !modelData.selected
                             onClicked: { sheet.pendingDelete = entry.modelData.name; confirmDelete.show(); }
                         }
                     }
                 }
-
                 MouseArea {
                     anchors.fill: parent
                     anchors.rightMargin: 64
@@ -165,7 +158,7 @@ Sheet {
                     width: parent.width
                     text: bridge && bridge.online
                           ? "Download one below — gemma3:4b for chat, or a vision model such as qwen2.5vl:7b for screen control."
-                          : "Start Ollama with “ollama serve”, then refresh."
+                          : "Check the Ollama server address in Settings, make sure Ollama is listening there, then refresh."
                     color: Theme.textMuted
                     horizontalAlignment: Text.AlignHCenter
                     font.family: Theme.sansFamily; font.pixelSize: Theme.caption
@@ -208,7 +201,8 @@ Sheet {
                 Layout.fillWidth: true
                 text: bridge && bridge.pullProgress
                       ? bridge.pullProgress
-                      : "Downloads come straight from Ollama's registry to this computer."
+                      : bridge ? "Downloads go from Ollama's registry to your configured Ollama server · " + bridge.endpointScopeLabel
+                               : "Downloads go to the configured Ollama server."
                 color: Theme.textMuted
                 font.family: Theme.sansFamily; font.pixelSize: Theme.micro
                 elide: Text.ElideRight
@@ -219,13 +213,12 @@ Sheet {
     ConfirmSheet {
         id: confirmDelete
         title: "Delete this model?"
-        message: sheet.pendingDelete + " will be removed from disk. You can download it again later."
+        message: sheet.pendingDelete + " will be removed from the configured Ollama server. You can download it again later."
         confirmText: "Delete"
         confirmVariant: "danger"
         onConfirmed: if (bridge) bridge.deleteModel(sheet.pendingDelete)
     }
 
-    // A small inline badge, used only here.
     component Tag: Rectangle {
         property alias text: label.text
         property color tone: Theme.textMuted
