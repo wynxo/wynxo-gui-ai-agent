@@ -47,7 +47,7 @@ Popup {
             Text {
                 Layout.fillWidth: true
                 text: ["Wynxo",
-                       "Looking for Ollama",
+                       "Connect Ollama",
                        "Choose a model",
                        "Screen control"][root.step]
                 color: Theme.textPrimary
@@ -64,16 +64,16 @@ Popup {
             Layout.rightMargin: Theme.s6
             text: {
                 if (root.step === 0)
-                    return "A local AI workbench for the Linux desktop. It runs on your machine through Ollama — no account, no API key, nothing sent to a cloud service.";
+                    return "An Ollama-powered AI workbench for Linux. Run inference on this computer or point Wynxo at an Ollama server you control on your LAN, homelab, or trusted remote host. No Wynxo account or API key required.";
                 if (root.step === 1)
                     return bridge && bridge.online
-                           ? "Connected. " + bridge.models.length + " local model" + (bridge.models.length === 1 ? "" : "s") + " found at " + bridge.endpoint + "."
-                           : "Wynxo cannot reach Ollama yet. Start it with “ollama serve”, then try again. You can also change the address in Settings.";
+                           ? "Connected to " + bridge.endpoint + " · " + bridge.endpointScopeLabel + ". " + bridge.models.length + " model" + (bridge.models.length === 1 ? "" : "s") + " available."
+                           : "Wynxo cannot reach the configured Ollama server yet. Check that Ollama is listening there, then retry. You can change the address in Settings — LAN and remote HTTP(S) servers are supported.";
                 if (root.step === 2)
                     return bridge && bridge.models.length
                            ? "Wynxo will use " + bridge.model + ". Any chat model works; screen control also needs vision and tool calling."
-                           : "No models are installed yet. Open the model manager to download one — gemma3:4b is a good place to start.";
-                return "Wynxo can see your screen and use your mouse and keyboard, but only when you turn it on. It starts off every session. Escape stops it from the Wynxo window, and your desktop can give it a stop key that works from anywhere.";
+                           : "No models are installed on that Ollama server yet. Open the model manager to download one — gemma3:4b is a good place to start.";
+                return "Wynxo can see your screen and use your mouse and keyboard, but only when you turn it on. Those desktop actions still happen on this computer even if Ollama inference runs on another machine. Escape stops it from the Wynxo window, and your desktop can give it a stop key that works from anywhere.";
             }
             color: Theme.textSecondary
             font.family: Theme.sansFamily
