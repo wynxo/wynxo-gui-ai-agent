@@ -305,7 +305,7 @@ Item {
                     Accessible.name: "Add context"
                     onClicked: contextMenu.opened ? contextMenu.close() : contextMenu.open()
                     ToolTip.visible: hovered
-                    ToolTip.text: "Add context"
+                    ToolTip.text: "Add files, screenshots, or folders"
                     ToolTip.delay: 650
 
                     background: Rectangle {
@@ -315,22 +315,12 @@ Item {
                         border.color: Theme.accentEdge
                         Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                     }
-                    contentItem: Row {
-                        id: addRow
-                        anchors.centerIn: parent
-                        spacing: Theme.s2
+                    contentItem: Item {
                         Icon {
+                            anchors.centerIn: parent
                             name: "plus"
                             ink: addContext.hovered ? Theme.textPrimary : Theme.textSecondary
                             width: 15; height: 15
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-                        Text {
-                            visible: !root.homeMode && !root.tight
-                            text: "Context"
-                            color: addContext.hovered ? Theme.textPrimary : Theme.textSecondary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            anchors.verticalCenter: parent.verticalCenter
                         }
                     }
                     MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
