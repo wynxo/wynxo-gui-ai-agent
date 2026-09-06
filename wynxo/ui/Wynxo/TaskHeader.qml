@@ -21,6 +21,7 @@ Item {
     signal openAgentSettings()
     signal openShortcuts()
     signal clearRequested()
+    signal modeRequested(string mode)
 
     implicitHeight: Theme.compact ? 46 : 52
 
@@ -49,11 +50,7 @@ Item {
             { id: "work", label: "Work", detail: "Let Wynxo inspect and act on your desktop" },
         ]
         current: bridge && bridge.desktopEnabled ? "work" : "chat"
-        onSelected: function(value) {
-            if (!bridge || bridge.connecting) return;
-            var wantsWork = value === "work";
-            if (wantsWork !== bridge.desktopEnabled) bridge.toggleDesktop();
-        }
+        onSelected: function(value) { root.modeRequested(value); }
     }
 
     RowLayout {
