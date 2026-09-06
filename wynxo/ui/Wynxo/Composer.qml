@@ -51,10 +51,10 @@ Item {
         id: shell
         width: parent.width
         height: content.implicitHeight + Theme.s3 * 2
-        radius: Theme.r3
+        radius: Theme.r4
         color: Theme.surface
         border.width: 1
-        border.color: input.activeFocus ? Theme.accentEdge : Theme.borderSubtle
+        border.color: input.activeFocus ? Theme.accentEdge : Theme.borderStrong
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.base } }
 
         ColumnLayout {
@@ -116,7 +116,7 @@ Item {
             ScrollView {
                 Layout.fillWidth: true
                 Layout.minimumHeight: 46
-                Layout.preferredHeight: Math.min(root.maxHeight, Math.max(46, input.implicitHeight + 6))
+                Layout.preferredHeight: Math.min(root.maxHeight, Math.max(64, input.implicitHeight + 6))
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
@@ -127,7 +127,7 @@ Item {
                     onTextChanged: if (bridge) bridge.setDraft(text)
                     placeholderText: bridge && bridge.desktopEnabled
                                      ? "Describe what to do on your screen…"
-                                     : "Ask Wynxo to inspect, change, build or explain…"
+                                     : "Ask anything, or describe a task…"
                     placeholderTextColor: Theme.textMuted
                     color: Theme.textPrimary
                     selectionColor: Theme.accent
@@ -274,7 +274,7 @@ Item {
                     objectName: "sendButton"
                     iconName: bridge && bridge.busy ? "stop" : "arrow"
                     Layout.preferredWidth: Theme.control
-                    Layout.preferredHeight: Theme.controlSmall
+                    Layout.preferredHeight: Theme.control
                     iconSize: 15
                     tint: bridge && bridge.busy ? Theme.textPrimary
                         : sendButton.enabled ? Theme.onAccent : Theme.textMuted
@@ -284,7 +284,7 @@ Item {
                     enabled: (bridge && bridge.busy) || root.canSend
                     onClicked: bridge && bridge.busy ? bridge.stop() : root.send()
                     background: Rectangle {
-                        radius: Theme.r2
+                        radius: Theme.rPill
                         color: bridge && bridge.busy ? Theme.surfaceHover
                              : sendButton.enabled ? (sendButton.hovered ? Theme.accentHover : Theme.accent)
                              : Theme.surfaceRaised
@@ -315,7 +315,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             visible: parent.containsDrag
-            radius: Theme.r3
+            radius: Theme.r4
             color: Theme.accentMuted
             border.width: 1
             border.color: Theme.accentEdge

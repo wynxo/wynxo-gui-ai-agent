@@ -40,6 +40,10 @@ the left, the task itself on the right. Context, model, speed and run details
 each have exactly one home, and appear when you go to them rather than sitting
 on screen all day. Nothing rearranges itself because state changed.
 
+The charcoal interface uses softer conversation cards, a spacious composer,
+and a welcome screen with responsive task starters. Copy and edit actions stay
+visible beside your messages and remain reachable in narrow windows.
+
 **Conversation**
 Streamed replies with real Markdown: headings, tables, quotes, lists and links
 set in the app's own type scale. Fenced code becomes a card with syntax

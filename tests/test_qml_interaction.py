@@ -60,3 +60,9 @@ def test_a_constrained_chip_elides_instead_of_overflowing(measured):
     """An attachment name can be far wider than the room it is given."""
     assert measured["chip_implicit_width"] > measured["chip_width"]
     assert measured["chip_content_width"] <= measured["chip_width"]
+
+
+def test_long_messages_leave_room_for_accessible_actions(measured):
+    assert measured["message_height"] > 100
+    assert measured["message_actions_left"] >= 0
+    assert measured["message_actions_visible"] is True

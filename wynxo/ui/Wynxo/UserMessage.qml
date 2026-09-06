@@ -17,7 +17,7 @@ Item {
         id: card
         anchors.right: parent.right
         width: root.editing ? parent.width
-                            : Math.min(parent.width * 0.84, text.implicitWidth + Theme.s4 * 2)
+                            : Math.min(Math.max(0, parent.width - 68), text.implicitWidth + Theme.s4 * 2)
         height: root.editing ? editColumn.implicitHeight + Theme.s3 * 2
                              : text.implicitHeight + Theme.s3 * 2
         radius: Theme.r3
@@ -79,12 +79,15 @@ Item {
         }
     }
 
+    // Reserve room for actions even for long messages in narrow windows.
+    // Keep them reachable by keyboard without requiring pointer hover.
     Row {
+        objectName: "messageActions"
         anchors.right: card.left
         anchors.rightMargin: Theme.s2
         anchors.top: card.top
         spacing: 0
-        opacity: hover.hovered && !root.editing ? 1 : 0
+        opacity: !root.editing ? 1 : 0
         visible: opacity > 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
         IconButton {
@@ -97,5 +100,4 @@ Item {
         }
     }
 
-    HoverHandler { id: hover }
 }

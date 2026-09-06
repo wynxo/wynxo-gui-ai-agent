@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    A new task, oriented around work rather than a greeting.
+    A welcoming starting point with project context and useful next steps.
 
     It answers the two questions you actually have when you open a tool: where
     am I working, and what was I doing last. The starters are prompts, not
@@ -16,8 +16,8 @@ Item {
     readonly property var recent: {
         var groups = bridge ? bridge.taskGroups : [];
         var out = [];
-        for (var g = 0; g < groups.length && out.length < 4; g++)
-            for (var i = 0; i < groups[g].items.length && out.length < 4; i++)
+        for (var g = 0; g < groups.length && out.length < 3; g++)
+            for (var i = 0; i < groups[g].items.length && out.length < 3; i++)
                 out.push(groups[g].items[i]);
         return out;
     }
@@ -25,7 +25,7 @@ Item {
     Flickable {
         anchors.fill: parent
         contentWidth: width
-        contentHeight: body.implicitHeight + Theme.s7 * 2
+        contentHeight: body.y + body.implicitHeight + Theme.s6
         boundsBehavior: Flickable.StopAtBounds
         clip: true
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
@@ -37,9 +37,16 @@ Item {
             y: Math.max(Theme.s6, (root.height - implicitHeight) / 2.6)
             spacing: Theme.s5
 
+            Mark {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: 44; Layout.preferredHeight: 44
+            }
+
             Text {
                 Layout.fillWidth: true
-                text: "Start a task"
+                text: "What can we do together?"
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.WordWrap
                 color: Theme.textPrimary
                 font.family: Theme.sansFamily
                 font.pixelSize: Theme.display
@@ -47,32 +54,39 @@ Item {
                 font.letterSpacing: -0.6
             }
 
-            // ---------------------------------------------------- the place
-            Row {
+            Text {
                 Layout.fillWidth: true
+                text: "Think it through. Build something. Get things done."
+                horizontalAlignment: Text.AlignHCenter
+                color: Theme.textSecondary
+                font.family: Theme.sansFamily; font.pixelSize: Theme.body
+                wrapMode: Text.WordWrap
+            }
+
+            // ---------------------------------------------------- the place
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                Layout.maximumWidth: body.width
                 spacing: Theme.s2
                 SectionLabel {
                     text: "Working in"
-                    anchors.verticalCenter: parent.verticalCenter
                 }
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
                     visible: !!(bridge && bridge.projectPath)
                     text: bridge ? bridge.projectLabel : ""
                     color: Theme.textSecondary
                     font.family: Theme.monoFamily; font.pixelSize: Theme.caption
-                    width: Math.min(implicitWidth, body.width - 220)
+                    Layout.maximumWidth: Math.max(60, body.width - 220)
+                    Layout.fillWidth: true
                     elide: Text.ElideLeft
                 }
                 Text {
-                    anchors.verticalCenter: parent.verticalCenter
                     visible: !(bridge && bridge.projectPath)
                     text: "no folder chosen"
                     color: Theme.textMuted
                     font.family: Theme.sansFamily; font.pixelSize: Theme.label
                 }
                 WButton {
-                    anchors.verticalCenter: parent.verticalCenter
                     text: bridge && bridge.projectPath ? "Change" : "Choose a folder"
                     iconName: bridge && bridge.projectPath ? "" : "folder"
                     variant: "ghost"
@@ -151,19 +165,49 @@ Item {
                 Layout.topMargin: Theme.s1
                 spacing: Theme.s2
 
-                SectionLabel { Layout.fillWidth: true; text: "Or start from" }
+                SectionLabel { Layout.fillWidth: true; text: "Explore with Wynxo" }
 
-                Flow {
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: Theme.s2
+                    columns: body.width < 580 ? 2 : 4
+                    columnSpacing: Theme.s2
+                    rowSpacing: Theme.s2
                     Repeater {
                         model: bridge ? bridge.starters : []
-                        delegate: Chip {
+                        delegate: AbstractButton {
+                            id: starter
                             required property var modelData
-                            text: modelData.title
-                            iconName: modelData.icon
-                            implicitHeight: Theme.control
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            implicitHeight: 78
+                            hoverEnabled: true
+                            Accessible.name: modelData.title
                             onClicked: root.starterChosen(modelData.prompt)
+                            background: Rectangle {
+                                radius: Theme.r3
+                                color: starter.hovered ? Theme.surfaceHover : Theme.surface
+                                border.width: 1
+                                border.color: starter.visualFocus ? Theme.accent : Theme.borderSubtle
+                                Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                            }
+                            contentItem: ColumnLayout {
+                                spacing: Theme.s2
+                                Icon {
+                                    Layout.leftMargin: Theme.s3
+                                    name: modelData.icon
+                                    ink: Theme.textSecondary
+                                    Layout.preferredWidth: 17; Layout.preferredHeight: 17
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: Theme.s3; Layout.rightMargin: Theme.s3
+                                    text: modelData.title
+                                    color: Theme.textPrimary
+                                    font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                    elide: Text.ElideRight
+                                }
+                            }
+                            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
                         }
                     }
                 }

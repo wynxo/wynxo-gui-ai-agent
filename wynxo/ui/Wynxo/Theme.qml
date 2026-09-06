@@ -15,23 +15,23 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    // Near-black canvas, graphite surfaces, one step between each level. The
+    // Charcoal canvas, graphite surfaces, one step between each level. The
     // interface reads as one sheet of material with a few things raised on it.
-    readonly property color background:      "#0a0a0b"
-    readonly property color backgroundSoft:  "#0d0d0f"
-    readonly property color surface:         "#121214"
-    readonly property color surfaceRaised:   "#17171a"
-    readonly property color surfaceHover:    "#1e1e22"
-    readonly property color surfaceSelected: "#26262c"
+    readonly property color background:      "#171719"
+    readonly property color backgroundSoft:  "#131315"
+    readonly property color surface:         "#202023"
+    readonly property color surfaceRaised:   "#252529"
+    readonly property color surfaceHover:    "#2b2b30"
+    readonly property color surfaceSelected: "#323238"
     readonly property color surfaceSunken:   "#08080a"
     readonly property color scrim:           "#cc07070a"
 
-    readonly property color borderSubtle: "#202024"
-    readonly property color borderStrong: "#31313a"
+    readonly property color borderSubtle: "#333338"
+    readonly property color borderStrong: "#46464f"
 
     readonly property color textPrimary:   "#f4f2ee"
-    readonly property color textSecondary: "#a5a29b"
-    readonly property color textMuted:     "#8a8883"
+    readonly property color textSecondary: "#bbb8b1"
+    readonly property color textMuted:     "#aaa7a0"
     readonly property color textInverse:   "#101011"
 
     readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#e9e3d6"
@@ -70,11 +70,11 @@ QtObject {
     readonly property int s7: 32
     readonly property int s8: 48
 
-    // Small radii. A card should look cut, not inflated.
+    // Softer conversation surfaces, with tighter corners for small controls.
     readonly property int r1: 4
     readonly property int r2: 6
-    readonly property int r3: 10
-    readonly property int r4: 14
+    readonly property int r3: 16
+    readonly property int r4: 20
     readonly property int rPill: 999
 
     // Minimum hit target, kept at or above 32px even in compact density.
@@ -89,7 +89,7 @@ QtObject {
     readonly property string monoFamily: "JetBrains Mono"
     property string systemSans: "Inter"
 
-    readonly property int display: Math.round(26 * scale)
+    readonly property int display: Math.round(34 * scale)
     readonly property int title:   Math.round(19 * scale)
     readonly property int heading: Math.round(15 * scale)
     readonly property int body:    Math.round(14 * scale)

@@ -68,6 +68,11 @@ ApplicationWindow {
         checked: window.backing
         onSwitched: function(value) { window.toggleLog += value ? "on " : "off "; }
     }
+    UserMessage {
+        objectName: "longMessage"
+        x: 20; y: 400; width: 280
+        body: "A long message that should wrap without pushing the edit and copy controls outside the message row. ".repeat(8)
+    }
     property bool backing: false
 
     Chip {
@@ -152,6 +157,12 @@ def main() -> int:
     result["chip_width"] = float(chip.property("width"))
     result["chip_content_width"] = float(content.property("width")) if content else -1
     result["chip_implicit_width"] = float(chip.property("implicitWidth"))
+
+    message = window.findChild(QObject, "longMessage")
+    actions = window.findChild(QObject, "messageActions")
+    result["message_actions_left"] = float(actions.property("x"))
+    result["message_actions_visible"] = bool(actions.property("visible"))
+    result["message_height"] = float(message.property("implicitHeight"))
 
     print(json.dumps(result))
     return 0
