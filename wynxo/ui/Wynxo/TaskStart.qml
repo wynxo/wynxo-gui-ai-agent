@@ -2,60 +2,30 @@ import QtQuick
 import QtQuick.Layouts
 
 /*!
-    Quiet empty state sized to the shell's compact home slot. Project context
-    lives in the command box and sidebar, so this area stays deliberately terse.
+    The empty state is deliberately almost invisible. The workspace and project
+    already live in the sidebar/header; this surface only asks for the task.
 */
 Item {
     id: root
     signal starterChosen(string prompt)
 
     readonly property string mode: bridge ? bridge.taskMode : "chat"
-    readonly property string headline: mode === "work" ? "What should Wynxo do?"
+    readonly property string headline: mode === "work" ? "What should I do?"
                                       : mode === "codex" ? "What do you want to build?"
                                       : "What do you want to work on?"
+    readonly property string detail: mode === "codex" && !(bridge && bridge.projectPath)
+        ? "Open a project to let Wynxi inspect, edit, run and test it."
+        : mode === "work" && !(bridge && bridge.desktopEnabled)
+            ? "Screen control will be requested when Work starts."
+            : ""
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: root.headline
+    Accessible.name: root.headline + (root.detail ? ". " + root.detail : "")
 
     ColumnLayout {
         anchors.centerIn: parent
-        width: Math.min(parent.width, 640)
-        spacing: Theme.s1
-
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 22
-            spacing: Theme.s2
-            Mark {
-                Layout.preferredWidth: 18
-                Layout.preferredHeight: 18
-            }
-            Text {
-                text: mode === "codex" ? "Wynxi" : "Wynxo"
-                color: Theme.textSecondary
-                font.family: Theme.sansFamily
-                font.pixelSize: Theme.caption
-                font.weight: Font.DemiBold
-            }
-            Rectangle {
-                visible: mode !== "chat"
-                implicitWidth: modeLabel.implicitWidth + Theme.s2 * 2
-                implicitHeight: 20
-                radius: Theme.r1
-                color: Theme.surface
-                border.width: 1
-                border.color: Theme.borderSubtle
-                Text {
-                    id: modeLabel
-                    anchors.centerIn: parent
-                    text: mode === "codex" ? "Code" : "Work"
-                    color: Theme.textMuted
-                    font.family: Theme.monoFamily
-                    font.pixelSize: Theme.micro
-                }
-            }
-            Item { Layout.fillWidth: true }
-        }
+        width: Math.min(parent.width, 760)
+        spacing: Theme.s2
 
         Text {
             Layout.fillWidth: true
@@ -64,9 +34,19 @@ Item {
             elide: Text.ElideRight
             color: Theme.textPrimary
             font.family: Theme.sansFamily
-            font.pixelSize: root.width < 620 ? 24 : 27
+            font.pixelSize: root.width < 620 ? 25 : 29
             font.weight: Font.Medium
-            font.letterSpacing: -0.5
+            font.letterSpacing: -0.55
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: root.detail !== ""
+            text: root.detail
+            color: Theme.textMuted
+            font.family: Theme.sansFamily
+            font.pixelSize: Theme.caption
+            elide: Text.ElideRight
         }
     }
 }
