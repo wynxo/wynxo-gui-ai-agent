@@ -3,24 +3,14 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 /*!
-    A task-oriented view of the agent's real execution steps.
+    The agent's concise, persisted plan for the current task.
 
-    The model is the persisted conversation model. Reopening a task therefore
-    reconstructs this checklist from stored tool evidence instead of showing an
-    empty, session-only plan. Activity remains the detailed audit log.
+    These rows are authored through the agent's update_plan tool. They are not
+    inferred from prompt text and they are not the raw Activity audit trail.
 */
 Item {
     id: root
-    readonly property var messageModel: bridge ? bridge.messageModel : null
-
-    function hasPersistedSteps() {
-        if (!messageModel || messageModel.rowCount === undefined)
-            return bridge && bridge.activity && bridge.activity.length > 0;
-        // QAbstractListModel does not expose arbitrary role reads conveniently
-        // from JS. The ListView itself determines visibility per activity row;
-        // this fallback keeps the empty state sensible for a fresh task.
-        return bridge && (bridge.hasMessages || bridge.busy);
-    }
+    readonly property var rows: bridge ? bridge.planSteps : []
 
     ColumnLayout {
         anchors.fill: parent
@@ -29,11 +19,10 @@ Item {
         PanelHeader {
             Layout.fillWidth: true
             title: "Plan"
-            detail: bridge && bridge.busy ? bridge.status
-                  : bridge && bridge.taskId ? "Agent execution steps" : ""
+            detail: bridge ? bridge.planSummary : ""
 
             StatusDot {
-                visible: bridge && bridge.busy
+                visible: bridge && bridge.busy && root.rows.length > 0
                 width: 8; height: 8
                 tone: Theme.accent
                 pulsing: true
@@ -45,67 +34,36 @@ Item {
             objectName: "planRows"
             Layout.fillWidth: true
             Layout.fillHeight: true
-            model: root.messageModel
+            visible: root.rows.length > 0
+            model: root.rows
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             topMargin: Theme.s2
             bottomMargin: Theme.s4
-            cacheBuffer: 500
-            spacing: 0
+            cacheBuffer: 400
 
             ScrollBar.vertical: ScrollBar {
                 policy: ScrollBar.AsNeeded
                 contentItem: Rectangle { implicitWidth: 3; radius: 2; color: Theme.borderStrong }
             }
 
-            delegate: Item {
-                id: group
+            delegate: PlanTaskRow {
+                required property var modelData
                 required property int index
-                required property string kind
-                required property var steps
-
                 width: list.width
-                visible: kind === "activity" && steps && steps.length > 0
-                height: visible ? stepColumn.implicitHeight + Theme.s2 : 0
-
-                Column {
-                    id: stepColumn
-                    x: Theme.s1
-                    width: parent.width - Theme.s2
-
-                    Repeater {
-                        model: group.visible ? group.steps : []
-                        delegate: PlanTaskRow {
-                            required property var modelData
-                            required property int index
-                            width: stepColumn.width
-                            step: modelData
-                            number: index + 1
-                            last: index === group.steps.length - 1
-                        }
-                    }
-                }
+                step: modelData
+                number: index + 1
+                last: index === root.rows.length - 1
             }
         }
 
-        // This copy is deliberately modest: Plan is useful once the agent has
-        // real actions to show, not a pretend checklist generated from prose.
-        Item {
+        EmptyState {
             Layout.fillWidth: true
-            Layout.preferredHeight: 78
-            visible: bridge && !bridge.hasMessages && !bridge.busy
-
-            Row {
-                anchors.centerIn: parent
-                spacing: Theme.s2
-                Icon { name: "clipboard"; ink: Theme.textDisabled; width: 13; height: 13 }
-                Text {
-                    text: "Multi-step agent work appears here as it runs."
-                    color: Theme.textMuted
-                    font.family: Theme.sansFamily
-                    font.pixelSize: Theme.caption
-                }
-            }
+            Layout.fillHeight: true
+            visible: root.rows.length === 0
+            iconName: "clipboard"
+            title: "No plan yet"
+            detail: "For multi-step work, Wynxo will publish a short plan here and keep each step up to date as it works."
         }
     }
 }
