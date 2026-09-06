@@ -385,6 +385,11 @@ ApplicationWindow {
     // Preview hook: --snapshot drives the real UI into a named state so README
     // screenshots come from this renderer, not from a mock-up.
     property string previewOverlay: ""
+    property string previewWorkspaceMode: "chat"
+    onPreviewWorkspaceModeChanged: {
+        if (previewWorkspaceMode === "chat" || previewWorkspaceMode === "work" || previewWorkspaceMode === "codex")
+            WorkspaceMode.current = previewWorkspaceMode;
+    }
     function closeOverlays() {
         settings.close(); models.close(); palette.close(); shortcuts.close();
         onboarding.close(); quickBar.close();
