@@ -14,9 +14,9 @@ import QtQuick.Layouts
     below, because opening a file from a tree that then disappears is a worse
     tree.
 
-    Plan is a lightweight presentation surface over the conversation's real
-    agent actions. It may open itself once a run becomes genuinely multi-step,
-    but after the user chooses any workspace tab the dock stops moving itself.
+    Plan is the agent-authored execution outline for genuine multi-step work.
+    It can reveal itself once when the agent publishes a plan, but after the
+    user chooses any workspace surface the dock never moves itself again.
 */
 Item {
     id: root
@@ -76,12 +76,12 @@ Item {
 
     Connections {
         target: bridge
-        function onActivityChanged() {
+        function onPlanChanged() {
             if (!bridge || !root.dock || root.userSelectedWorkspaceTab)
                 return;
-            var steps = bridge.activity || [];
-            // One action is just activity. At two actions this has become a
-            // real multi-step task and Plan earns the right to appear once.
+            var steps = bridge.planSteps || [];
+            // update_plan requires at least two steps. Publishing one therefore
+            // means the agent has explicitly decided this is multi-step work.
             if (steps.length >= 2 && !root.dock.visible) {
                 root.planSelected = true;
                 root.dock.setVisible(true);
