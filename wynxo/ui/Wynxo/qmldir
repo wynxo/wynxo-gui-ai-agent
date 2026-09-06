@@ -5,6 +5,8 @@ singleton WorkspaceMode 1.0 WorkspaceMode.qml
 
 # Foundation
 Icon 1.0 Icon.qml
+EmptyState 1.0 EmptyState.qml
+PanelHeader 1.0 PanelHeader.qml
 Mark 1.0 Mark.qml
 Divider 1.0 Divider.qml
 SectionLabel 1.0 SectionLabel.qml
@@ -35,6 +37,7 @@ AssistantMessage 1.0 AssistantMessage.qml
 RunActivity 1.0 RunActivity.qml
 MessageList 1.0 MessageList.qml
 TaskStart 1.0 TaskStart.qml
+TaskStarters 1.0 TaskStarters.qml
 TaskView 1.0 TaskView.qml
 Composer 1.0 Composer.qml
 
@@ -45,6 +48,22 @@ TaskHeader 1.0 TaskHeader.qml
 ErrorBanner 1.0 ErrorBanner.qml
 QuickBarContent 1.0 QuickBarContent.qml
 RegionSelector 1.0 RegionSelector.qml
+
+# The workspace dock
+WorkspaceDock 1.0 WorkspaceDock.qml
+DockTabBar 1.0 DockTabBar.qml
+PlanPanel 1.0 PlanPanel.qml
+PlanTaskRow 1.0 PlanTaskRow.qml
+FileExplorer 1.0 FileExplorer.qml
+FileViewer 1.0 FileViewer.qml
+TerminalPanel 1.0 TerminalPanel.qml
+ChangesPanel 1.0 ChangesPanel.qml
+DiffViewer 1.0 DiffViewer.qml
+ContextPanel 1.0 ContextPanel.qml
+ActivityPanel 1.0 ActivityPanel.qml
+BrowserPanel 1.0 BrowserPanel.qml
+PreviewPanel 1.0 PreviewPanel.qml
+SystemPopover 1.0 SystemPopover.qml
 
 # Configuration and prompts
 ModelPicker 1.0 ModelPicker.qml

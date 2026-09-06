@@ -18,6 +18,7 @@ SCREENSHOT = "screenshot"
 WINDOW = "window"
 CLIPBOARD = "clipboard"
 FOLDER = "folder"
+WEB = "web"
 
 MAX_TEXT_BYTES = 512 * 1024
 MAX_IMAGE_BYTES = 24 * 1024 * 1024
@@ -65,6 +66,17 @@ def make(kind: str, title: str, **fields) -> dict:
     if attachment["text"] and not attachment["tokens"]:
         attachment["tokens"] = estimate_tokens(attachment["text"])
     return attachment
+
+
+def from_page(page: dict) -> dict:
+    """A page the user chose to hand over from the built-in browser."""
+    text = str(page.get("text", ""))
+    host = str(page.get("host", ""))
+    lines = text.count("\n") + 1 if text else 0
+    detail = host + (" · truncated" if page.get("truncated") else "")
+    return make(WEB, str(page.get("title") or host or "Web page"),
+                path=str(page.get("url", "")), text=text,
+                subtitle=detail or f"{lines} lines", mime="text/plain")
 
 
 def is_image_path(path: str | Path) -> bool:
@@ -249,6 +261,7 @@ def build_messages(attachments) -> list[dict]:
             header = {
                 FOLDER: f"Folder listing for {item.get('path') or item.get('title')}",
                 CLIPBOARD: "Clipboard contents",
+                WEB: f"Web page: {item.get('path') or item.get('title')}",
             }.get(kind, f"File: {item.get('path') or item.get('title')}")
             text_parts.append(f"----- {header} -----\n{item['text']}")
     if text_parts:

@@ -7,6 +7,12 @@ working in, describe a task, and watch it run: a model on your own machine
 answers, reads the files, folders and screenshots you attach, and — when you
 turn it on — sees your screen and drives your mouse and keyboard.
 
+Three columns: your tasks on the left, the conversation in the middle, and a
+workspace dock on the right holding the tools the work actually needs — a file
+tree and viewer, a real shell, the project's uncommitted changes and their
+diffs, what the model can currently see, the full run timeline, an embedded
+browser, and a preview.
+
 No browser, no Node.js, no account, no API key, no cloud AI. Ollama does the
 inference; Wynxo is the interface.
 
@@ -35,14 +41,31 @@ inference; Wynxo is the interface.
 ## What it does
 
 **The workspace**
-A chat-first layout: conversations and the optional workspace folder on the
-left, a centered composer for new chats, and a readable conversation on the
-right. One sidebar toggle stays visible across expanded, collapsed and narrow
-window layouts. Context and model controls live in the composer.
+Three columns. Tasks, the project and search on the left. The conversation in
+the middle, held to a reading measure rather than stretched to the window. The
+workspace dock on the right, behind a permanent icon rail: `Ctrl+Shift+B`
+opens and closes it, and each tool has its own key.
 
-The charcoal interface uses softer conversation cards, a spacious composer,
-and a welcome screen with responsive task starters. Copy and edit actions stay
-visible beside your messages and remain reachable in narrow windows.
+Both sides resize and remember where you left them. Below 1020px the dock
+becomes a drawer; below 900px the sidebar does too. Nothing in the app moves
+the panel you chose — the dock may suggest one before you have ever picked a
+tab, and after that it stays where you put it.
+
+**The workspace dock**
+
+| Panel | What it is |
+| --- | --- |
+| **Files** | The project tree, lazily expanded and virtualised, with a filter, and a viewer below it — code with line numbers, images, or an honest refusal for a binary. It saves, and marks unsaved edits. |
+| **Terminal** | A real PTY-backed shell in the project folder. `cd` persists, prompts appear, Ctrl+C reaches the foreground process, and ANSI colour survives. Command history on the arrow keys. |
+| **Changes** | Uncommitted work read from Git, per file, with `+`/`−` counts and a unified diff. Discarding a file's changes asks first. |
+| **Context** | Everything the model can currently see — the workspace, attachments, the open file, the browser page — with the context window meter. Removing something here removes the real thing. |
+| **Activity** | The whole session's run timeline: every step, its state, its timing, and its output when you open it. |
+| **Browser** | An embedded Qt WebEngine view with address, back, forward, reload and open-externally. Only `http` and `https`; pop-ups and permission requests are refused. The page reaches the model only when you attach it. |
+| **Preview** | Images and captures at full size. |
+
+Files the agent touches appear as a dot in the tree, and the Changes panel
+refreshes when a run finishes, so the dock reflects what just happened without
+being asked.
 
 **Conversation**
 Streamed replies with real Markdown: headings, tables, quotes, lists and links
@@ -95,10 +118,12 @@ what you are asking — no vision for the image you attached, no tool calling fo
 the desktop task, or a conversation that has nearly filled the context window.
 
 **The project**
-The workspace folder is available in the sidebar and below the composer,
-offered back to you as a recent-projects list, and used as the default working
-directory for commands so you do not have to repeat it every turn. Reveal it, open a
-terminal in it, or copy its path from the same menu.
+The workspace folder is named in the sidebar and in the header, offered back to
+you as a recent-projects list, and used as the default working directory for
+commands and for the dock's terminal, so you do not have to repeat it every
+turn. Its files, its shell and its uncommitted changes are all one keystroke
+away in the dock; reveal it, open an external terminal in it, or copy its path
+from the project menu.
 
 **Quick bar**
 A floating command bar (`Ctrl+Space`) that sits above other windows for a fast
@@ -120,10 +145,14 @@ Every image below is a real capture of the running Qt application, produced by
 
 | | |
 | --- | --- |
-| **A new task** — where you are, and what you were doing<br>![](docs/screenshots/01-new-task.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/05-context.png) |
-| **An agent run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) | **Permission** — the exact action, before it runs<br>![](docs/screenshots/04-permission.png) |
+| **A new task** — one question, then the openings<br>![](docs/screenshots/01-new-task.png) | **Files** — the project tree, and the file under it<br>![](docs/screenshots/19-dock-files.png) |
+| **Terminal** — a real shell, in the project folder<br>![](docs/screenshots/20-dock-terminal.png) | **Changes** — every uncommitted file, and its diff<br>![](docs/screenshots/21-dock-changes.png) |
+| **Browser** — a page beside the conversation<br>![](docs/screenshots/22-dock-browser.png) | **Context** — everything the model can see<br>![](docs/screenshots/23-dock-context.png) |
+| **Activity** — the whole run, not just the summary<br>![](docs/screenshots/24-dock-activity.png) | **System** — measured, or absent<br>![](docs/screenshots/25-system.png) |
+| **A coding run** — read, search, edit, then the command<br>![](docs/screenshots/26-code-run.png) | **A desktop run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) |
+| **Permission** — the exact command, and where it would run<br>![](docs/screenshots/04-permission.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/05-context.png) |
+| **Settings** — six sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
 | **Model** — switch and set the speed in one place<br>![](docs/screenshots/06-models.png) | **Model manager** — capabilities, size, favourites, downloads<br>![](docs/screenshots/07-model-manager.png) |
-| **Settings** — five sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
 | **Quick bar** — `Ctrl+Space`, above everything else<br>![](docs/screenshots/10-quick-bar.png) | **First run** — four steps, then out of your way<br>![](docs/screenshots/11-welcome.png) |
 
 ---
@@ -134,6 +163,12 @@ Every image below is a real capture of the running Qt application, produced by
 - Python 3.10 or newer, and Git
 - [Ollama](https://docs.ollama.com/linux) running locally
 - At least one local model — a vision + tools model for screen control
+
+Git is used for the Changes panel as well as for installing; without a
+repository that panel says so instead of guessing. The Browser panel needs Qt
+WebEngine, which ships with PySide6 on most systems — where it is missing, the
+panel explains itself and links still open in your system browser. Everything
+else works without either.
 
 ---
 
@@ -300,6 +335,20 @@ specific compositor and version.
 | Ctrl+Shift+V | Paste an image as context |
 | Ctrl+, | Settings |
 
+The workspace dock:
+
+| Shortcut | Action |
+| --- | --- |
+| Ctrl+Shift+B | Show or hide the dock panel |
+| Ctrl+Shift+E | Files |
+| Ctrl+` | Terminal |
+| Ctrl+Shift+G | Changes |
+| Ctrl+Shift+K | Context |
+| Ctrl+Shift+A | Activity |
+| Ctrl+Shift+W | Browser |
+| Ctrl+Shift+U | Preview |
+| Ctrl+L | Focus the address bar, while Browser is open |
+
 The same list is in the app under **Keyboard**, from the command palette or the
 overflow menu. These are window shortcuts, active while Wynxo has keyboard focus. Linux gives
 applications no portable way to claim a system-wide hotkey, so for a real
@@ -351,9 +400,16 @@ Layout:
 
 | Path | Responsibility |
 | --- | --- |
-| `wynxo/ui/Main.qml` | The application shell: two columns, shortcuts, overlays |
-| `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~40 components |
-| `wynxo/controller.py` | Qt bridge; owns UI, Ollama, task and desktop state |
+| `wynxo/ui/Main.qml` | The application shell: three columns, shortcuts, overlays |
+| `wynxo/ui/Wynxo/` | The QML module — `Theme.qml` plus ~55 components |
+| `wynxo/controller.py` | Qt bridge; owns conversation, Ollama, task and desktop state |
+| `wynxo/dock.py` | The workspace dock: tab state, file tree, terminal view, changes, context, activity, browser |
+| `wynxo/project_files.py` | The file tree, the viewer's reader and writer, and path containment |
+| `wynxo/terminal.py` | PTY shell sessions and the ANSI screen |
+| `wynxo/diffs.py` | Git status, line counts, unified diffs, reverting |
+| `wynxo/activity.py` | The run timeline and its state vocabulary |
+| `wynxo/browser.py` | Embedded-browser policy: availability, URL rules, page context |
+| `wynxo/system.py` | Measured runtime state for the System panel |
 | `wynxo/commands.py` | Local Bash execution, bounded output, timeout and cancellation |
 | `wynxo/engine.py` | Ollama transport and the bounded desktop tool loop |
 | `wynxo/desktop.py` | Wayland portal and X11 backends |
@@ -362,6 +418,10 @@ Layout:
 | `wynxo/storage.py` | SQLite history and settings |
 | `wynxo/notify.py` | Desktop notifications and system integration |
 | `wynxo/demo.py` | Fixed state for previews and screenshots |
+
+The dock is deliberately not part of `controller.py`: the controller owns the
+conversation, the dock owns the tools, and they meet at a handful of calls —
+the project folder, the run timeline, and the attachment list.
 
 `Theme.qml` is the only place colour, spacing, radius, type and motion are
 defined; a test fails the build if a component hard-codes a colour. The
@@ -385,7 +445,17 @@ To see the interface without any real history, Ollama, or desktop access:
 .venv/bin/python -m wynxo --ui-preview run          # a finished agent run
 .venv/bin/python -m wynxo --ui-preview desktop      # mid-run, waiting for approval
 .venv/bin/python -m wynxo --ui-preview welcome      # first run
+.venv/bin/python -m wynxo --ui-preview dock-files      # the file tree and viewer
+.venv/bin/python -m wynxo --ui-preview dock-terminal   # a live shell
+.venv/bin/python -m wynxo --ui-preview dock-changes    # Git changes and a diff
+.venv/bin/python -m wynxo --ui-preview dock-browser    # the embedded browser
+.venv/bin/python -m wynxo --ui-preview dock-context    # what the model can see
+.venv/bin/python -m wynxo --ui-preview dock-activity   # the run timeline
+.venv/bin/python -m wynxo --ui-preview codex-run       # a coding turn, start to finish
 ```
+
+The dock scenes point at this checkout, so Files, Changes and Terminal show a
+real tree, a real diff and a real shell rather than invented rows.
 
 To regenerate every screenshot in `docs/screenshots/` — real captures of the
 real renderer, never mock-ups:
@@ -402,7 +472,10 @@ Tests cover a full turn streamed from a real local HTTP server through the real
 controller into the message model, desktop action validation with test
 backends, permission modes and the approval gate, message segmentation and
 rendering, attachments and region cropping, conversation storage and search,
-and install/uninstall transactions. They do not establish end-to-end reliability of an arbitrary
+install/uninstall transactions, and the workspace dock: path containment for
+the file tree and viewer, a real PTY shell (`cd` persistence, interrupt, ANSI
+parsing), Git status and diff parsing against a real repository, the URL rules
+the browser will and will not open, and the dock's own state rules. They do not establish end-to-end reliability of an arbitrary
 model or compositor — a real screenshot → model → drawing task still depends on
 your installed model, your Ollama server, the target application, and your
 desktop's permissions.

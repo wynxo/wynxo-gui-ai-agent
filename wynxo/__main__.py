@@ -112,6 +112,12 @@ def main():
     if args.quick and _existing_instance("quick"):
         return 0
 
+    from . import browser as browser_policy
+    # Qt WebEngine must be initialised before the QApplication is constructed.
+    # A machine without the module simply gets a Browser panel that explains
+    # itself; nothing else in Wynxo depends on it.
+    browser_policy.initialize()
+
     from PySide6.QtCore import QTimer, QUrl
     from PySide6.QtGui import QFont, QIcon
     from PySide6.QtQml import QQmlApplicationEngine

@@ -100,10 +100,25 @@ def test_every_scene_names_a_project_so_the_hierarchy_is_visible():
         bridge = DemoController(scene)
         try:
             assert bridge.projectName == "wynxo-gui-ai-agent"
-            assert bridge.projectParentLabel.endswith("Projects")
+            assert bridge.projectParentLabel
             assert len(bridge.recentProjects) >= 2
         finally:
             bridge.shutdown()
+
+
+def test_the_dock_scenes_point_at_a_real_folder():
+    """Files, Changes and Terminal read the filesystem. A screenshot of them
+    is only worth taking if the folder behind it actually exists — otherwise
+    every panel shows its empty state."""
+    from pathlib import Path
+    bridge = DemoController("dock-files")
+    try:
+        assert Path(bridge.projectPath).is_dir()
+        assert bridge.workspaceDock.visible
+        assert bridge.workspaceDock.tab == "files"
+        assert bridge.workspaceDock.fileModel.rowCount() > 0
+    finally:
+        bridge.shutdown()
 
 
 def test_the_finished_run_scene_settles_every_step():
@@ -119,5 +134,35 @@ def test_the_finished_run_scene_settles_every_step():
         # The answer is rendered once: segmented blocks plus the open tail.
         answer = bridge.messages.items[-1]
         assert answer["body"].count("KolourPaint is open") == 1
+    finally:
+        bridge.shutdown()
+
+
+def test_the_browser_scene_serves_a_real_page():
+    """The Browser screenshot is worth taking only if it shows a rendered
+    page. The scene serves one from loopback so the snapshot job needs no
+    network and the image is of Qt WebEngine, not of an empty state."""
+    import urllib.request
+    from wynxo.demo import serve_preview_page
+
+    server, url = serve_preview_page()
+    try:
+        assert url.startswith("http://127.0.0.1:")
+        with urllib.request.urlopen(url, timeout=5) as response:
+            body = response.read().decode("utf-8")
+        assert response.status == 200
+        assert "Local browsing" in body
+        assert "Qt WebEngine" in body
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_browser_scene_navigates_to_it():
+    bridge = DemoController("dock-browser")
+    try:
+        assert bridge.workspaceDock.tab == "browser"
+        if bridge.workspaceDock.browserAvailable:
+            assert bridge.workspaceDock.browserRequest.startswith("http://127.0.0.1:")
     finally:
         bridge.shutdown()

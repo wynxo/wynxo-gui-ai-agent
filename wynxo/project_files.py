@@ -1,0 +1,324 @@
+"""The workspace file tree, and reading a single file for the viewer.
+
+Nothing here touches Qt. The dock owns the models; this module owns the rules:
+what counts as a project file, how big a file the viewer will open, and — the
+part that matters most — that every path handed back to the UI is provably
+inside the project the user chose.
+"""
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+# A directory listing is cheap, but a node_modules with 40 000 entries is not.
+MAX_ENTRIES = 4000
+# The viewer is a viewer, not an editor for a 400 MB core dump.
+MAX_TEXT_BYTES = 1_500_000
+MAX_IMAGE_BYTES = 12_000_000
+
+# Folders nobody opens a project to read. Hidden entries are filtered
+# separately, so `.github` is still reachable when hidden files are shown.
+NOISE_DIRECTORIES = frozenset({
+    "node_modules", "__pycache__", ".git", ".hg", ".svn", ".mypy_cache",
+    ".pytest_cache", ".ruff_cache", ".tox", ".venv", "venv", "env",
+    ".gradle", ".idea", ".vscode", "dist", "build", "target", ".next",
+    ".cache", ".DS_Store", "site-packages", ".eggs",
+})
+
+# Extension -> the highlighter language name used by wynxo.markdown.
+LANGUAGES = {
+    ".py": "python", ".pyi": "python", ".qml": "qml", ".js": "javascript",
+    ".mjs": "javascript", ".cjs": "javascript", ".jsx": "javascript",
+    ".ts": "typescript", ".tsx": "typescript", ".json": "json",
+    ".sh": "bash", ".bash": "bash", ".zsh": "bash", ".fish": "bash",
+    ".c": "c", ".h": "c", ".cpp": "cpp", ".cc": "cpp", ".hpp": "cpp",
+    ".rs": "rust", ".go": "go", ".rb": "ruby", ".java": "java",
+    ".kt": "kotlin", ".swift": "swift", ".php": "php", ".lua": "lua",
+    ".sql": "sql", ".html": "html", ".htm": "html", ".xml": "xml",
+    ".css": "css", ".scss": "css", ".yml": "yaml", ".yaml": "yaml",
+    ".toml": "toml", ".ini": "ini", ".cfg": "ini", ".md": "markdown",
+    ".markdown": "markdown", ".rst": "markdown", ".txt": "", ".csv": "",
+    ".desktop": "ini", ".gitignore": "", ".dockerfile": "bash",
+}
+
+IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".svg", ".ico"})
+
+# A file type deserves a shape in the tree, not a different icon family per
+# language. Five groups is enough to scan a directory quickly.
+KIND_BY_SUFFIX = {
+    **{suffix: "code" for suffix in (
+        ".py", ".pyi", ".qml", ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx",
+        ".c", ".h", ".cpp", ".cc", ".hpp", ".rs", ".go", ".rb", ".java",
+        ".kt", ".swift", ".php", ".lua", ".sh", ".bash", ".zsh", ".sql")},
+    **{suffix: "config" for suffix in (
+        ".json", ".yml", ".yaml", ".toml", ".ini", ".cfg", ".conf",
+        ".env", ".lock", ".desktop", ".xml")},
+    **{suffix: "doc" for suffix in (".md", ".markdown", ".rst", ".txt", ".csv", ".pdf")},
+    **{suffix: "image" for suffix in IMAGE_SUFFIXES},
+}
+
+
+def language_for(path) -> str:
+    """The highlighter language for a path, or '' when there isn't one."""
+    name = Path(path).name
+    suffix = Path(path).suffix.lower()
+    if name in {"Dockerfile", "Makefile"}:
+        return "bash" if name == "Dockerfile" else ""
+    if name.startswith(".") and not suffix:
+        return ""
+    return LANGUAGES.get(suffix, "")
+
+
+def kind_for(path, is_dir: bool = False) -> str:
+    if is_dir:
+        return "folder"
+    return KIND_BY_SUFFIX.get(Path(path).suffix.lower(), "file")
+
+
+def human_size(count) -> str:
+    try:
+        size = float(count)
+    except (TypeError, ValueError):
+        return ""
+    if size < 1024:
+        return f"{int(size)} B"
+    for unit in ("KB", "MB", "GB", "TB"):
+        size /= 1024
+        if size < 1024 or unit == "TB":
+            return f"{size:.0f} {unit}" if size >= 100 else f"{size:.1f} {unit}"
+    return ""
+
+
+def explain(error: Exception, what: str = "That file") -> str:
+    """An OSError as a sentence.
+
+    `[Errno 2] No such file or directory: '/home/you/…'` tells the user the
+    thing they already clicked on is gone, in the least useful possible words.
+    """
+    if isinstance(error, ValueError):
+        return str(error)
+    number = getattr(error, "errno", None)
+    if number == 2:
+        return f"{what} is no longer there."
+    if number == 13:
+        return f"{what} cannot be read — check its permissions."
+    if number == 21:
+        return f"{what} is a folder."
+    if number == 40:
+        return f"{what} is behind a loop of symbolic links."
+    reason = getattr(error, "strerror", None) or str(error)
+    return f"{what} could not be read: {reason}."
+
+
+def resolve_within(root, candidate) -> Path:
+    """Resolve `candidate` and prove it is inside `root`.
+
+    Every path the dock hands to the UI, and every path the UI hands back,
+    goes through here. Symlinks are resolved *before* the check, so a link
+    pointing out of the project is rejected rather than followed.
+    """
+    base = Path(root).expanduser().resolve(strict=True)
+    target = Path(candidate).expanduser()
+    if not target.is_absolute():
+        target = base / target
+    target = target.resolve(strict=False)
+    if target != base and base not in target.parents:
+        raise ValueError("That path is outside the project folder")
+    return target
+
+
+def _sort_key(entry: os.DirEntry) -> tuple:
+    # Directories first, then case-insensitive name. Dotfiles sink within
+    # their own group so the interesting files are at the top.
+    try:
+        is_dir = entry.is_dir(follow_symlinks=False)
+    except OSError:
+        is_dir = False
+    name = entry.name
+    return (0 if is_dir else 1, 0 if not name.startswith(".") else 1, name.casefold())
+
+
+def list_directory(root, directory=None, show_hidden: bool = False) -> list[dict]:
+    """One level of the tree, sorted and bounded.
+
+    Returns plain dicts so the caller can hand them straight to QML.
+    """
+    base = Path(root).expanduser().resolve(strict=True)
+    target = resolve_within(base, directory) if directory else base
+    if not target.is_dir():
+        raise ValueError("That path is not a folder")
+
+    entries: list[dict] = []
+    truncated = False
+    with os.scandir(target) as scan:
+        found = []
+        for entry in scan:
+            if len(found) >= MAX_ENTRIES:
+                truncated = True
+                break
+            found.append(entry)
+
+    for entry in sorted(found, key=_sort_key):
+        name = entry.name
+        if not show_hidden and name.startswith("."):
+            continue
+        try:
+            is_dir = entry.is_dir(follow_symlinks=False)
+        except OSError:
+            continue
+        if is_dir and name in NOISE_DIRECTORIES:
+            continue
+        try:
+            info = entry.stat(follow_symlinks=False)
+            size = 0 if is_dir else info.st_size
+        except OSError:
+            size = 0
+        entries.append({
+            "name": name,
+            "path": str(target / name),
+            "isDir": is_dir,
+            "kind": kind_for(name, is_dir),
+            "size": int(size),
+            "sizeLabel": "" if is_dir else human_size(size),
+            "link": entry.is_symlink(),
+        })
+    if truncated:
+        entries.append({"name": f"…and more than {MAX_ENTRIES} entries", "path": "",
+                        "isDir": False, "kind": "file", "size": 0,
+                        "sizeLabel": "", "link": False, "placeholder": True})
+    return entries
+
+
+def search_tree(root, needle: str, limit: int = 200, show_hidden: bool = False) -> list[dict]:
+    """Find files by name anywhere in the project, breadth-first and bounded."""
+    needle = str(needle or "").strip().casefold()
+    if not needle:
+        return []
+    base = Path(root).expanduser().resolve(strict=True)
+    results: list[dict] = []
+    queue: list[Path] = [base]
+    visited = 0
+    while queue and len(results) < limit and visited < 20000:
+        current = queue.pop(0)
+        try:
+            with os.scandir(current) as scan:
+                children = list(scan)
+        except OSError:
+            continue
+        for entry in sorted(children, key=_sort_key):
+            visited += 1
+            if visited > 20000:
+                break
+            name = entry.name
+            if not show_hidden and name.startswith("."):
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            if is_dir:
+                if name not in NOISE_DIRECTORIES:
+                    queue.append(Path(entry.path))
+                continue
+            if needle in name.casefold():
+                try:
+                    size = entry.stat(follow_symlinks=False).st_size
+                except OSError:
+                    size = 0
+                results.append({
+                    "name": name,
+                    "path": entry.path,
+                    "relative": str(Path(entry.path).relative_to(base)),
+                    "isDir": False,
+                    "kind": kind_for(name),
+                    "size": int(size),
+                    "sizeLabel": human_size(size),
+                    "link": False,
+                })
+                if len(results) >= limit:
+                    break
+    return results
+
+
+def _looks_binary(sample: bytes) -> bool:
+    if b"\0" in sample:
+        return True
+    if not sample:
+        return False
+    # Anything that is mostly non-text bytes is not worth rendering as text.
+    printable = sum(1 for byte in sample if 32 <= byte < 127 or byte in (9, 10, 13))
+    return printable / len(sample) < 0.75
+
+
+def read_file(root, path, max_bytes: int = MAX_TEXT_BYTES) -> dict:
+    """Read one file for the viewer, classifying it rather than guessing."""
+    target = resolve_within(root, path)
+    if target.is_dir():
+        raise ValueError("That path is a folder")
+    info = target.stat()
+    size = info.st_size
+    suffix = target.suffix.lower()
+    result = {
+        "path": str(target),
+        "name": target.name,
+        "size": int(size),
+        "sizeLabel": human_size(size),
+        "kind": kind_for(target.name),
+        "language": language_for(target),
+        "text": "",
+        "lines": 0,
+        "truncated": False,
+        "binary": False,
+        "image": "",
+        "error": "",
+    }
+
+    if suffix in IMAGE_SUFFIXES and suffix != ".svg":
+        if size > MAX_IMAGE_BYTES:
+            result["error"] = f"Image is {human_size(size)}; too large to preview"
+            return result
+        import base64
+        result["image"] = base64.b64encode(target.read_bytes()).decode("ascii")
+        result["imageFormat"] = suffix.lstrip(".")
+        return result
+
+    if size > max_bytes:
+        result["truncated"] = True
+    with target.open("rb") as handle:
+        raw = handle.read(min(size, max_bytes) + 1)
+    if _looks_binary(raw[:8192]):
+        result["binary"] = True
+        result["error"] = f"Binary file · {human_size(size)}"
+        return result
+    text = raw[:max_bytes].decode("utf-8", "replace")
+    if result["truncated"]:
+        # Never cut mid-line: the viewer numbers lines.
+        cut = text.rfind("\n")
+        if cut > 0:
+            text = text[:cut]
+    result["text"] = text
+    result["lines"] = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+    return result
+
+
+def write_file(root, path, text: str) -> dict:
+    """Save the viewer's buffer back, atomically, inside the project only."""
+    target = resolve_within(root, path)
+    if target.is_dir():
+        raise ValueError("That path is a folder")
+    if not target.exists():
+        raise ValueError("That file no longer exists")
+    payload = str(text)
+    temporary = target.with_name(target.name + ".wynxo-tmp")
+    try:
+        temporary.write_text(payload, encoding="utf-8")
+        os.replace(temporary, target)
+    finally:
+        if temporary.exists():
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+    info = target.stat()
+    return {"path": str(target), "size": int(info.st_size),
+            "sizeLabel": human_size(info.st_size)}

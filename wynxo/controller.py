@@ -22,7 +22,9 @@ from PySide6.QtGui import QColor, QGuiApplication
 from . import context as ctx
 from . import markdown as md
 from . import notify
+from . import system as system_info
 from .desktop import DesktopController, SessionTokens
+from .dock import DockController
 from .engine import (
     ASK, AUTO, PERMISSION_LABELS, PERMISSION_MODES, SAFE, AgentEngine, OllamaClient,
     action_summary,
@@ -401,6 +403,9 @@ class Controller(QObject):
         self.store = store or Store()
         self.desktop = desktop or DesktopController(tokens=_StoredTokens(self.store))
         self.messages = Messages(self)
+        self.dock = DockController(store=self.store, parent=self)
+        self.dock.toast.connect(self.toast)
+        self.dock.contextChanged.connect(self.changed)
         setting = self.store.get_setting
         self._endpoint = setting("endpoint", "http://127.0.0.1:11434")
         self._model = setting("model", "qwen3.8:27b")
@@ -490,6 +495,10 @@ class Controller(QObject):
         self._code_palette = dict(md.DEFAULT_PALETTE)
         self._html_palette = dict(md.HTML_PALETTE)
         self._history_tokens = 0
+        self._resident_models: list[dict] = []
+        self.attachmentsChanged.connect(self.dock.refresh_context)
+        if self._working_directory:
+            self.dock.set_project(self._working_directory)
         if autoconnect:
             self.refreshModels()
 
@@ -514,6 +523,44 @@ class Controller(QObject):
     @Property(QObject, constant=True)
     def messageModel(self):
         return self.messages
+
+    @Property(QObject, constant=True)
+    def workspaceDock(self):
+        return self.dock
+
+    # ------------------------------------------------------- measured state
+    # The System panel reports only what this machine can actually answer.
+    # A metric that cannot be read is absent, never zero-filled.
+    @Property("QVariantMap", notify=changed)
+    def systemState(self):
+        memory = system_info.system_memory()
+        gpu = system_info.gpu_memory()
+        process = system_info.process_memory()
+        state = {
+            "online": self._online,
+            "connectionState": self.connectionState,
+            "endpoint": self._endpoint,
+            "model": self._model,
+            "busy": self._busy,
+            "agentState": ("Waiting for you" if self._pending_permission is not None
+                           else "Working" if self._busy else "Idle"),
+            "project": Path(self._working_directory).name if self._working_directory else "",
+            "contextUsed": self.contextUsed,
+            "contextTotal": self._num_ctx,
+            "contextLabel": self.contextSummary,
+            "resident": self._resident_models,
+            "hasProcessMemory": process > 0,
+            "processMemory": system_info.human_bytes(process),
+            "hasMemory": bool(memory),
+            "memoryUsed": system_info.human_bytes(memory.get("used", 0)) if memory else "",
+            "memoryTotal": system_info.human_bytes(memory.get("total", 0)) if memory else "",
+            "memoryFraction": (memory.get("used", 0) / memory["total"]) if memory.get("total") else 0.0,
+            "hasGpu": bool(gpu),
+            "gpuUsed": system_info.human_bytes(gpu.get("used", 0)) if gpu else "",
+            "gpuTotal": system_info.human_bytes(gpu.get("total", 0)) if gpu else "",
+            "gpuFraction": (gpu.get("used", 0) / gpu["total"]) if gpu.get("total") else 0.0,
+        }
+        return state
 
     @Property(str, notify=changed)
     def endpoint(self): return self._endpoint
@@ -657,6 +704,17 @@ class Controller(QObject):
     @Property(str, notify=permissionChanged)
     def permissionRisk(self):
         return (self._pending_permission or {}).get("risk", "normal")
+    @Property(str, notify=permissionChanged)
+    def permissionTool(self):
+        return (self._pending_permission or {}).get("tool", "")
+    @Property(str, notify=permissionChanged)
+    def permissionCommand(self):
+        """The exact command line, when the action is one. Otherwise empty."""
+        return (self._pending_permission or {}).get("command", "")
+    @Property(str, notify=permissionChanged)
+    def permissionDirectory(self):
+        directory = (self._pending_permission or {}).get("directory", "")
+        return ctx.working_directory_label(directory) if directory else ""
 
     @Property(str, notify=changed)
     def taskTitle(self): return self._task_title
@@ -758,9 +816,13 @@ class Controller(QObject):
         return min(1.0, self.contextUsed / float(self._num_ctx)) if self._num_ctx else 0.0
     @Property(str, notify=changed)
     def contextSummary(self):
+        return f"{self.contextCompact} context"
+    @Property(str, notify=changed)
+    def contextCompact(self):
+        """The same reading without the trailing word, for a labelled surface."""
         used = self.contextUsed
-        return f"{used / 1000:.1f}K / {self._num_ctx // 1024}K context" if used > 999 else \
-               f"{used} / {self._num_ctx // 1024}K context"
+        total = f"{self._num_ctx // 1024}K"
+        return f"{used / 1000:.1f}K / {total}" if used > 999 else f"{used} / {total}"
 
     def _last_turn_used_tools(self):
         for message in reversed(self._history):
@@ -957,17 +1019,18 @@ class Controller(QObject):
             client = OllamaClient(endpoint)
             models = client.models()
             try:
-                loaded = client.running()
+                resident = client.resident()
             except Exception:
-                loaded = []  # /api/ps is a nicety; never fail a connection over it.
-            return models, loaded
+                resident = []  # /api/ps is a nicety; never fail a connection over it.
+            return models, resident
 
         def done(payload):
-            models, loaded = payload
+            models, resident = payload
             self._probe_active = False
             self._models = [m["name"] for m in models]
             self._catalog = [self._catalog_entry(m) for m in models]
-            self._loaded_models = loaded
+            self._resident_models = system_info.resident_models(resident)
+            self._loaded_models = [entry["name"] for entry in self._resident_models]
             self._online = True
             if self._model not in self._models and self._models:
                 preferred = next((m for m in self._favorites if m in self._models), None)
@@ -1416,6 +1479,14 @@ class Controller(QObject):
             self.attachmentsChanged.emit()
             self.changed.emit()
 
+    def attach_web_page(self, page: dict) -> None:
+        """Attach the page the browser is showing, on the user's request."""
+        if not page or not page.get("text"):
+            self.toast.emit("There is no readable text on that page yet.")
+            return
+        self._add_attachment(ctx.from_page(page))
+        self.toast.emit(f"Attached {page.get('title') or 'the page'}")
+
     @Slot()
     def clearAttachments(self):
         if self._attachments:
@@ -1597,6 +1668,12 @@ class Controller(QObject):
             self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
             del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
             self.store.set_setting("recent_projects", self._recent_projects)
+        self.dock.set_project(path)
+        if path:
+            # Opening a project is the one moment where Files is obviously the
+            # useful panel. It is still only a suggestion: a tab the user has
+            # chosen by hand is never replaced.
+            self.dock.suggest("files")
         self.changed.emit()
 
     @Slot()
@@ -1655,6 +1732,7 @@ class Controller(QObject):
         self._session_auto = False
         self._run_started = time.monotonic()
         self._run_metrics = _blank_metrics()
+        self.dock.begin_turn(self._task_title if self._task_title != "New task" else "Turn")
         self.activityChanged.emit()
         self._refresh_tasks()
         self.changed.emit()
@@ -1717,6 +1795,11 @@ class Controller(QObject):
         self._pending_permission = {
             "tool": name, "risk": risk, "summary": action_summary(name, args),
             "detail": json.dumps(args, ensure_ascii=False) if args else "",
+            # A command reads differently depending on where it runs, so the
+            # prompt states the directory rather than making you infer it.
+            "command": str(args.get("command", "")) if name == "run_command" else "",
+            "directory": (str(args.get("cwd") or self._working_directory or Path.home())
+                          if name == "run_command" else ""),
         }
         self.permissionChanged.emit()
         allowed = self._permission_event.wait(self.PERMISSION_TIMEOUT)
@@ -1789,6 +1872,9 @@ class Controller(QObject):
             self.messages.append_activity(step)
             self._activity = (self._activity + [step])[-60:]
             self._status = summary or label
+            self.dock.record(step)
+            if name == "run_command":
+                self.dock.suggest("terminal")
             self.activityChanged.emit()
             self.scrollToEnd.emit()
         elif kind == "tool_end":
@@ -1804,9 +1890,12 @@ class Controller(QObject):
                 output = f"Captured {result['width']} × {result['height']} pixels"
             patch = {"state": state, "ms": int(event.get("ms", 0) or 0), "output": output[:32000]}
             self.messages.update_last_step(**patch)
+            self.dock.record_update(**patch)
             if self._activity:
                 self._activity[-1] = {**self._activity[-1], **patch}
                 self.activityChanged.emit()
+            if event.get("name") in ("run_command", "write_file", "edit_file"):
+                self.dock.refreshChanges()
         elif kind == "metrics":
             rate = event.get("tokens_per_second", 0)
             previous = self._run_metrics
@@ -1836,6 +1925,9 @@ class Controller(QObject):
         self._run_job = None
         self._session_auto = False
         self.messages.mark_idle()
+        self.dock.settle_turn("cancelled" if stopped else ("failed" if self._error else "done"))
+        if self._working_directory:
+            self.dock.refreshChanges()
         self._status = "Stopped" if stopped else ("Needs attention" if self._error else "Ready when you are")
         self._refresh_tasks()
         self.changed.emit()
@@ -1847,6 +1939,7 @@ class Controller(QObject):
         self._run_job = None
         self._session_auto = False
         self.messages.mark_idle()
+        self.dock.settle_turn("failed")
         self._status = "Needs attention"
         self._set_error("The model run did not finish", message,
                         [{"label": "Try again", "action": "regenerate"},
@@ -2081,6 +2174,7 @@ class Controller(QObject):
         return True
 
     def shutdown(self):
+        self.dock.shutdown()
         if self._pending_permission is not None:
             self._permission_answer = False
             self._permission_event.set()

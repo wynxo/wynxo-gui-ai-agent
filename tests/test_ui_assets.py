@@ -29,10 +29,30 @@ def test_every_declared_type_has_a_file():
         assert (MODULE / filename).is_file(), f"{name} points at a missing {filename}"
 
 
+# Loaded by URL rather than declared as a module type, because its own imports
+# are not available on every installation. Keep this list at one entry unless
+# there is the same hard reason.
+LAZY_FILES = {"BrowserView.qml"}
+
+
 def test_every_component_file_is_declared():
     declared = set(declared_types().values())
     for path in MODULE.glob("*.qml"):
+        if path.name in LAZY_FILES:
+            continue
         assert path.name in declared, f"{path.name} is not listed in qmldir"
+
+
+def test_the_lazy_files_are_lazy_for_a_reason():
+    """A file kept out of qmldir must be loaded by URL and must be the reason
+    it is: an import that a machine can legitimately not have. Otherwise it is
+    just a component someone forgot to register."""
+    for name in LAZY_FILES:
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert "import QtWebEngine" in text, f"{name} has no unavailable import to justify itself"
+        loaders = [path.name for path in MODULE.glob("*.qml")
+                   if f'Qt.resolvedUrl("{name}")' in path.read_text(encoding="utf-8")]
+        assert loaders, f"{name} is not loaded by URL from anywhere"
 
 
 def test_no_component_hard_codes_a_colour():
@@ -163,20 +183,45 @@ def test_the_runtime_preset_is_not_scattered():
     assert components_using("bridge.applyRuntimePreset(") == {"ModelPicker.qml", "SettingsSheet.qml"}
 
 
-def test_the_permanent_inspector_is_gone():
-    """A third column of context, activity and model was the main thing the
-    redesign removed; it must not come back by accident."""
-    assert not (MODULE / "ContextPanel.qml").exists()
-    main = (UI / "Main.qml").read_text(encoding="utf-8")
-    assert "inspector" not in main.lower()
+def test_the_workspace_dock_is_a_tool_column_not_a_status_column():
+    """The old inspector was a permanent third column of read-only status, and
+    removing it was right. The dock replaces it with tools you work in — so
+    each panel must do something, not merely report."""
+    interactive = {
+        "FileExplorer.qml": "openRequested",
+        "FileViewer.qml": "saveFile",
+        "TerminalPanel.qml": "sendTerminal",
+        "ChangesPanel.qml": "openDiff",
+        "ContextPanel.qml": "removeContext",
+        "BrowserPanel.qml": "navigate",
+    }
+    for name, action in interactive.items():
+        text = (MODULE / name).read_text(encoding="utf-8")
+        assert action in text, f"{name} is read-only; it belongs in a popover, not the dock"
 
 
-def test_no_surface_chooses_its_own_visible_panel():
+def test_the_dock_never_moves_the_panel_the_user_chose():
     """State changes must never move the UI the user chose. The old inspector
-    picked its own tab from `bridge.busy`; nothing may do that again."""
+    picked its own tab from `bridge.busy`; nothing in QML may do that again —
+    the visible tab comes from the dock, and only a user action sets it."""
     for path in MODULE.glob("*.qml"):
         text = path.read_text(encoding="utf-8")
         assert "autoTab" not in text and "chosenTab" not in text, path.name
+    # `suggest` is the only path that may change the tab on the app's behalf,
+    # it is not reachable from QML, and it refuses once the user has chosen.
+    dock = (Path(__file__).resolve().parents[1] / "wynxo" / "dock.py").read_text(encoding="utf-8")
+    assert "def suggest(self" in dock
+    assert "if name not in TABS or self._tab_pinned:" in dock
+    assert "@Slot" not in dock.split("def suggest(self")[0].rsplit("\n", 3)[-2]
+    for path in list(MODULE.glob("*.qml")) + [UI / "Main.qml"]:
+        assert ".suggest(" not in path.read_text(encoding="utf-8"), path.name
+
+
+def test_the_dock_remembers_what_the_user_left_open():
+    """Width, tab and visibility are the user's, so they survive a restart."""
+    dock = (Path(__file__).resolve().parents[1] / "wynxo" / "dock.py").read_text(encoding="utf-8")
+    for key in ("dock_visible", "dock_width", "dock_tab", "dock_tab_pinned"):
+        assert f'"{key}"' in dock
 
 
 def test_anchored_overlays_position_themselves_repeatably():

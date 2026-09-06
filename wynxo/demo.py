@@ -7,7 +7,10 @@ actual renderer rather than a mock-up.
 """
 from __future__ import annotations
 
+import http.server
+import socketserver
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -44,15 +47,18 @@ readable in the terminal pane. Both mention runtime options, so the likely cause
 is ordering in the options builder. I will summarise, then offer to edit rather
 than editing without being asked."""
 
+# title, age in seconds, pinned, mode. The mode is what the sidebar marks, so
+# the screenshots have to include more than one kind of task.
 CONVERSATIONS = [
-    ("Debug the failing runtime tests", 0, True),
-    ("Draw a mountain scene in KolourPaint", 2400, False),
-    ("Summarise this design document", 9000, False),
-    ("Plan the 1.0 release", 30 * 3600, False),
-    ("Rename the screenshots folder", 32 * 3600, False),
-    ("Explain this stack trace", 5 * 86400, False),
-    ("Compare two CSV exports", 12 * 86400, False),
-    ("Set up a Python project", 40 * 86400, False),
+    ("Debug the failing runtime tests", 0, True, "codex"),
+    ("Draw a mountain scene in KolourPaint", 2400, False, "work"),
+    ("Summarise this design document", 9000, False, "chat"),
+    ("Rewrite the composer layout", 26 * 3600, False, "codex"),
+    ("Plan the 1.0 release", 30 * 3600, False, "chat"),
+    ("Rename the screenshots folder", 32 * 3600, False, "work"),
+    ("Explain this stack trace", 5 * 86400, False, "chat"),
+    ("Compare two CSV exports", 12 * 86400, False, "chat"),
+    ("Set up a Python project", 40 * 86400, False, "codex"),
 ]
 
 CATALOG = [
@@ -116,6 +122,80 @@ STEPS = [
 ]
 
 
+# A coding run: read, search, edit, then a real command with real output.
+# This is the shape §19 of the redesign asks for, so the screenshot has to be
+# of that shape rather than of a desktop run.
+CODE_STEPS = [
+    {"name": "read_file", "icon": "file", "label": "Reading a file",
+     "summary": "Read wynxo/ui/Wynxo/Composer.qml", "detail": '{"path": "wynxo/ui/Wynxo/Composer.qml"}',
+     "state": "done", "ms": 90, "output": "403 lines", "risk": "low"},
+    {"name": "search", "icon": "search", "label": "Searching the project",
+     "summary": "Search for “maxHeight”", "detail": '{"pattern": "maxHeight"}',
+     "state": "done", "ms": 240, "output": "3 matches in 2 files", "risk": "low"},
+    {"name": "edit_file", "icon": "edit", "label": "Editing a file",
+     "summary": "Edit wynxo/ui/Wynxo/Composer.qml", "detail": '{"path": "wynxo/ui/Wynxo/Composer.qml"}',
+     "state": "done", "ms": 130, "output": "+6 −6", "risk": "normal"},
+    {"name": "run_command", "icon": "terminal", "label": "Running a command",
+     "summary": "python -m pytest tests/test_ui_assets.py -q",
+     "detail": '{"command": "python -m pytest tests/test_ui_assets.py -q", "cwd": "."}',
+     "state": "done", "ms": 4120, "risk": "normal",
+     "output": "..............................\n30 passed in 1.35s"},
+]
+
+
+# The Browser scene loads a real page over real HTTP from a real server, so the
+# screenshot is of Qt WebEngine rendering rather than of an empty state. Local
+# and self-contained: the snapshot job needs no network.
+PREVIEW_PAGE = b"""<!doctype html><meta charset="utf-8"><title>Wynxo \xe2\x80\x94 local browsing</title>
+<style>
+ :root{color-scheme:dark}
+ body{font:15px/1.65 system-ui,sans-serif;background:#191919;color:#f2f1ed;margin:0;padding:28px 26px}
+ h1{font-size:21px;margin:0 0 6px;letter-spacing:-.3px}
+ p.lede{color:#97968f;margin:0 0 20px;font-size:13px}
+ h2{font-size:13px;color:#c6c5bf;margin:22px 0 8px;font-weight:600}
+ ul{margin:0;padding-left:18px;color:#c6c5bf}
+ li{margin:5px 0}
+ code{background:#0e0e0e;color:#d8d7d2;padding:1px 5px;border-radius:4px;font:12px ui-monospace,monospace}
+ .note{border-left:2px solid #df7e5e;padding:2px 0 2px 12px;margin-top:22px;color:#97968f;font-size:13px}
+</style>
+<h1>Local browsing</h1>
+<p class="lede">Served over HTTP from this machine and rendered by Qt WebEngine.</p>
+<h2>What the panel does</h2>
+<ul>
+ <li>The address bar shows where you actually are</li>
+ <li>Back and forward follow real history</li>
+ <li><code>http</code> and <code>https</code> only \xe2\x80\x94 nothing else is opened</li>
+ <li>Pop-ups and permission requests are refused</li>
+</ul>
+<h2>And the model</h2>
+<ul>
+ <li>Sees nothing here until you attach the page</li>
+ <li>Gets it as untrusted text, labelled with its address</li>
+</ul>
+<p class="note">Read a doc beside the task instead of leaving Wynxo to find it.</p>
+"""
+
+
+class _PreviewPage(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(PREVIEW_PAGE)))
+        self.end_headers()
+        self.wfile.write(PREVIEW_PAGE)
+
+    def log_message(self, *arguments):
+        pass
+
+
+def serve_preview_page():
+    """Start a loopback server for the Browser scene. Returns its URL."""
+    server = socketserver.TCPServer(("127.0.0.1", 0), _PreviewPage)
+    server.daemon_threads = True
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, f"http://127.0.0.1:{server.server_address[1]}/"
+
+
 class DemoDesktop:
     def __init__(self, connected: bool = True):
         self.connected = connected
@@ -157,6 +237,7 @@ class DemoController(WorkspaceController):
         connected = scene in ("desktop", "conversation", "run", "empty-work-locked")
         super().__init__(store=store, desktop=DemoDesktop(connected), autoconnect=False)
         self._preview_directory = Path(directory)
+        self._page_server = None
         self.scene = scene
         self._seed()
 
@@ -179,10 +260,10 @@ class DemoController(WorkspaceController):
     def _seed(self):
         now = time.time()
         created = []
-        for title, age, pinned in CONVERSATIONS:
+        for title, age, pinned, mode in CONVERSATIONS:
             conversation = self.store.create_conversation(title, "qwen2.5vl:7b")
             self.store.set_messages(conversation["id"], [{"role": "user", "content": title}])
-            self.store.set_setting(self._mode_key(conversation["id"]), "chat")
+            self.store.set_setting(self._mode_key(conversation["id"]), mode)
             with self.store._lock, self.store._db:
                 self.store._db.execute("UPDATE conversations SET updated_at=?,created_at=?,pinned=? WHERE id=?",
                                        (now - age, now - age, 1 if pinned else 0, conversation["id"]))
@@ -190,10 +271,16 @@ class DemoController(WorkspaceController):
         self._apply_catalog()
         self._refresh_tasks()
 
-        self._working_directory = str(Path.home() / "Projects" / "wynxo-gui-ai-agent")
+        # The dock panels read a real folder, so a Files or Changes screenshot
+        # shows the real tree and the real diff rather than invented rows.
+        # Falls back to a plausible path when the checkout is not to hand.
+        checkout = Path(__file__).resolve().parent.parent
+        self._working_directory = str(checkout) if (checkout / "pyproject.toml").is_file() \
+            else str(Path.home() / "Projects" / "wynxo-gui-ai-agent")
         self._recent_projects = [self._working_directory,
                                  str(Path.home() / "Projects" / "portal-bridge"),
                                  str(Path.home() / "Projects" / "notes")]
+        self.dock.set_project(self._working_directory)
         self._task_id = created[0]["id"]
         self._task_title = created[0]["title"]
         self._task_mode = "chat"
@@ -203,6 +290,9 @@ class DemoController(WorkspaceController):
                              "load_ms": 812.0, "total_ms": 7360.0, "tokens_per_second": 18.6}
         self._token_rate = "18.6 tok/s"
 
+        if self.scene.startswith("dock-"):
+            self._seed_dock_scene(self.scene[len("dock-"):])
+            return
         if self.scene == "welcome":
             self._task_id = ""
             self._task_title = "New task"
@@ -229,6 +319,9 @@ class DemoController(WorkspaceController):
             self._seed_context_scene()
             return
 
+        if self.scene == "codex-run":
+            self._seed_code_run()
+            return
         if self.scene in ("desktop", "run"):
             self._task_mode, self._task_mode_locked = "work", True
             self.store.set_setting(self._mode_key(self._task_id), "work")
@@ -255,6 +348,33 @@ class DemoController(WorkspaceController):
         item["blocks"] = md.segment(ANSWER)
         self.messages._emit(row, list(Messages_roles()))
 
+    def _seed_code_run(self):
+        """A Wynxi turn: the execution blocks, then the answer."""
+        self._task_mode, self._task_mode_locked = "codex", True
+        self._task_title = "Rewrite the composer layout"
+        self.store.set_setting(self._mode_key(self._task_id), "codex")
+        self.messages.replace([])
+        self.messages.append_message(
+            "user", "The composer is too tall on a fresh task. Find where the height "
+                    "comes from, tighten it, and run the QML tests.")
+        for step in CODE_STEPS:
+            self.messages.append_activity(step)
+            self.messages.update_last_step(**{k: step[k] for k in ("state", "ms", "output")})
+            self.dock.record(step)
+            self.dock.record_update(**{k: step[k] for k in ("state", "ms", "output")})
+        self._activity = [dict(step) for step in CODE_STEPS]
+        self.messages.append_message(
+            "assistant",
+            "The height came from the scroll area's minimum, not from the text: a fresh "
+            "task reserved `68px` for a field holding one line.\n\n"
+            "`Composer.qml` now asks for **48px** on a fresh task and **38px** in a "
+            "conversation, and grows with what you type. The QML asset tests still pass.")
+        self._run_metrics = {"tokens": 214, "prompt_tokens": 3810, "cached_prompt_tokens": 2400,
+                             "load_ms": 0.0, "total_ms": 9120.0, "tokens_per_second": 23.4}
+        self._token_rate = "23.4 tok/s"
+        self.activityChanged.emit()
+        self.changed.emit()
+
     def _seed_finished_run(self):
         self._task_title = "Draw a mountain scene in KolourPaint"
         finished = []
@@ -272,6 +392,44 @@ class DemoController(WorkspaceController):
             "assistant",
             "Done. KolourPaint is open with a mountain scene on a 1024 × 768 canvas, saved to **mountains.png** in your pictures folder.\n\n"
             "The ridge line is a single drag through 24 points; the sun is a filled ellipse. Say the word if you want the colours changed.")
+        self.activityChanged.emit()
+        self.changed.emit()
+
+    def _seed_dock_scene(self, tab: str):
+        """A conversation with one dock panel open, for the README shots."""
+        self._task_mode, self._task_mode_locked = "codex", True
+        self.store.set_setting(self._mode_key(self._task_id), "codex")
+        self.messages.append_message("user", "Have a look at the composer and tell me what changed.")
+        for step in STEPS[:2]:
+            self.messages.append_activity(step)
+            self.messages.update_last_step(**{k: step[k] for k in ("state", "ms", "output")})
+            self.dock.record(step)
+            self.dock.record_update(**{k: step[k] for k in ("state", "ms", "output")})
+        self._seed_answer()
+        self.dock.setVisible(True)
+        self.dock.setTab(tab if tab in ("files", "terminal", "changes",
+                                        "context", "activity", "browser", "preview") else "files")
+        if tab == "files":
+            target = Path(self._working_directory) / "wynxo" / "ui" / "Wynxo" / "Composer.qml"
+            if target.is_file():
+                self.dock.openFile(str(target))
+                self.dock.revealFile(str(target))
+        elif tab == "changes":
+            self.dock.refreshChanges()
+        elif tab == "context":
+            self._attachments = [
+                ctx.make(ctx.FILE, "Composer.qml",
+                         path=str(Path(self._working_directory) / "wynxo/ui/Wynxo/Composer.qml"),
+                         text="Item {\n}\n" * 60, subtitle="403 lines · 14 KB"),
+                ctx.from_capture({"ok": True, "image": _SWATCH, "width": 2560, "height": 1440},
+                                 ctx.SCREENSHOT, title="Screen", detail="Full screen"),
+            ]
+            self.attachmentsChanged.emit()
+        elif tab == "terminal":
+            self.dock.startTerminal()
+        elif tab == "browser" and self.dock.browserAvailable:
+            self._page_server, url = serve_preview_page()
+            self.dock.navigate(url)
         self.activityChanged.emit()
         self.changed.emit()
 
@@ -306,6 +464,13 @@ class DemoController(WorkspaceController):
 
     def shutdown(self):
         super().shutdown()
+        if self._page_server is not None:
+            try:
+                self._page_server.shutdown()
+                self._page_server.server_close()
+            except Exception:
+                pass
+            self._page_server = None
         try:
             self.store.close()
         except Exception:
@@ -337,4 +502,12 @@ SCENES = [
     ("16-wynxi-home", "empty-codex-locked", ""),
     ("17-work-home", "empty-work-locked", ""),
     ("18-chat-locked-home", "empty-chat-locked", ""),
+    ("19-dock-files", "dock-files", ""),
+    ("20-dock-terminal", "dock-terminal", ""),
+    ("21-dock-changes", "dock-changes", ""),
+    ("22-dock-browser", "dock-browser", ""),
+    ("23-dock-context", "dock-context", ""),
+    ("24-dock-activity", "dock-activity", ""),
+    ("25-system", "conversation", "system"),
+    ("26-code-run", "codex-run", ""),
 ]

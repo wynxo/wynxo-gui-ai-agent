@@ -50,11 +50,11 @@ Item {
     Rectangle {
         id: shell
         width: parent.width
-        height: content.implicitHeight + Theme.s3 * 2
-        radius: 14
+        height: content.implicitHeight + Theme.s3 + Theme.s2
+        radius: Theme.r4
         color: Theme.surfaceRaised
         border.width: 1
-        border.color: input.activeFocus ? Theme.borderStrong : Theme.borderSubtle
+        border.color: input.activeFocus ? Theme.accentEdge : Theme.borderSubtle
         Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
 
         ColumnLayout {
@@ -169,9 +169,9 @@ Item {
 
             ScrollView {
                 Layout.fillWidth: true
-                Layout.minimumHeight: root.homeMode ? 68 : 46
+                Layout.minimumHeight: root.homeMode ? 48 : 38
                 Layout.preferredHeight: Math.min(root.maxHeight,
-                    Math.max(root.homeMode ? 68 : 46, input.implicitHeight + Theme.s2))
+                    Math.max(root.homeMode ? 48 : 38, input.implicitHeight + Theme.s1))
                 clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
                 ScrollBar.vertical.policy: ScrollBar.AsNeeded
@@ -186,7 +186,7 @@ Item {
                             : "Open a project, then describe the coding task…")
                         : root.workMode
                             ? "Describe what you want done on the desktop…"
-                            : "Ask Wynxo anything…"
+                            : "Ask, build, debug, automate…"
                     placeholderTextColor: Theme.textMuted
                     color: Theme.textPrimary
                     selectionColor: Theme.accent
@@ -297,10 +297,13 @@ Item {
                 IconButton {
                     visible: root.codexMode && bridge && bridge.projectPath && !root.tight
                     Layout.preferredWidth: 30; Layout.preferredHeight: 30
-                    iconSize: 13
+                    iconSize: 14
                     iconName: "terminal"
-                    tooltip: "Open terminal in project"
-                    onClicked: if (bridge) bridge.openTerminalHere()
+                    tooltip: "Terminal"
+                    shortcut: "Ctrl+`"
+                    active: !!(bridge && bridge.workspaceDock && bridge.workspaceDock.visible
+                               && bridge.workspaceDock.tab === "terminal")
+                    onClicked: if (bridge && bridge.workspaceDock) bridge.workspaceDock.openTab("terminal")
                 }
 
                 Chip {

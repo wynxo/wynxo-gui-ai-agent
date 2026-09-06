@@ -2,8 +2,12 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    A styled dropdown. Items: {id, label, icon, shortcut, danger, disabled,
-    separator, hidden}.
+    A styled dropdown. Items: {id, label, detail, icon, shortcut, checked,
+    danger, disabled, separator, hidden}.
+
+    An item with a `detail` gets a second line and a taller row, so a menu that
+    is really a choice — which product, which model — can explain itself
+    without becoming a dialog.
 
     It flips above or beside its anchor rather than opening off-screen, and
     arrow keys walk it, so a menu is never a mouse-only surface.
@@ -29,7 +33,7 @@ Popup {
         var total = 0;
         for (var i = 0; i < items.length; i++) {
             if (items[i].hidden) continue;
-            total += items[i].separator ? 9 : itemHeight;
+            total += items[i].separator ? 9 : (items[i].detail ? itemHeight + 14 : itemHeight);
         }
         return total;
     }
@@ -122,9 +126,11 @@ Popup {
         Rectangle {
             property var entry: ({})
             readonly property bool on: area.containsMouse || menu.highlighted === entry.id
-            height: menu.itemHeight
+            readonly property real textLeft: entry.icon ? Theme.s3 + 14 + Theme.s3 : Theme.s3
+            height: entry.detail ? menu.itemHeight + 14 : menu.itemHeight
             radius: Theme.r1
-            color: on && !entry.disabled ? Theme.surfaceHover : "transparent"
+            color: on && !entry.disabled ? Theme.surfaceHover
+                 : entry.checked ? Theme.surfaceSelected : "transparent"
             opacity: entry.disabled ? 0.4 : 1
 
             Icon {
@@ -132,17 +138,40 @@ Popup {
                 x: Theme.s3
                 anchors.verticalCenter: parent.verticalCenter
                 name: entry.icon || "chat"
-                ink: entry.danger ? Theme.danger : Theme.textSecondary
+                ink: entry.danger ? Theme.danger
+                   : entry.checked ? Theme.textPrimary : Theme.textSecondary
                 width: 14; height: 14
             }
-            Text {
-                x: entry.icon ? Theme.s3 + 14 + Theme.s3 : Theme.s3
+            Column {
+                x: parent.textLeft
                 anchors.verticalCenter: parent.verticalCenter
-                width: parent.width - x - (keys.visible ? keys.width + Theme.s3 * 2 : Theme.s3)
-                text: entry.label || ""
-                color: entry.danger ? Theme.danger : Theme.textPrimary
-                font.family: Theme.sansFamily; font.pixelSize: Theme.label
-                elide: Text.ElideRight
+                width: parent.width - x
+                       - (keys.visible ? keys.width + Theme.s3 * 2
+                          : tick.visible ? tick.width + Theme.s3 * 2 : Theme.s3)
+                spacing: 1
+                Text {
+                    width: parent.width
+                    text: entry.label || ""
+                    color: entry.danger ? Theme.danger : Theme.textPrimary
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.label
+                    elide: Text.ElideRight
+                }
+                Text {
+                    width: parent.width
+                    visible: !!entry.detail
+                    text: entry.detail || ""
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                    elide: Text.ElideRight
+                }
+            }
+            Icon {
+                id: tick
+                visible: !!entry.checked
+                anchors.right: parent.right; anchors.rightMargin: Theme.s3
+                anchors.verticalCenter: parent.verticalCenter
+                name: "check"; ink: Theme.textMuted
+                width: 12; height: 12
             }
             KeyHint {
                 id: keys
