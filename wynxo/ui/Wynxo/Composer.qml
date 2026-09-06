@@ -5,10 +5,10 @@ import QtQuick.Layouts
 /*!
     Say what you want done.
 
-    The empty-state composer is intentionally compact: one rounded row with
-    add-context, input, model and send. It grows only when text wraps or context
-    is attached. Image context becomes a real thumbnail instead of a text chip,
-    making the expanded state read like a modern desktop chat composer.
+    The empty-state composer is intentionally compact in Chat and Work. Codex
+    expands it into a small project console: the selected folder is always
+    visible, Terminal is one click away, and common coding jobs can seed a
+    precise agent prompt without turning the home screen into a dashboard.
 */
 Item {
     id: root
@@ -23,19 +23,21 @@ Item {
     function focusInput() { input.forceActiveFocus(); }
     function showModelPicker() { modelButton.showPicker(); }
 
-    // What you typed belongs to the task you typed it in, so switching tasks
-    // parks it rather than throwing it away.
     Connections {
         target: bridge
         function onDraftChanged() { input.text = bridge.draftText; }
     }
     Component.onCompleted: if (bridge) input.text = bridge.draftText
+
     function insert(prompt) {
         input.text = prompt;
         input.cursorPosition = input.length;
         input.forceActiveFocus();
     }
 
+    readonly property string mode: bridge && bridge.desktopEnabled ? "work" : WorkspaceMode.current
+    readonly property bool codexMode: root.mode === "codex"
+    readonly property bool workMode: root.mode === "work"
     readonly property bool canSend: input.text.trim().length > 0 && bridge && bridge.online && !bridge.connecting
     readonly property bool tight: root.width < 520
     readonly property bool homeMode: bridge && !bridge.hasMessages
@@ -52,7 +54,7 @@ Item {
         id: shell
         width: parent.width
         height: content.implicitHeight + root.shellPadding * 2
-        radius: root.homeMode && !root.hasAttachments ? Math.min(26, height / 2) : 22
+        radius: root.homeMode && !root.hasAttachments && !root.codexMode ? Math.min(26, height / 2) : 22
         color: Theme.surfaceRaised
         border.width: 1
         border.color: input.activeFocus ? Theme.borderStrong : Theme.borderSubtle
@@ -63,11 +65,122 @@ Item {
             id: content
             anchors.fill: parent
             anchors.margins: root.shellPadding
-            spacing: root.hasAttachments ? Theme.s2 : 0
+            spacing: root.hasAttachments || root.codexMode ? Theme.s2 : 0
+
+            // ----------------------------------------------------- Codex bar
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: codexProjectRow.implicitHeight + Theme.s2 * 2
+                visible: root.codexMode
+                radius: 14
+                color: Theme.surface
+                border.width: 1
+                border.color: Theme.borderSubtle
+
+                RowLayout {
+                    id: codexProjectRow
+                    anchors.fill: parent
+                    anchors.leftMargin: Theme.s3
+                    anchors.rightMargin: Theme.s2
+                    spacing: Theme.s2
+
+                    Icon {
+                        name: "code"
+                        ink: Theme.accent
+                        Layout.preferredWidth: 16
+                        Layout.preferredHeight: 16
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 1
+                        Text {
+                            Layout.fillWidth: true
+                            text: bridge && bridge.projectPath ? bridge.projectName : "No project selected"
+                            color: Theme.textPrimary
+                            font.family: Theme.sansFamily
+                            font.pixelSize: Theme.label
+                            font.weight: Font.Medium
+                            elide: Text.ElideMiddle
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: bridge && bridge.projectPath
+                                ? bridge.projectLabel
+                                : "Choose a folder so Codex knows what it may inspect, edit, run, and test."
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily
+                            font.pixelSize: Theme.micro
+                            elide: Text.ElideMiddle
+                        }
+                    }
+
+                    WButton {
+                        text: bridge && bridge.projectPath ? "Change" : "Choose project"
+                        iconName: "folderOpen"
+                        variant: bridge && bridge.projectPath ? "ghost" : "secondary"
+                        compactPadding: true
+                        implicitHeight: 30
+                        onClicked: if (bridge) bridge.chooseProject()
+                    }
+
+                    IconButton {
+                        visible: !root.tight
+                        iconName: "terminal"
+                        tooltip: bridge && bridge.projectPath ? "Open terminal in project" : "Choose a project first"
+                        enabled: !!(bridge && bridge.projectPath)
+                        Layout.preferredWidth: 30
+                        Layout.preferredHeight: 30
+                        iconSize: 14
+                        onClicked: if (bridge) bridge.openTerminalHere()
+                    }
+                }
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                visible: root.codexMode && root.homeMode
+                columns: root.width < 560 ? 2 : 4
+                columnSpacing: Theme.s2
+                rowSpacing: Theme.s2
+
+                Repeater {
+                    model: [
+                        {
+                            label: "Inspect repo", icon: "search",
+                            prompt: "Inspect this project before changing anything. Identify the stack, entry points, architecture, important files, and the commands used to build, lint, and test it. Give me a concise codebase map."
+                        },
+                        {
+                            label: "Run tests", icon: "terminal",
+                            prompt: "Detect the correct test command for this project, run the relevant test suite, and explain any failures. Do not edit files yet."
+                        },
+                        {
+                            label: "Fix tests", icon: "bug",
+                            prompt: "Run the project tests, diagnose the failures, make the smallest correct code changes, rerun the relevant tests, and summarize the files changed."
+                        },
+                        {
+                            label: "Review diff", icon: "branch",
+                            prompt: "Inspect git status and the current diff. Review the changes for bugs, regressions, security problems, and unnecessary edits. Do not modify files unless I ask."
+                        },
+                    ]
+
+                    delegate: WButton {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        text: modelData.label
+                        iconName: modelData.icon
+                        variant: "ghost"
+                        compactPadding: true
+                        implicitHeight: 32
+                        enabled: !!(bridge && bridge.projectPath) && !(bridge && bridge.busy)
+                        onClicked: root.insert(modelData.prompt)
+                        ToolTip.visible: hovered && !enabled
+                        ToolTip.text: "Choose a project folder first"
+                    }
+                }
+            }
 
             // -------------------------------------------------- attachments
-            // Files stay concise; images get a proper visual preview like the
-            // desktop ChatGPT composer rather than a filename-only chip.
             Flow {
                 Layout.fillWidth: true
                 Layout.bottomMargin: root.hasAttachments ? Theme.s1 : 0
@@ -257,7 +370,6 @@ Item {
                     }
                 }
 
-                // -------------------------------------------------------- input
                 ScrollView {
                     Layout.fillWidth: true
                     Layout.minimumHeight: root.homeMode ? 34 : 40
@@ -272,9 +384,11 @@ Item {
                         id: input
                         objectName: "composer"
                         onTextChanged: if (bridge) bridge.setDraft(text)
-                        placeholderText: root.homeMode
-                            ? (bridge && bridge.desktopEnabled ? "Describe what to do on your screen" : "Message Wynxo")
-                            : (bridge && bridge.desktopEnabled ? "Describe what to do on your screen…" : "Ask anything")
+                        placeholderText: root.codexMode
+                            ? (bridge && bridge.projectPath ? "Describe a code change, bug, or coding task" : "Choose a project, then describe what to build")
+                            : root.homeMode
+                                ? (root.workMode ? "Describe what to do on your screen" : "Message Wynxo")
+                                : (root.workMode ? "Describe what to do on your screen…" : "Ask anything")
                         placeholderTextColor: Theme.textMuted
                         color: Theme.textPrimary
                         selectionColor: Theme.accent
@@ -288,7 +402,7 @@ Item {
                         bottomPadding: root.homeMode ? 7 : Theme.s2
                         background: Item {}
                         Accessible.role: Accessible.EditableText
-                        Accessible.name: "Message to Wynxo"
+                        Accessible.name: root.codexMode ? "Coding task for Wynxo" : "Message to Wynxo"
                         Accessible.description: placeholderText
 
                         Keys.onReturnPressed: function(event) {
@@ -309,7 +423,6 @@ Item {
                     }
                 }
 
-                // Quiet until the context window actually starts to fill.
                 Row {
                     visible: bridge && bridge.contextFraction > 0.75 && !root.tight && !root.homeMode
                     spacing: Theme.s2
@@ -368,7 +481,6 @@ Item {
         }
     }
 
-    // Drag and drop straight into the composer.
     DropArea {
         anchors.fill: parent
         onEntered: function(drag) { if (drag.hasUrls) drag.accept(); }
