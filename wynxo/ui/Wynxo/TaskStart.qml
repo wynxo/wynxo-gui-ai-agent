@@ -2,57 +2,95 @@ import QtQuick
 import QtQuick.Layouts
 
 /*!
-    The quiet starting point for each task mode.
-
-    A new Wynxo task can choose Chat or Work once. After that choice — and for
-    every reopened task — the mode comes from the task itself. Wynxi tasks are
-    coding tasks from the moment they are created.
+    Quiet empty state: one prompt, one line of context. No dashboard, no cards.
 */
 Item {
     id: root
     signal starterChosen(string prompt)
 
     readonly property string mode: bridge ? bridge.taskMode : "chat"
-    readonly property string headline: mode === "work" ? "What should I do on your screen?"
-                                      : mode === "codex" ? "What are we building?"
-                                      : "Where should we begin?"
+    readonly property string headline: mode === "work" ? "What should Wynxo do?"
+                                      : mode === "codex" ? "What do you want to build?"
+                                      : "What do you want to work on?"
     readonly property string detail: mode === "work"
-        ? "Inspect the desktop, use apps, and run local commands with your approval settings."
+        ? "Wynxo can inspect and operate the desktop when screen control is enabled."
         : mode === "codex"
-            ? "Project-aware coding with local files, commands, edits, and tests."
-            : ""
+            ? (bridge && bridge.projectPath
+                ? "Working in " + bridge.projectName
+                : "Choose a project folder, then describe the change you want.")
+            : (bridge && bridge.projectPath ? "Project · " + bridge.projectName : "Chat with your local model")
 
     Accessible.role: Accessible.StaticText
-    Accessible.name: root.headline + (root.detail ? ". " + root.detail : "")
+    Accessible.name: root.headline + ". " + root.detail
 
     ColumnLayout {
         anchors.centerIn: parent
-        width: Math.min(parent.width, 680)
-        spacing: 9
+        width: Math.min(parent.width, 760)
+        spacing: Theme.s3
 
-        Text {
+        RowLayout {
             Layout.fillWidth: true
-            text: root.headline
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.WordWrap
-            color: Theme.textPrimary
-            font.family: Theme.sansFamily
-            font.pixelSize: root.width < 600 ? 25 : 28
-            font.weight: Font.Medium
-            font.letterSpacing: -0.45
+            spacing: Theme.s2
+            Mark {
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
+            }
+            Text {
+                text: mode === "codex" ? "Wynxi" : "Wynxo"
+                color: Theme.textSecondary
+                font.family: Theme.sansFamily
+                font.pixelSize: Theme.caption
+                font.weight: Font.DemiBold
+            }
+            Rectangle {
+                visible: mode !== "chat"
+                implicitWidth: modeLabel.implicitWidth + Theme.s2 * 2
+                implicitHeight: 22
+                radius: Theme.r1
+                color: Theme.surface
+                border.width: 1
+                border.color: Theme.borderSubtle
+                Text {
+                    id: modeLabel
+                    anchors.centerIn: parent
+                    text: mode === "codex" ? "Code" : "Work"
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.micro
+                }
+            }
+            Item { Layout.fillWidth: true }
         }
 
         Text {
             Layout.fillWidth: true
-            visible: root.detail !== ""
-            text: root.detail
-            horizontalAlignment: Text.AlignHCenter
+            text: root.headline
+            horizontalAlignment: Text.AlignLeft
             wrapMode: Text.WordWrap
-            color: Theme.textMuted
+            color: Theme.textPrimary
             font.family: Theme.sansFamily
-            font.pixelSize: Theme.caption
-            lineHeight: 1.35
+            font.pixelSize: root.width < 620 ? 25 : 29
+            font.weight: Font.Medium
+            font.letterSpacing: -0.55
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Theme.s2
+            Icon {
+                name: bridge && bridge.projectPath ? "folderOpen" : "terminal"
+                ink: Theme.textMuted
+                Layout.preferredWidth: 13
+                Layout.preferredHeight: 13
+            }
+            Text {
+                Layout.fillWidth: true
+                text: root.detail
+                color: Theme.textMuted
+                font.family: mode === "codex" && bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
+                font.pixelSize: Theme.caption
+                elide: Text.ElideMiddle
+            }
         }
     }
 }
