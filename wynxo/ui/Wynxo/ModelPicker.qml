@@ -112,7 +112,7 @@ Sheet {
                                    modelData.selected && bridge ? bridge.modelContextLabel : "",
                                    modelData.selected && bridge ? bridge.modelCapabilitySummary : ""]
                                   .filter(function(p) { return !!p; }).join(" · ")
-                            color: Theme.textMuted
+                            color: modelData.selected ? Theme.textSecondary : Theme.textMuted
                             font.family: Theme.sansFamily; font.pixelSize: Theme.micro
                             elide: Text.ElideRight
                         }

@@ -123,7 +123,10 @@ Sheet {
                         }
                         Text {
                             Layout.fillWidth: true
-                            text: modelData.detail; color: Theme.textMuted
+                            text: modelData.detail
+                            // Muted text does not carry enough contrast on the
+                            // highlighted surface, so the active row steps up.
+                            color: index === palette.highlighted ? Theme.textSecondary : Theme.textMuted
                             font.family: Theme.sansFamily; font.pixelSize: Theme.micro
                             elide: Text.ElideRight
                         }

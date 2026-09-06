@@ -22,7 +22,7 @@ DEFAULT_PALETTE = {
     "keyword": "#c9a5f5",
     "string": "#9fd6ac",
     "number": "#e0b283",
-    "comment": "#6d6c69",
+    "comment": "#7b7974",
     "function": "#8fc4f0",
     "builtin": "#7fd0c8",
     "punctuation": "#8d8b87",

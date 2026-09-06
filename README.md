@@ -257,6 +257,18 @@ running, it starts one.
 
 ---
 
+## Accessibility
+
+Every text colour in the palette meets WCAG AA (4.5:1) against every surface it
+is used on, and a test asserts it — including all five accent themes, the
+syntax palette, and the ink chosen for text on the accent. Status is never
+carried by colour alone: activity rows pair a colour with an icon, a word and a
+pulse. Controls stay at least 32 px in compact density, focus rings are drawn
+on buttons and fields, and **Reduce motion** under Settings → Appearance turns
+off every transition and looping animation rather than just shortening them.
+
+---
+
 ## Privacy
 
 - Inference runs through your local Ollama server. Nothing is sent anywhere else.

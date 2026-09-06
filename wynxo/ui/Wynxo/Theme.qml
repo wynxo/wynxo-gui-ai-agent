@@ -29,7 +29,7 @@ QtObject {
 
     readonly property color textPrimary:   "#f4f2ee"
     readonly property color textSecondary: "#a5a29b"
-    readonly property color textMuted:     "#6d6b66"
+    readonly property color textMuted:     "#8a8883"
     readonly property color textInverse:   "#101011"
 
     readonly property color accent: ready && bridge.accentColor ? bridge.accentColor : "#e9e3d6"
@@ -51,7 +51,7 @@ QtObject {
     // Code colours are handed to the Python highlighter so both agree exactly.
     readonly property var codePalette: ({
         "text": "#d6d4cf", "keyword": "#c3a6f0", "string": "#93cfa6",
-        "number": "#dcae7d", "comment": "#66645f", "function": "#8bbdea",
+        "number": "#dcae7d", "comment": "#7b7974", "function": "#8bbdea",
         "builtin": "#79cabf", "punctuation": "#8b8984"
     })
 
