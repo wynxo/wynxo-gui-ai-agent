@@ -311,6 +311,7 @@ ApplicationWindow {
     PermissionPrompt { id: permission }
     Onboarding { id: onboarding; onOpenModelPicker: models.open() }
     Toast { id: toast }
+    RegionSelector { id: regionSelector }
 
     Sheet {
         id: renameSheet
@@ -522,6 +523,7 @@ ApplicationWindow {
         case "quickbar": window.openQuickBar(); break;
         case "screenshot": bridge.attachScreenshot(); break;
         case "window": bridge.attachWindow(); break;
+        case "region": bridge.attachRegion(); break;
         case "file": bridge.attachFile(); break;
         case "folder": bridge.attachFolder(); break;
         case "desktop": bridge.toggleDesktop(); break;

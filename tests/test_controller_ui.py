@@ -7,7 +7,7 @@ import pytest
 from PySide6.QtCore import QCoreApplication
 
 from wynxo import context as ctx
-from wynxo.controller import Controller, Messages, group_for
+from wynxo.controller import Controller, Messages, derive_title, group_for
 from wynxo.engine import ASK, AUTO, SAFE
 from wynxo.storage import Store
 
@@ -657,3 +657,100 @@ def test_recently_used_models_rank_above_the_rest(tmp_path):
     assert bridge.modelCatalog[0]["recent"] is True
     assert bridge.modelCatalog[1]["recent"] is False
     bridge.shutdown()
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Fix the retry loop", "Fix the retry loop"),
+    ("What's wrong here?", "What's wrong here"),
+    ("   spaced   out   words  ", "spaced out words"),
+    ("", "New chat"),
+])
+def test_short_prompts_become_their_own_title(text, expected):
+    assert derive_title(text) == expected
+
+
+def test_long_prompts_are_cut_on_a_word_boundary():
+    title = derive_title("The daemon drops its connection after about 30 seconds and the CPU spikes")
+    assert title.endswith("…")
+    assert len(title) <= 53
+    assert not title[:-1].endswith(" ")
+    # Never mid-word.
+    assert title[:-1].split()[-1] in "The daemon drops its connection after about 30 seconds and the".split()
+
+
+def test_the_first_message_names_the_chat(tmp_path, monkeypatch):
+    bridge = controller(tmp_path)
+    bridge._online = True
+    monkeypatch.setattr(bridge, "_start_run", lambda history: None)
+    bridge.send("The daemon drops its connection after about 30 seconds and the CPU spikes")
+    assert bridge.taskTitle.endswith("…")
+    assert "and the C" not in bridge.taskTitle
+    bridge.shutdown()
+
+
+def _png(width, height, colour=(20, 20, 24)):
+    import base64
+    import io
+    Image = pytest.importorskip("PIL.Image")
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), colour).save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("ascii")
+
+
+def test_region_capture_crops_an_image_wynxo_already_holds(tmp_path):
+    desktop = IdleDesktop()
+    bridge = controller(tmp_path, desktop=desktop)
+    try:
+        bridge.attachRegion()
+        assert pump_until(lambda: bridge.regionActive)
+        assert desktop.captures == ["screen"]
+        assert bridge.regionWidth == 640 and bridge.regionHeight == 480
+
+        # The capture is a stub without pixels, so give it real ones to crop.
+        bridge._region = {"image": _png(200, 120), "width": 200, "height": 120}
+        bridge.cropRegion(20, 10, 80, 60)
+        assert bridge.attachmentCount == 1
+        attachment = bridge.attachments[0]
+        assert attachment["kind"] == "screenshot"
+        assert (attachment["width"], attachment["height"]) == (80, 60)
+        # Cropping consumes the capture: no stale screen image is kept around.
+        assert bridge.regionActive is False
+    finally:
+        bridge.shutdown()
+
+
+def test_a_tiny_or_cancelled_region_attaches_nothing(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        bridge._region = {"image": _png(200, 120), "width": 200, "height": 120}
+        bridge.cropRegion(0, 0, 2, 2)
+        assert bridge.attachmentCount == 0
+        assert bridge.regionActive is False
+
+        bridge._region = {"image": _png(200, 120), "width": 200, "height": 120}
+        bridge.cancelRegion()
+        assert bridge.regionActive is False
+        assert bridge.attachmentCount == 0
+    finally:
+        bridge.shutdown()
+
+
+def test_a_region_outside_the_image_is_clamped(tmp_path):
+    bridge = controller(tmp_path)
+    try:
+        bridge._region = {"image": _png(100, 100), "width": 100, "height": 100}
+        bridge.cropRegion(60, 60, 400, 400)
+        assert bridge.attachments[0]["width"] == 40
+        assert bridge.attachments[0]["height"] == 40
+    finally:
+        bridge.shutdown()
+
+
+def pump_until(predicate, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        APP.processEvents()
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return False

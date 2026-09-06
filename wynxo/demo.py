@@ -170,6 +170,7 @@ class DemoController(Controller):
         self._catalog = [dict(entry) for entry in CATALOG]
         self._loaded_models = [entry["name"] for entry in CATALOG if entry["loaded"]]
         self._model_capabilities = ["completion", "tools", "vision"]
+        self._model_context_length = 128000
         self._capability_probe_active = False
         self._clear_error()
         self._decorate_catalog()

@@ -1,13 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Wynxo">
+  <title>Wynxo</title>
   <defs>
-    <linearGradient id="surface" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#25292c"/><stop offset="1" stop-color="#101214"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#dfffba"/><stop offset="1" stop-color="#b3d48d"/>
+    <linearGradient id="plate" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#1a1a1d"/>
+      <stop offset="1" stop-color="#0c0c0d"/>
     </linearGradient>
   </defs>
-  <rect x="8" y="8" width="240" height="240" rx="62" fill="url(#surface)" stroke="#3d4246" stroke-width="2"/>
-  <path d="M54 76 85 179 128 107 171 179 202 76" fill="none" stroke="url(#mark)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="202" cy="55" r="6" fill="#dfffba"/>
+  <rect x="6" y="6" width="244" height="244" rx="62" fill="url(#plate)" stroke="#33333a" stroke-width="2"/>
+  <!-- The Wynxo mark: two open arcs travelling around a solid core. -->
+  <g fill="none" stroke="#e9e3d6" stroke-linecap="round">
+    <path d="M 89.7 31.3 A 104 104 0 1 1 52.2 56.8" stroke-width="9" opacity="0.9"/>
+    <path d="M 159.8 190.4 A 70 70 0 1 1 172.6 74.0" stroke-width="7" opacity="0.42"/>
+  </g>
+  <circle cx="89.7" cy="31.3" r="12" fill="#e9e3d6"/>
+  <circle cx="128" cy="128" r="20" fill="#e9e3d6"/>
 </svg>

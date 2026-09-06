@@ -73,11 +73,12 @@ def test_capability_probe_ignores_stale_model_results(monkeypatch):
     bridge._refresh_model_capabilities()
 
     # Complete the newer probe first, then deliver a stale result from the old model.
-    queued[1][1](["completion", "tools", "vision"])
-    queued[0][1](["completion"])
+    queued[1][1]({"capabilities": ["completion", "tools", "vision"], "context_length": 32768})
+    queued[0][1]({"capabilities": ["completion"], "context_length": 4096})
 
     assert bridge.modelCapabilitySummary == "Chat · Tools · Vision"
     assert bridge.modelSupportsTools is True
+    assert bridge.modelContextLength == 32768
 
 
 def test_capability_probe_reads_selected_model_without_blocking_controller(monkeypatch):
@@ -90,9 +91,9 @@ def test_capability_probe_reads_selected_model_without_blocking_controller(monke
         def __init__(self, endpoint):
             self.endpoint = endpoint
 
-        def capabilities(self, model):
+        def describe(self, model):
             assert model == "local:test"
-            return ["completion", "tools", "thinking"]
+            return {"capabilities": ["completion", "tools", "thinking"], "context_length": 128000}
 
     def immediate_job(fn, result=None, failure=None, event=None):
         try:
@@ -112,3 +113,5 @@ def test_capability_probe_reads_selected_model_without_blocking_controller(monke
     assert bridge.modelCapabilitiesLoading is False
     assert bridge.modelCapabilities == ["completion", "thinking", "tools"]
     assert bridge.modelCapabilitySummary == "Chat · Tools · Thinking"
+    assert bridge.modelContextLength == 128000
+    assert bridge.modelContextLabel == "128K native context"

@@ -21,6 +21,7 @@ Sheet {
         { id: "quickbar", label: "Open quick bar", detail: "Floating command bar", icon: "spark", shortcut: "Ctrl+Space" },
         { id: "screenshot", label: "Capture screen", detail: "Attach a screenshot to this message", icon: "camera", shortcut: "" },
         { id: "window", label: "Capture active window", detail: "Attach the focused window", icon: "window", shortcut: "" },
+        { id: "region", label: "Capture a region", detail: "Drag a rectangle on your screen", icon: "grid", shortcut: "" },
         { id: "file", label: "Attach a file", detail: "Add local text or an image", icon: "file", shortcut: "" },
         { id: "folder", label: "Attach a folder", detail: "Share a directory listing", icon: "folder", shortcut: "" },
         { id: "desktop", label: "Toggle screen control", detail: "Grant or revoke desktop access", icon: "cursor", shortcut: "" },

@@ -41,10 +41,11 @@ highlighting, copy, and save. Reasoning from a thinking model collapses to a
 single line — *Thought for 8.2s* — instead of burying the answer.
 
 **Local context**
-Attach files, folders, images, the clipboard, a screen capture, or the active
-window. Everything appears as a removable chip above the composer and as a
-preview in the inspector, so you always know exactly what the model can see.
-Drag and drop works too.
+Attach files, folders, images, the clipboard, a whole screen, a screen region
+you drag out, or the active window. Everything appears as a removable chip
+above the composer and as a preview in the inspector, so you always know
+exactly what the model can see. Drag and drop works too. Capturing for context
+uses the screenshot path only — it never asks for control of your input.
 
 **Screen control**
 When enabled, a model with vision and tool calling can open applications,
@@ -65,10 +66,12 @@ Typing and key chords can save, send or delete in whatever has focus, so they
 stay behind a prompt unless you choose Auto.
 
 **Models**
-Browse what Ollama has installed with parameter size, quantisation, disk usage
-and capabilities. Favourite the ones you use, download new tags, delete old
-ones. Wynxo reads capabilities from Ollama rather than guessing from names, and
-warns you *before* you send if the model cannot do what you are asking.
+Browse what Ollama has installed with parameter size, quantisation, disk usage,
+native context window and capabilities. Favourite the ones you use, download
+new tags, delete old ones. Wynxo reads capabilities from Ollama rather than
+guessing from names, and warns you *before* you send if the model cannot do
+what you are asking — no vision for the image you attached, no tool calling for
+the desktop task, or a conversation that has nearly filled the context window.
 
 **Quick bar**
 A floating command bar (`Ctrl+Space`) that sits above other windows for a fast
@@ -237,6 +240,7 @@ specific compositor and version.
 | Ctrl+B / Ctrl+I | Toggle sidebar / inspector |
 | Ctrl+R | Regenerate |
 | Ctrl+D | Duplicate chat |
+| Alt+Up / Alt+Down | Previous / next chat |
 | Ctrl+Shift+V | Paste an image as context |
 | Ctrl+, | Settings |
 
@@ -286,6 +290,7 @@ Layout:
 | `wynxo/markdown.py` | Message segmentation, highlighting, Markdown rendering |
 | `wynxo/context.py` | Composer attachments |
 | `wynxo/storage.py` | SQLite history and settings |
+| `wynxo/notify.py` | Desktop notifications and system integration |
 | `wynxo/demo.py` | Fixed state for previews and screenshots |
 
 `Theme.qml` is the only place colour, spacing, radius, type and motion are
@@ -321,10 +326,11 @@ xvfb-run -a -s "-screen 0 1600x1000x24" \
 Add `--size 980x760` to check a narrower layout. CI runs the same command and
 uploads the results as a build artifact.
 
-Tests cover Ollama streaming against a real local HTTP server, desktop action
-validation with test backends, permission modes and the approval gate, message
-segmentation and rendering, attachments, storage, and install/uninstall
-transactions. They do not establish end-to-end reliability of an arbitrary
+Tests cover a full turn streamed from a real local HTTP server through the real
+controller into the message model, desktop action validation with test
+backends, permission modes and the approval gate, message segmentation and
+rendering, attachments and region cropping, conversation storage and search,
+and install/uninstall transactions. They do not establish end-to-end reliability of an arbitrary
 model or compositor — a real screenshot → model → drawing task still depends on
 your installed model, your Ollama server, the target application, and your
 desktop's permissions.

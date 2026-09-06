@@ -152,13 +152,23 @@ class OllamaClient:
         return data
 
     def capabilities(self, model: str) -> list[str]:
-        if _cloud_name(model):
-            raise OllamaError("Cloud models are disabled in Wynxo. Select a downloaded local model.")
-        data = self._json("POST", "/api/show", {"model": model})
-        if data.get("remote_host") or data.get("remote_model"):
-            raise OllamaError("This model forwards requests to a remote server. Choose a local model to keep your chats and screenshots on this computer.")
+        data = self.show(model)
         capabilities = data.get("capabilities", [])
         return [str(c) for c in capabilities] if isinstance(capabilities, list) else []
+
+    def describe(self, model: str) -> dict:
+        """Capabilities plus the model's native context window, when reported."""
+        data = self.show(model)
+        capabilities = data.get("capabilities", [])
+        info = data.get("model_info") or {}
+        context = 0
+        if isinstance(info, dict):
+            for key, value in info.items():
+                # Ollama namespaces this by architecture, e.g. "qwen2.context_length".
+                if str(key).endswith(".context_length") and isinstance(value, int):
+                    context = max(context, value)
+        return {"capabilities": [str(c) for c in capabilities] if isinstance(capabilities, list) else [],
+                "context_length": context}
 
     def _stream(self, path: str, payload: dict, cancel) -> Iterator[dict]:
         """A cancellable queue keeps Stop responsive even while a model is loading.

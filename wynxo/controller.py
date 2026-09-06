@@ -63,6 +63,19 @@ def _human_bytes(count) -> str:
     return ""
 
 
+def derive_title(text: str, limit: int = 52) -> str:
+    """Name a chat from its first message, cutting on a word boundary."""
+    cleaned = " ".join(str(text or "").split())
+    if not cleaned:
+        return "New chat"
+    if len(cleaned) <= limit:
+        return cleaned.rstrip(" .,;:!?-")
+    cut = cleaned[:limit]
+    if " " in cut:
+        cut = cut[:cut.rfind(" ")]
+    return cut.rstrip(" .,;:!?-") + "…"
+
+
 def group_for(timestamp: float, now: float | None = None) -> str:
     """Bucket a conversation into the sidebar's date sections."""
     now = time.time() if now is None else now
@@ -340,6 +353,7 @@ class Controller(QObject):
     tasksChanged = Signal()
     activityChanged = Signal()
     attachmentsChanged = Signal()
+    regionChanged = Signal()
     catalogChanged = Signal()
     permissionChanged = Signal()
     toast = Signal(str)
@@ -413,6 +427,7 @@ class Controller(QObject):
         self._catalog: list[dict] = []
         self._loaded_models: list[str] = []
         self._model_capabilities: list[str] = []
+        self._model_context_length = 0
         self._capability_probe_active = False
         self._capability_probe_generation = 0
         self._capability_error = ""
@@ -449,6 +464,7 @@ class Controller(QObject):
         self._permission_answer = False
         self._session_auto = False
         self._capture_busy = False
+        self._region: dict = {}
         self._code_palette = dict(md.DEFAULT_PALETTE)
         self._html_palette = dict(md.HTML_PALETTE)
         self._history_tokens = 0
@@ -498,6 +514,14 @@ class Controller(QObject):
     def modelSupportsVision(self): return "vision" in self._model_capabilities
     @Property(bool, notify=changed)
     def modelSupportsThinking(self): return "thinking" in self._model_capabilities
+    @Property(int, notify=changed)
+    def modelContextLength(self): return self._model_context_length
+    @Property(str, notify=changed)
+    def modelContextLabel(self):
+        length = self._model_context_length
+        if not length:
+            return ""
+        return f"{length // 1000}K native context" if length >= 1000 else f"{length} native context"
 
     @Property(str, notify=changed)
     def modelCapabilitySummary(self):
@@ -762,6 +786,7 @@ class Controller(QObject):
         generation = self._capability_probe_generation
         model, endpoint = self._model, self._endpoint
         self._model_capabilities = []
+        self._model_context_length = 0
         self._capability_error = ""
         if not self._online or not model or model not in self._models:
             self._capability_probe_active = False
@@ -770,14 +795,15 @@ class Controller(QObject):
         self._capability_probe_active = True
         self.changed.emit()
 
-        def done(capabilities):
+        def done(described):
             if generation != self._capability_probe_generation:
                 return
             self._capability_probe_active = False
             self._model_capabilities = sorted({
                 str(capability).strip().lower()
-                for capability in capabilities if str(capability).strip()
+                for capability in described.get("capabilities", []) if str(capability).strip()
             })
+            self._model_context_length = int(described.get("context_length", 0) or 0)
             self._capability_error = ""
             self._decorate_catalog()
             self.changed.emit()
@@ -787,10 +813,11 @@ class Controller(QObject):
                 return
             self._capability_probe_active = False
             self._model_capabilities = []
+            self._model_context_length = 0
             self._capability_error = message
             self.changed.emit()
 
-        self._job(lambda cancel, emit: OllamaClient(endpoint).capabilities(model), done, failed)
+        self._job(lambda cancel, emit: OllamaClient(endpoint).describe(model), done, failed)
 
     def _decorate_catalog(self):
         for entry in self._catalog:
@@ -1351,6 +1378,78 @@ class Controller(QObject):
     def attachScreenshot(self):
         self._capture("screen")
 
+    # ------------------------------------------------------ region capture
+    @Property(str, notify=regionChanged)
+    def regionImage(self): return self._region.get("image", "")
+    @Property(int, notify=regionChanged)
+    def regionWidth(self): return int(self._region.get("width", 0))
+    @Property(int, notify=regionChanged)
+    def regionHeight(self): return int(self._region.get("height", 0))
+    @Property(bool, notify=regionChanged)
+    def regionActive(self): return bool(self._region.get("image"))
+
+    @Slot()
+    def attachRegion(self):
+        """Capture the screen, then let the user pick part of it.
+
+        The crop happens here, on an image Wynxo already holds, so selecting a
+        region needs no extra permission and nothing new is captured.
+        """
+        if self._capture_busy or self._region.get("image"):
+            return
+        self._capture_busy = True
+        self.changed.emit()
+
+        def done(result):
+            self._capture_busy = False
+            if result.get("ok") and result.get("image"):
+                self._region = {"image": result["image"], "width": result.get("width", 0),
+                                "height": result.get("height", 0)}
+                self.regionChanged.emit()
+            else:
+                self._set_error("Screen capture failed", result.get("error", "No image was returned."))
+            self.changed.emit()
+
+        def failed(message):
+            self._capture_busy = False
+            self._set_error("Screen capture failed", message,
+                            [{"label": "Desktop settings", "action": "desktop"}])
+
+        self._job(lambda cancel, emit: self.desktop.capture("screen", cancel), done, failed)
+
+    @Slot()
+    def cancelRegion(self):
+        if self._region.get("image"):
+            self._region = {}
+            self.regionChanged.emit()
+
+    @Slot(int, int, int, int)
+    def cropRegion(self, x, y, width, height):
+        image = self._region.get("image", "")
+        self._region = {}
+        self.regionChanged.emit()
+        if not image or width < 8 or height < 8:
+            return
+        try:
+            import base64
+            import io
+            from PIL import Image
+            with Image.open(io.BytesIO(base64.b64decode(image))) as picture:
+                box = (max(0, x), max(0, y),
+                       min(picture.width, x + width), min(picture.height, y + height))
+                if box[2] - box[0] < 8 or box[3] - box[1] < 8:
+                    return
+                cropped = picture.crop(box).convert("RGB")
+            buffer = io.BytesIO()
+            cropped.save(buffer, format="PNG")
+            encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+        except Exception as exc:
+            self._set_error("That region could not be cropped", str(exc))
+            return
+        self._add_attachment(ctx.from_capture(
+            {"ok": True, "image": encoded, "width": cropped.width, "height": cropped.height},
+            ctx.SCREENSHOT, title="Screen region", detail="Region"))
+
     @Slot()
     def attachWindow(self):
         self._capture("window")
@@ -1428,7 +1527,7 @@ class Controller(QObject):
                              {"label": "Connection settings", "action": "settings"}])
             return
         if not self._task_id:
-            task = self.store.create_conversation(text[:64], self._model)
+            task = self.store.create_conversation(derive_title(text), self._model)
             self._task_id, self._task_title = task["id"], task["title"]
         attachments = list(self._attachments)
         vision_ready = "vision" in self._model_capabilities

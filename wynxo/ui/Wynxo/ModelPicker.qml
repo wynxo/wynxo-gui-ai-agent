@@ -109,6 +109,7 @@ Sheet {
                         Text {
                             Layout.fillWidth: true
                             text: [modelData.parameters, modelData.quantization, modelData.sizeLabel,
+                                   modelData.selected && bridge ? bridge.modelContextLabel : "",
                                    modelData.selected && bridge ? bridge.modelCapabilitySummary : ""]
                                   .filter(function(p) { return !!p; }).join(" · ")
                             color: Theme.textMuted

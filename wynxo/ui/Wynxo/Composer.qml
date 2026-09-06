@@ -135,6 +135,7 @@ Item {
                         { id: "clipboard", label: "Clipboard", icon: "clipboard" },
                         { separator: true },
                         { id: "screen", label: "Capture screen", icon: "camera" },
+                        { id: "region", label: "Capture a region…", icon: "grid" },
                         { id: "window",
                           label: contextMenu.windowTitle
                                  ? "Capture " + contextMenu.windowTitle.substring(0, 26)
@@ -150,6 +151,7 @@ Item {
                         else if (id === "folder") bridge.attachFolder();
                         else if (id === "clipboard") bridge.attachClipboard();
                         else if (id === "screen") bridge.attachScreenshot();
+                        else if (id === "region") bridge.attachRegion();
                         else if (id === "window") bridge.attachWindow();
                         else if (id === "clear") bridge.clearAttachments();
                     }

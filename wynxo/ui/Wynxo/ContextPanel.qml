@@ -302,6 +302,13 @@ Item {
                         }
                         Text {
                             Layout.fillWidth: true
+                            visible: bridge && bridge.modelContextLabel !== ""
+                            text: bridge ? bridge.modelContextLabel : ""
+                            color: Theme.textMuted
+                            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                        }
+                        Text {
+                            Layout.fillWidth: true
                             text: bridge ? bridge.modelCapabilityHint : ""
                             color: Theme.textMuted
                             font.family: Theme.sansFamily; font.pixelSize: Theme.micro

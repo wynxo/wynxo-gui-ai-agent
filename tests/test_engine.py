@@ -310,3 +310,26 @@ def test_next_run_does_not_reuse_old_screen_images():
                {"role": "user", "content": "Hello"}]
     AgentEngine(client, FakeDesktop()).run(history, "local:test", False, threading.Event(), lambda e: None)
     assert not any(m.get("images") for m in client.requests[0]["messages"])
+
+
+def test_describe_extracts_the_native_context_window(monkeypatch):
+    payload = {
+        "capabilities": ["completion", "vision"],
+        "model_info": {"general.architecture": "qwen2vl", "qwen2vl.context_length": 128000,
+                       "qwen2vl.embedding_length": 3584},
+    }
+    client = OllamaClient("http://127.0.0.1:11434")
+    monkeypatch.setattr(client, "_json", lambda *a, **k: payload)
+    described = client.describe("local:test")
+    assert described["capabilities"] == ["completion", "vision"]
+    assert described["context_length"] == 128000
+
+    monkeypatch.setattr(client, "_json", lambda *a, **k: {"capabilities": ["completion"]})
+    assert client.describe("local:test")["context_length"] == 0
+
+
+def test_describe_still_refuses_a_remote_model(monkeypatch):
+    client = OllamaClient("http://127.0.0.1:11434")
+    monkeypatch.setattr(client, "_json", lambda *a, **k: {"remote_host": "https://example.com"})
+    with pytest.raises(OllamaError, match="remote server"):
+        client.describe("local:test")

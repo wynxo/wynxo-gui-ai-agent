@@ -32,3 +32,4 @@ PermissionPrompt 1.0 PermissionPrompt.qml
 Onboarding 1.0 Onboarding.qml
 QuickBarContent 1.0 QuickBarContent.qml
 ErrorBanner 1.0 ErrorBanner.qml
+RegionSelector 1.0 RegionSelector.qml
