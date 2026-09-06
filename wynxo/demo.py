@@ -13,8 +13,8 @@ from pathlib import Path
 
 from . import context as ctx
 from . import markdown as md
-from .controller import Controller
 from .storage import Store
+from .workspace import WorkspaceController
 
 ANSWER = """**Firefox** is focused, with `pytest` running in a terminal behind it.
 Two tests fail on the same assertion.
@@ -76,7 +76,6 @@ CATALOG = [
      "capabilities": ["embedding"], "favorite": False, "loaded": False, "selected": False},
 ]
 
-# A 4x3 slate PNG: enough for the inspector preview to render a real image.
 _SWATCH = (
     "iVBORw0KGgoAAAANSUhEUgAAAUAAAAC0CAIAAABqhmJGAAAC8UlEQVR42u3csWrbQBzAYblodp0ORghjTJ8sQ56gY4c+"
     "Qp6gQ5+sGGOM8VIwwXOGQEhbN8W2pLv76/umEJNCjv64O90pk7ZdVkCZPhgCEDAgYOAS9dnvrlafX75Yr392+ynQ7wz8"
@@ -118,19 +117,15 @@ STEPS = [
 
 
 class DemoDesktop:
-    """A desktop backend that reports a healthy session and never acts."""
-
     def __init__(self, connected: bool = True):
         self.connected = connected
 
     def status(self):
         return {"backend": "Wayland / Desktop portal", "available": True,
                 "connected": self.connected,
-                "detail": "Connected through the desktop portal. Screenshot permission "
-                          "is managed separately by your desktop.",
+                "detail": "Connected through the desktop portal. Screenshot permission is managed separately by your desktop.",
                 "remembered": self.connected,
-                "stopShortcut": "Ctrl+Alt+Esc" if self.connected else "",
-                "stopDetail": ""}
+                "stopShortcut": "Ctrl+Alt+Esc" if self.connected else "", "stopDetail": ""}
 
     def connect(self):
         self.connected = True
@@ -146,8 +141,8 @@ class DemoDesktop:
         return {"title": "Firefox", "detail": "X11"}
 
 
-class DemoController(Controller):
-    """The real controller with its network and desktop edges pinned."""
+class DemoController(WorkspaceController):
+    """The real task-scoped controller with network and desktop edges pinned."""
 
     def __init__(self, scene: str = "conversation"):
         directory = tempfile.mkdtemp(prefix="wynxo-preview-")
@@ -156,20 +151,15 @@ class DemoController(Controller):
         store.set_setting("model", "qwen2.5vl:7b")
         store.set_setting("permission_mode", "safe")
         store.set_setting("favorite_models", [entry["name"] for entry in CATALOG if entry["favorite"]])
-        theme = {
-            "empty-violet": "Violet",
-            "empty-ember": "Ember",
-            "conversation-ion": "Ion",
-        }.get(scene)
+        theme = {"empty-violet": "Violet", "empty-ember": "Ember", "conversation-ion": "Ion"}.get(scene)
         if theme:
             store.set_setting("theme", theme)
-        super().__init__(store=store, desktop=DemoDesktop(scene in ("desktop", "conversation", "run")),
-                         autoconnect=False)
+        connected = scene in ("desktop", "conversation", "run", "empty-work-locked")
+        super().__init__(store=store, desktop=DemoDesktop(connected), autoconnect=False)
         self._preview_directory = Path(directory)
         self.scene = scene
         self._seed()
 
-    # Preview mode must never reach the network.
     def refreshModels(self):
         self._apply_catalog()
 
@@ -192,6 +182,7 @@ class DemoController(Controller):
         for title, age, pinned in CONVERSATIONS:
             conversation = self.store.create_conversation(title, "qwen2.5vl:7b")
             self.store.set_messages(conversation["id"], [{"role": "user", "content": title}])
+            self.store.set_setting(self._mode_key(conversation["id"]), "chat")
             with self.store._lock, self.store._db:
                 self.store._db.execute("UPDATE conversations SET updated_at=?,created_at=?,pinned=? WHERE id=?",
                                        (now - age, now - age, 1 if pinned else 0, conversation["id"]))
@@ -205,6 +196,8 @@ class DemoController(Controller):
                                  str(Path.home() / "Projects" / "notes")]
         self._task_id = created[0]["id"]
         self._task_title = created[0]["title"]
+        self._task_mode = "chat"
+        self._task_mode_locked = True
         self._num_ctx = 16384
         self._run_metrics = {"tokens": 427, "prompt_tokens": 1243, "cached_prompt_tokens": 792,
                              "load_ms": 812.0, "total_ms": 7360.0, "tokens_per_second": 18.6}
@@ -213,17 +206,32 @@ class DemoController(Controller):
         if self.scene == "welcome":
             self._task_id = ""
             self._task_title = "New task"
+            self._task_mode = "chat"
+            self._task_mode_locked = False
             self._onboarded = False
             self.changed.emit()
             return
         if self.scene.startswith("empty"):
             self._task_id = ""
             self._task_title = "New task"
+            if self.scene == "empty-work-locked":
+                self._task_mode, self._task_mode_locked = "work", True
+            elif self.scene == "empty-codex-locked":
+                self._task_mode, self._task_mode_locked = "codex", True
+            elif self.scene == "empty-chat-locked":
+                self._task_mode, self._task_mode_locked = "chat", True
+            else:
+                self._task_mode, self._task_mode_locked = "chat", False
             self.changed.emit()
             return
         if self.scene.startswith("context"):
+            self._task_mode, self._task_mode_locked = "chat", False
             self._seed_context_scene()
             return
+
+        if self.scene in ("desktop", "run"):
+            self._task_mode, self._task_mode_locked = "work", True
+            self.store.set_setting(self._mode_key(self._task_id), "work")
 
         self.messages.append_message("user", "What's on my screen? Can you help me fix it?")
         if self.scene == "desktop":
@@ -248,7 +256,6 @@ class DemoController(Controller):
         self.messages._emit(row, list(Messages_roles()))
 
     def _seed_finished_run(self):
-        """A run that is over: every step settled, one summary line."""
         self._task_title = "Draw a mountain scene in KolourPaint"
         finished = []
         for step in STEPS:
@@ -263,15 +270,12 @@ class DemoController(Controller):
         self._activity = [dict(step) for step in finished]
         self.messages.append_message(
             "assistant",
-            "Done. KolourPaint is open with a mountain scene on a 1024 × 768 canvas, "
-            "saved to **mountains.png** in your pictures folder.\n\n"
-            "The ridge line is a single drag through 24 points; the sun is a filled "
-            "ellipse. Say the word if you want the colours changed.")
+            "Done. KolourPaint is open with a mountain scene on a 1024 × 768 canvas, saved to **mountains.png** in your pictures folder.\n\n"
+            "The ridge line is a single drag through 24 points; the sun is a filled ellipse. Say the word if you want the colours changed.")
         self.activityChanged.emit()
         self.changed.emit()
 
     def _seed_context_scene(self):
-        """A new message with local context attached, ready to send."""
         self._task_id = ""
         self._task_title = "New task"
         self._attachments = [
@@ -293,8 +297,7 @@ class DemoController(Controller):
             self.messages.append_activity(step)
         self._activity = [dict(step) for step in STEPS]
         self._pending_permission = {
-            "tool": "type_text", "risk": "sensitive",
-            "summary": "Type “mountains.png”",
+            "tool": "type_text", "risk": "sensitive", "summary": "Type “mountains.png”",
             "detail": '{"text": "mountains.png"}',
         }
         self.activityChanged.emit()
@@ -315,7 +318,6 @@ def Messages_roles():
             Messages.THINK_SECONDS, Messages.THINK_DONE, Messages.STREAMING)
 
 
-# Scenes captured by --snapshot, in the order the README presents them.
 SCENES = [
     ("01-new-task", "empty", ""),
     ("02-task", "conversation", ""),
@@ -332,6 +334,7 @@ SCENES = [
     ("13-violet-home", "empty-violet", ""),
     ("14-ember-home", "empty-ember", ""),
     ("15-ion-conversation", "conversation-ion", ""),
-    ("16-codex-home", "empty", "modeCodex"),
-    ("17-work-home", "empty", "modeWork"),
+    ("16-wynxi-home", "empty-codex-locked", ""),
+    ("17-work-home", "empty-work-locked", ""),
+    ("18-chat-locked-home", "empty-chat-locked", ""),
 ]
