@@ -52,6 +52,8 @@ RegionSelector 1.0 RegionSelector.qml
 # The workspace dock
 WorkspaceDock 1.0 WorkspaceDock.qml
 DockTabBar 1.0 DockTabBar.qml
+PlanPanel 1.0 PlanPanel.qml
+PlanTaskRow 1.0 PlanTaskRow.qml
 FileExplorer 1.0 FileExplorer.qml
 FileViewer 1.0 FileViewer.qml
 TerminalPanel 1.0 TerminalPanel.qml
