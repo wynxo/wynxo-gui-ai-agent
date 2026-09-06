@@ -106,8 +106,16 @@ Sheet {
             clip: true
             contentWidth: availableWidth
 
+            // A wrapper gives the scroll view a content height that includes
+            // padding, so the last control never sits flush against the edge.
+            Item {
+                width: sheet.width - 196
+                implicitHeight: pages.implicitHeight + Theme.s5 + Theme.s7
+                height: implicitHeight
+
             StackLayout {
-                width: sheet.width - 196 - Theme.s6 * 2
+                id: pages
+                width: parent.width - Theme.s6 * 2
                 x: Theme.s6
                 y: Theme.s5
                 currentIndex: sheet.page
@@ -131,7 +139,7 @@ Sheet {
                                 variant: "primary"
                                 onClicked: bridge && bridge.setEndpoint(endpointField.text)
                             }
-                            WButton { text: "Reconnect"; iconName: "retry"; onClicked: bridge && bridge.refreshModels() }
+                            WButton { text: "Reconnect"; iconName: "retry"; variant: "ghost"; onClicked: bridge && bridge.refreshModels() }
                         }
                         Text {
                             width: parent.width
@@ -638,6 +646,7 @@ Sheet {
                         }
                     }
                 }
+            }
             }
         }
     }
