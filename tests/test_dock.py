@@ -13,7 +13,9 @@ from wynxo import activity, browser
     ("example.com", "https://example.com"),
     ("https://example.com/a?b=c", "https://example.com/a?b=c"),
     ("http://127.0.0.1:11434", "http://127.0.0.1:11434"),
-    ("localhost:8080/x", "https://localhost:8080/x"),
+    ("localhost:8080/x", "http://localhost:8080/x"),
+    ("127.0.0.1:3000", "http://127.0.0.1:3000"),
+    ("[::1]:5173/app", "http://[::1]:5173/app"),
     ("192.168.1.5", "https://192.168.1.5"),
 ])
 def test_an_address_is_taken_as_an_address(typed, expected):
@@ -39,6 +41,7 @@ def test_a_phrase_becomes_a_search(typed):
     "",
     "   ",
     "http://exa\nmple.com",
+    "example.com:not-a-port",
 ])
 def test_a_scheme_the_panel_will_not_open_is_refused_outright(typed):
     """Refused, not rewritten: the address bar must never lie about where you
@@ -58,6 +61,7 @@ def test_loopback_is_local_rather_than_insecure():
     ignore, so loopback gets a neutral mark instead."""
     assert browser.is_local("http://127.0.0.1:8000/") is True
     assert browser.is_local("http://localhost:3000") is True
+    assert browser.is_local("http://[::1]:5173") is True
     assert browser.is_local("http://example.com") is False
     assert browser.is_secure("https://example.com") is True
     assert browser.is_secure("http://example.com") is False
