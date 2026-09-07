@@ -78,14 +78,28 @@ def unavailable_reason() -> str:
             "Links still open in your system browser.")
 
 
+def _candidate_host(value: str) -> str:
+    """Hostname from a schemeless address candidate, or '' when malformed."""
+    head = str(value or "").split("/", 1)[0].split("?", 1)[0]
+    if not head or " " in head:
+        return ""
+    try:
+        parsed = urlsplit("//" + head)
+        # Accessing .port is validation: `example.com:nope` must not be accepted
+        # as an address merely because its hostname happens to parse.
+        _ = parsed.port
+        return str(parsed.hostname or "")
+    except ValueError:
+        return ""
+
+
 def _looks_like_host(value: str) -> bool:
     """Distinguish `example.com/x` from `fix the login bug`."""
-    head = value.split("/", 1)[0].split("?", 1)[0]
-    if not head or " " in head:
+    host = _candidate_host(value)
+    if not host:
         return False
-    if head.startswith("localhost") or head.startswith("127.0.0.1"):
+    if host.casefold() == "localhost":
         return True
-    host = head.split(":", 1)[0]
     try:
         ipaddress.ip_address(host)
         return True
@@ -97,11 +111,31 @@ def _looks_like_host(value: str) -> bool:
     return label.isalpha() and len(label) >= 2
 
 
+def _schemeless_is_loopback(value: str) -> bool:
+    """Whether a host typed without a scheme is the local machine.
+
+    Local development servers conventionally speak plain HTTP. Guessing HTTPS
+    for `localhost:3000` makes a valid address look broken, while public hosts
+    should still get the safer HTTPS default.
+    """
+    host = _candidate_host(value)
+    if not host:
+        return False
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 def normalize(text: str) -> str:
     """Turn what the user typed into a URL, or into a search.
 
     Returns '' when the input cannot be navigated to at all — a `file://` path
     or a `javascript:` snippet — so the caller can refuse instead of guessing.
+    Schemeless loopback addresses default to HTTP for local development;
+    internet hosts continue to default to HTTPS.
     """
     value = str(text or "").strip()
     if not value:
@@ -110,27 +144,31 @@ def normalize(text: str) -> str:
         return ""
 
     lowered = value.lower()
+    authority = value.split("/", 1)[0]
     if "://" in value:
         scheme = lowered.split("://", 1)[0]
         if scheme not in ALLOWED_SCHEMES:
             return ""
-    elif ":" in value.split("/", 1)[0] and not _looks_like_host(value):
-        # `javascript:`, `data:`, `about:` and friends without a `//`.
+    elif ":" in authority and not _looks_like_host(value):
+        # `javascript:`, `data:`, `about:` and malformed host:port input are
+        # refused, not turned into a search that hides the typing error.
         head = lowered.split(":", 1)[0]
-        if head.isalpha() and head not in ALLOWED_SCHEMES:
+        if head.isalpha() or "." in head or head.startswith("["):
             return ""
 
     if "://" not in value:
         if _looks_like_host(value):
-            value = "https://" + value
+            value = ("http://" if _schemeless_is_loopback(value) else "https://") + value
         else:
             return SEARCH_TEMPLATE.format(quote(value, safe=""))
 
     try:
         parsed = urlsplit(value)
+        # As above, force port validation before the URL reaches WebEngine.
+        _ = parsed.port
     except ValueError:
         return ""
-    if parsed.scheme not in ALLOWED_SCHEMES or not parsed.netloc:
+    if parsed.scheme not in ALLOWED_SCHEMES or not parsed.netloc or not parsed.hostname:
         return ""
     return urlunsplit(parsed)
 
@@ -173,10 +211,13 @@ def is_local(url: str) -> bool:
     is, and a warning triangle on your own dev server is a warning people learn
     to ignore. It gets a neutral mark instead.
     """
-    host = host_of(url).rsplit(":", 1)[0].strip("[]")
+    try:
+        host = str(urlsplit(str(url or "")).hostname or "")
+    except ValueError:
+        return False
     if not host:
         return False
-    if host == "localhost":
+    if host.casefold() == "localhost":
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
