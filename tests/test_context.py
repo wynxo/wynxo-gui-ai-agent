@@ -12,8 +12,19 @@ def test_text_file_is_attached_with_a_readable_summary(tmp_path):
     assert attachment["kind"] == ctx.FILE
     assert attachment["title"] == "main.py"
     assert "print('hello')" in attachment["text"]
-    assert "lines" in attachment["subtitle"]
+    assert attachment["subtitle"].startswith("2 lines ·")
     assert attachment["tokens"] > 0
+
+
+def test_attachment_line_counts_do_not_invent_a_line_after_final_newline(tmp_path):
+    one = tmp_path / "one.txt"
+    one.write_text("one line\n", encoding="utf-8")
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+
+    assert ctx.load_text_file(one)["subtitle"].startswith("1 line ·")
+    assert ctx.load_text_file(empty)["subtitle"].startswith("0 lines ·")
+    assert ctx.from_page({"title": "Page", "text": "one line\n", "host": ""})["subtitle"] == "1 line"
 
 
 def test_binary_files_are_refused_rather_than_mangled(tmp_path):
