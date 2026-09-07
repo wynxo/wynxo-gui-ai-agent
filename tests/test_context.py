@@ -57,6 +57,23 @@ def test_folders_become_a_listing_not_a_recursive_read(tmp_path):
     assert ".hidden" not in attachment["text"]
 
 
+def test_hidden_folder_entries_do_not_consume_the_visible_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(ctx, "MAX_FOLDER_ENTRIES", 2)
+    for index in range(20):
+        (tmp_path / f".hidden-{index:02d}").write_text("secret", encoding="utf-8")
+    for name in ("alpha.txt", "beta.txt", "gamma.txt"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+
+    attachment = ctx.load_folder(tmp_path)
+
+    assert "alpha.txt" in attachment["text"]
+    assert "beta.txt" in attachment["text"]
+    assert "gamma.txt" not in attachment["text"]
+    assert ".hidden-" not in attachment["text"]
+    assert attachment["subtitle"] == "2 items"
+    assert "listing truncated at 2 entries" in attachment["text"]
+
+
 def test_clipboard_text_and_images():
     text = ctx.from_clipboard("  some copied text  ")
     assert text["kind"] == ctx.CLIPBOARD
