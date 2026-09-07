@@ -12,8 +12,19 @@ def test_text_file_is_attached_with_a_readable_summary(tmp_path):
     assert attachment["kind"] == ctx.FILE
     assert attachment["title"] == "main.py"
     assert "print('hello')" in attachment["text"]
-    assert "lines" in attachment["subtitle"]
+    assert attachment["subtitle"].startswith("2 lines ·")
     assert attachment["tokens"] > 0
+
+
+def test_attachment_line_counts_do_not_invent_a_line_after_final_newline(tmp_path):
+    one = tmp_path / "one.txt"
+    one.write_text("one line\n", encoding="utf-8")
+    empty = tmp_path / "empty.txt"
+    empty.write_text("", encoding="utf-8")
+
+    assert ctx.load_text_file(one)["subtitle"].startswith("1 line ·")
+    assert ctx.load_text_file(empty)["subtitle"].startswith("0 lines ·")
+    assert ctx.from_page({"title": "Page", "text": "one line\n", "host": ""})["subtitle"] == "1 line"
 
 
 def test_binary_files_are_refused_rather_than_mangled(tmp_path):
@@ -55,6 +66,23 @@ def test_folders_become_a_listing_not_a_recursive_read(tmp_path):
     assert "src/" in attachment["text"]
     assert "notes.md" in attachment["text"]
     assert ".hidden" not in attachment["text"]
+
+
+def test_hidden_folder_entries_do_not_consume_the_visible_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(ctx, "MAX_FOLDER_ENTRIES", 2)
+    for index in range(20):
+        (tmp_path / f".hidden-{index:02d}").write_text("secret", encoding="utf-8")
+    for name in ("alpha.txt", "beta.txt", "gamma.txt"):
+        (tmp_path / name).write_text(name, encoding="utf-8")
+
+    attachment = ctx.load_folder(tmp_path)
+
+    assert "alpha.txt" in attachment["text"]
+    assert "beta.txt" in attachment["text"]
+    assert "gamma.txt" not in attachment["text"]
+    assert ".hidden-" not in attachment["text"]
+    assert attachment["subtitle"] == "2 items"
+    assert "listing truncated at 2 entries" in attachment["text"]
 
 
 def test_clipboard_text_and_images():

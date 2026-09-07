@@ -58,6 +58,11 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text) // 4) if text else 0
 
 
+def _line_count(text: str) -> int:
+    """Logical lines without inventing an empty line after a final newline."""
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+
+
 def make(kind: str, title: str, **fields) -> dict:
     attachment = {"id": _new_id(), "kind": kind, "title": title, "subtitle": "",
                   "path": "", "text": "", "image": "", "mime": "", "bytes": 0,
@@ -72,11 +77,12 @@ def from_page(page: dict) -> dict:
     """A page the user chose to hand over from the built-in browser."""
     text = str(page.get("text", ""))
     host = str(page.get("host", ""))
-    lines = text.count("\n") + 1 if text else 0
+    lines = _line_count(text)
     detail = host + (" · truncated" if page.get("truncated") else "")
+    unit = "line" if lines == 1 else "lines"
     return make(WEB, str(page.get("title") or host or "Web page"),
                 path=str(page.get("url", "")), text=text,
-                subtitle=detail or f"{lines} lines", mime="text/plain")
+                subtitle=detail or f"{lines} {unit}", mime="text/plain")
 
 
 def is_image_path(path: str | Path) -> bool:
@@ -128,9 +134,10 @@ def load_text_file(path: str | Path) -> dict:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         text = data.decode("utf-8", errors="replace")
-    lines = text.count("\n") + 1
+    lines = _line_count(text)
+    unit = "line" if lines == 1 else "lines"
     return make(FILE, target.name, path=str(target), bytes=size, text=text,
-                mime="text/plain", subtitle=f"{lines} lines · {_human_size(size)}")
+                mime="text/plain", subtitle=f"{lines} {unit} · {_human_size(size)}")
 
 
 def load_path(path: str | Path) -> dict:
@@ -149,10 +156,13 @@ def load_folder(path: str | Path) -> dict:
     entries: list[str] = []
     truncated = False
     try:
-        for index, item in enumerate(sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))):
+        for item in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
             if item.name.startswith("."):
                 continue
-            if index >= MAX_FOLDER_ENTRIES:
+            # The limit is a limit on context the user can actually see. Hidden
+            # entries are intentionally omitted and therefore must not consume
+            # the visible listing budget.
+            if len(entries) >= MAX_FOLDER_ENTRIES:
                 truncated = True
                 break
             if item.is_dir():
@@ -167,8 +177,9 @@ def load_folder(path: str | Path) -> dict:
     listing = "\n".join(entries) or "(empty folder)"
     if truncated:
         listing += f"\n… listing truncated at {MAX_FOLDER_ENTRIES} entries"
+    unit = "item" if len(entries) == 1 else "items"
     return make(FOLDER, target.name or str(target), path=str(target), text=listing,
-                subtitle=f"{len(entries)} items")
+                subtitle=f"{len(entries)} {unit}")
 
 
 def from_clipboard(text: str = "", image_png: bytes | None = None) -> dict:
