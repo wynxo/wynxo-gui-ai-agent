@@ -5,11 +5,11 @@ import QtQuick
     Wynxo's interface tokens. The only place colour, spacing, radius, type and
     motion are decided.
 
-    The workspace is a near-black graphite room with three columns in it. Depth
-    is carried by a handful of neutral steps rather than by shadows or glass:
-    the shell recedes, the conversation sits on the plate, and a panel lifts by
-    one step only when it has to. Accent is not decoration — it marks focus, the
-    send action and the current selection, and nothing else.
+    The workspace remains a near-black graphite room, but chrome and controls
+    use a restrained glass material: translucent tint, a bright top edge, an
+    inner reflection and soft depth. It is intentionally limited to interactive
+    surfaces so the conversation stays calm and readable instead of turning the
+    whole app into decorative glassmorphism.
 */
 QtObject {
     id: theme
@@ -18,17 +18,16 @@ QtObject {
     readonly property bool ready: bridge !== null
 
     // ---------------------------------------------------------- foundation
-    // Six neutral steps, close enough together that the interface reads as one
-    // material and far enough apart that a panel edge never needs a border to
-    // be legible.
-    readonly property color background:      "#191919"   // the plate: conversation
-    readonly property color backgroundSoft:  "#121212"   // the shell: sidebars, chrome
-    readonly property color surface:         "#202020"   // resting controls
-    readonly property color surfaceRaised:   "#262626"   // composer, popovers, cards
+    // Opaque fallbacks remain the readability baseline. GlassSurface layers
+    // translucency over these values without weakening text contrast.
+    readonly property color background:      "#191919"
+    readonly property color backgroundSoft:  "#121212"
+    readonly property color surface:         "#202020"
+    readonly property color surfaceRaised:   "#262626"
     readonly property color surfaceHover:    "#2e2e2e"
     readonly property color surfacePressed:  "#383838"
     readonly property color surfaceSelected: "#333333"
-    readonly property color surfaceSunken:   "#0e0e0e"   // code, terminal, wells
+    readonly property color surfaceSunken:   "#0e0e0e"
     readonly property color scrim:           "#cc070707"
 
     // Aliases kept so a component can say what it means.
@@ -38,6 +37,23 @@ QtObject {
     readonly property color borderSubtle: "#303030"
     readonly property color border:       "#3b3b3b"
     readonly property color borderStrong: "#4d4d4d"
+
+    // ------------------------------------------------------ liquid glass
+    // Cross-platform approximation of the macOS material vocabulary. The
+    // values deliberately stay neutral; accent is reserved for focus/action.
+    readonly property color glassTint:        "#2a2b2f"
+    readonly property color glassTintStrong:  "#323338"
+    readonly property color glassTintHover:   "#3a3b40"
+    readonly property color glassEdge:        Qt.rgba(1, 1, 1, 0.10)
+    readonly property color glassEdgeStrong:  Qt.rgba(1, 1, 1, 0.18)
+    readonly property color glassInner:       Qt.rgba(1, 1, 1, 0.045)
+    readonly property color glassSpecular:    Qt.rgba(1, 1, 1, 0.12)
+    readonly property color glassSpecularHot: Qt.rgba(1, 1, 1, 0.19)
+    readonly property color glassLowlight:    Qt.rgba(0, 0, 0, 0.28)
+    readonly property color glassShadow:      Qt.rgba(0, 0, 0, 0.72)
+    readonly property real glassThinOpacity: 0.46
+    readonly property real glassOpacity: 0.68
+    readonly property real glassStrongOpacity: 0.88
 
     readonly property color textPrimary:   "#f2f1ed"
     readonly property color textSecondary: "#c6c5bf"
@@ -99,20 +115,22 @@ QtObject {
     readonly property int s7: 32
     readonly property int s8: 48
 
-    readonly property int r1: 5
-    readonly property int r2: 7
-    readonly property int r3: 11
-    readonly property int r4: 14
+    // Slightly rounder continuous-feeling geometry makes the glass read as a
+    // material while keeping dense tooling compact.
+    readonly property int r1: 7
+    readonly property int r2: 10
+    readonly property int r3: 14
+    readonly property int r4: 18
     readonly property int rPill: 999
 
     readonly property int control: compact ? 30 : 32
     readonly property int controlSmall: compact ? 26 : 28
     readonly property int rowHeight: compact ? 32 : 35
-    readonly property int denseRow: compact ? 24 : 26     // file tree, diff, terminal
+    readonly property int denseRow: compact ? 24 : 26
     readonly property int gutter: compact ? 16 : 22
     readonly property int readingWidth: 780
     readonly property int headerHeight: compact ? 42 : 46
-    readonly property int railWidth: 44                    // collapsed dock rail
+    readonly property int railWidth: 44
 
     // ---------------------------------------------------------- typography
     readonly property string sansFamily: ready && bridge.systemFont ? systemSans : "Inter"
@@ -130,9 +148,9 @@ QtObject {
 
     // ------------------------------------------------------------- motion
     readonly property bool reducedMotion: ready && bridge.reducedMotion
-    readonly property int fast: reducedMotion ? 0 : 90
-    readonly property int base: reducedMotion ? 0 : 130
-    readonly property int slow: reducedMotion ? 0 : 170
+    readonly property int fast: reducedMotion ? 0 : 110
+    readonly property int base: reducedMotion ? 0 : 170
+    readonly property int slow: reducedMotion ? 0 : 230
     readonly property int easing: Easing.OutCubic
 
     function stateColor(name) {

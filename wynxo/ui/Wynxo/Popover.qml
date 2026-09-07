@@ -22,8 +22,6 @@ Popup {
 
     // Keep the surface inside the window: flip vertically, and pull back
     // horizontally, instead of drawing half of it outside the frame.
-    // Everything is derived from `anchorX` rather than from the current `x`,
-    // so opening the same popover twice puts it in the same place.
     property real anchorX: 0
     function place() {
         if (!parent || !Overlay.overlay) return;
@@ -43,17 +41,18 @@ Popup {
 
     onAboutToShow: place()
 
-    background: Rectangle {
+    background: GlassSurface {
         radius: Theme.r3
-        color: Theme.surfaceRaised
-        border.width: 1
-        border.color: Theme.borderStrong
+        tint: Theme.glassTintStrong
+        fillOpacity: Theme.glassStrongOpacity
+        elevated: true
+        strongEdge: true
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.fast }
-            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.fast; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.fast; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Dense single-line field with a restrained one-pixel focus treatment. */
+/*! Dense single-line field with a liquid-glass focus treatment. */
 TextField {
     id: field
     property string iconName: ""
@@ -18,13 +18,13 @@ TextField {
     selectByMouse: true
     Accessible.name: placeholderText
 
-    background: Rectangle {
-        radius: Theme.r1
-        color: field.activeFocus ? Theme.surfaceRaised : Theme.surface
-        border.width: 1
-        border.color: field.activeFocus ? Theme.borderStrong : Theme.borderSubtle
-        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-        Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+    background: GlassSurface {
+        radius: Theme.r2
+        tint: field.activeFocus ? Theme.glassTintStrong : Theme.glassTint
+        fillOpacity: field.activeFocus ? 0.72 : Theme.glassThinOpacity
+        active: field.activeFocus
+        strongEdge: field.activeFocus
+        edgeColor: field.activeFocus ? Theme.accentEdge : Theme.glassEdge
     }
 
     Icon {

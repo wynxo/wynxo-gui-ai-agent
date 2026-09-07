@@ -5,10 +5,6 @@ import QtQuick.Controls
     A styled dropdown. Items: {id, label, detail, icon, shortcut, checked,
     danger, disabled, separator, hidden}.
 
-    An item with a `detail` gets a second line and a taller row, so a menu that
-    is really a choice — which product, which model — can explain itself
-    without becoming a dialog.
-
     It flips above or beside its anchor rather than opening off-screen, and
     arrow keys walk it, so a menu is never a mouse-only surface.
 */
@@ -17,7 +13,6 @@ Popup {
     property var items: []
     property int itemHeight: 32
     property int menuWidth: 232
-    // "below" or "above": the preferred side; the menu flips if there is no room.
     property string preferredEdge: "below"
     property int gap: Theme.s1
     signal picked(string id)
@@ -45,10 +40,6 @@ Popup {
     }
     property string highlighted: ""
 
-    // Keep the surface inside the window: flip vertically, and pull back
-    // horizontally, instead of drawing half of it outside the frame.
-    // Everything is derived from `anchorX` rather than from the current `x`,
-    // so opening the same menu twice puts it in the same place.
     property real anchorX: 0
     function place() {
         if (!parent || !Overlay.overlay) return;
@@ -68,17 +59,18 @@ Popup {
 
     onAboutToShow: { highlighted = ""; place(); }
 
-    background: Rectangle {
+    background: GlassSurface {
         radius: Theme.r3
-        color: Theme.surfaceRaised
-        border.width: 1
-        border.color: Theme.borderStrong
+        tint: Theme.glassTintStrong
+        fillOpacity: Theme.glassStrongOpacity
+        elevated: true
+        strongEdge: true
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.fast }
-            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.fast; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.fast; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }
@@ -116,21 +108,23 @@ Popup {
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.width - Theme.s3; height: 1
-                color: Theme.borderSubtle
+                color: Theme.glassEdge
             }
         }
     }
 
     Component {
         id: entryItem
-        Rectangle {
+        GlassSurface {
             property var entry: ({})
             readonly property bool on: area.containsMouse || menu.highlighted === entry.id
             readonly property real textLeft: entry.icon ? Theme.s3 + 14 + Theme.s3 : Theme.s3
             height: entry.detail ? menu.itemHeight + 14 : menu.itemHeight
-            radius: Theme.r1
-            color: on && !entry.disabled ? Theme.surfaceHover
-                 : entry.checked ? Theme.surfaceSelected : "transparent"
+            radius: Theme.r2
+            tint: entry.checked ? Theme.accent : Theme.glassTintHover
+            fillOpacity: on && !entry.disabled ? 0.52 : entry.checked ? 0.12 : 0.0
+            outlineVisible: on && !entry.disabled
+            sheen: on && !entry.disabled
             opacity: entry.disabled ? 0.4 : 1
 
             Icon {

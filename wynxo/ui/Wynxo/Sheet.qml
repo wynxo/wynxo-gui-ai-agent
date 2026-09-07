@@ -3,9 +3,9 @@ import QtQuick.Controls
 import QtQuick.Window
 
 /*!
-    Compact modal panel used throughout Wynxo. The surface is deliberately
-    squared-off and low-contrast so settings, models and confirmations feel
-    like one desktop tool rather than floating mobile cards.
+    Compact modal panel used throughout Wynxo. The material is a restrained
+    desktop glass surface: enough depth to separate a decision from the app,
+    without turning settings and confirmations into floating mobile cards.
 */
 Popup {
     id: sheet
@@ -33,17 +33,18 @@ Popup {
 
     Overlay.modal: Rectangle { color: Theme.scrim }
 
-    background: Rectangle {
-        radius: Theme.r3
-        color: Theme.backgroundSoft
-        border.width: 1
-        border.color: Theme.borderStrong
+    background: GlassSurface {
+        radius: Theme.r4
+        tint: Theme.glassTintStrong
+        fillOpacity: 0.94
+        elevated: true
+        strongEdge: true
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.base; easing.type: Theme.easing }
-            NumberAnimation { property: "scale"; from: 0.995; to: 1; duration: Theme.base; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.985; to: 1; duration: Theme.base; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }
@@ -95,7 +96,7 @@ Popup {
 
             Rectangle {
                 anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-                height: 1; color: Theme.borderSubtle
+                height: 1; color: Theme.glassEdge
             }
         }
 

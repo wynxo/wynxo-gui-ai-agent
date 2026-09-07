@@ -6,8 +6,9 @@ import QtQuick.Layouts
     One command box for Chat, Work and Wynxi.
 
     The prompt gets the space. Context, project, model and run controls live on
-    one quiet toolbar underneath it. Nothing competes with the text field and
-    nothing is allowed to collide when the window gets narrow.
+    one quiet toolbar underneath it. The shell is now the primary liquid-glass
+    object in the conversation: substantial enough to feel tactile, still quiet
+    enough that it never competes with the prompt.
 */
 Item {
     id: root
@@ -47,15 +48,17 @@ Item {
         input.text = "";
     }
 
-    Rectangle {
+    GlassSurface {
         id: shell
         width: parent.width
         height: content.implicitHeight + Theme.s3 + Theme.s2
         radius: Theme.r4
-        color: Theme.surfaceRaised
-        border.width: 1
-        border.color: input.activeFocus ? Theme.accentEdge : Theme.borderSubtle
-        Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+        tint: input.activeFocus ? Theme.glassTintStrong : Theme.glassTint
+        fillOpacity: input.activeFocus ? 0.78 : Theme.glassOpacity
+        elevated: true
+        strongEdge: true
+        active: input.activeFocus
+        edgeColor: input.activeFocus ? Theme.accentEdge : Theme.glassEdgeStrong
 
         ColumnLayout {
             id: content
@@ -123,11 +126,11 @@ Item {
                             hoverEnabled: true
                             Accessible.name: "Remove " + modelData.title
                             onClicked: if (bridge) bridge.removeAttachment(modelData.id)
-                            background: Rectangle {
-                                radius: 9
-                                color: removeImage.hovered ? Theme.textPrimary : Theme.alpha(Theme.background, 0.92)
-                                border.width: 1
-                                border.color: Theme.borderStrong
+                            background: GlassSurface {
+                                radius: Theme.rPill
+                                tint: removeImage.hovered ? Theme.textPrimary : Theme.glassTintStrong
+                                fillOpacity: removeImage.hovered ? 0.94 : 0.82
+                                strongEdge: true
                             }
                             contentItem: Text {
                                 text: "×"
@@ -235,11 +238,13 @@ Item {
                     ToolTip.visible: hovered
                     ToolTip.text: "Add files, folders, screenshots or clipboard context"
                     ToolTip.delay: 550
-                    background: Rectangle {
+                    background: GlassSurface {
                         radius: Theme.r2
-                        color: addContext.hovered || contextMenu.opened ? Theme.surfaceHover : "transparent"
-                        border.width: addContext.visualFocus ? 1 : 0
-                        border.color: Theme.accentEdge
+                        tint: Theme.glassTintHover
+                        fillOpacity: addContext.hovered || contextMenu.opened ? 0.50 : 0.0
+                        outlineVisible: addContext.hovered || contextMenu.opened || addContext.visualFocus
+                        active: addContext.visualFocus
+                        sheen: addContext.hovered || contextMenu.opened
                     }
                     contentItem: Icon {
                         anchors.centerIn: parent
@@ -356,22 +361,21 @@ Item {
                     shortcut: bridge && bridge.busy ? "Esc" : "Enter"
                     enabled: (bridge && bridge.busy) || root.canSend
                     onClicked: bridge && bridge.busy ? bridge.stop() : root.send()
-                    background: Rectangle {
-                        radius: Theme.r2
-                        color: bridge && bridge.busy ? Theme.surfaceSelected
-                             : sendButton.enabled ? (sendButton.hovered ? Theme.accentHover : Theme.accent)
-                             : Theme.surfaceSelected
-                        border.width: sendButton.enabled || (bridge && bridge.busy) ? 0 : 1
-                        border.color: Theme.borderSubtle
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.margins: -2
-                            radius: parent.radius + 2
-                            color: "transparent"
-                            visible: sendButton.visualFocus
-                            border.width: 1
-                            border.color: Theme.accentEdge
-                        }
+                    background: GlassSurface {
+                        radius: Theme.rPill
+                        tint: bridge && bridge.busy ? Theme.glassTintStrong
+                             : sendButton.enabled
+                               ? (sendButton.hovered ? Theme.accentHover : Theme.accent)
+                               : Theme.glassTint
+                        fillOpacity: bridge && bridge.busy ? 0.76
+                                   : sendButton.enabled ? 0.94 : 0.38
+                        outlineVisible: true
+                        active: sendButton.visualFocus
+                        strongEdge: sendButton.enabled
+                        elevated: sendButton.enabled && sendButton.hovered
+                        edgeColor: sendButton.visualFocus ? Theme.accentEdge
+                                 : sendButton.enabled ? Theme.alpha(Theme.textPrimary, 0.15)
+                                 : Theme.glassEdge
                     }
                 }
             }
@@ -387,13 +391,14 @@ Item {
                 bridge.attachPath(drop.urls[i].toString());
             drop.accept();
         }
-        Rectangle {
+        GlassSurface {
             anchors.fill: parent
             visible: parent.containsDrag
             radius: shell.radius
-            color: Theme.accentMuted
-            border.width: 1
-            border.color: Theme.accentEdge
+            tint: Theme.accent
+            fillOpacity: 0.13
+            strongEdge: true
+            edgeColor: Theme.accentEdge
             Text {
                 anchors.centerIn: parent
                 text: "Drop to attach"

@@ -29,24 +29,17 @@ AbstractButton {
     Accessible.name: subtitle ? text + ", " + subtitle : text
     ToolTip.delay: 500
 
-    background: Rectangle {
-        radius: Theme.r2
-        color: chip.selected ? Theme.accentMuted
-             : chip.hovered && chip.interactive ? Theme.surfaceHover : Theme.surfaceRaised
-        border.width: 1
-        border.color: chip.selected ? Theme.accentEdge
-                    : chip.hovered && chip.interactive ? Theme.borderStrong : Theme.borderSubtle
-        Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-        Behavior on border.color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: "transparent"
-            visible: chip.visualFocus
-            border.width: 2
-            border.color: Theme.accentEdge
-        }
+    background: GlassSurface {
+        radius: Theme.rPill
+        tint: chip.selected ? Theme.accent
+             : chip.hovered && chip.interactive ? Theme.glassTintHover : Theme.glassTint
+        fillOpacity: chip.selected ? 0.14
+                   : chip.hovered && chip.interactive ? 0.62 : Theme.glassThinOpacity
+        strongEdge: chip.selected || (chip.hovered && chip.interactive)
+        active: chip.visualFocus
+        edgeColor: chip.visualFocus ? Theme.accentEdge
+                 : chip.selected ? Theme.accentEdge
+                 : chip.hovered && chip.interactive ? Theme.glassEdgeStrong : Theme.glassEdge
     }
 
     contentItem: RowLayout {
