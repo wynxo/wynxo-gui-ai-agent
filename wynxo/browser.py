@@ -144,14 +144,16 @@ def normalize(text: str) -> str:
         return ""
 
     lowered = value.lower()
+    authority = value.split("/", 1)[0]
     if "://" in value:
         scheme = lowered.split("://", 1)[0]
         if scheme not in ALLOWED_SCHEMES:
             return ""
-    elif ":" in value.split("/", 1)[0] and not _looks_like_host(value):
-        # `javascript:`, `data:`, `about:` and friends without a `//`.
+    elif ":" in authority and not _looks_like_host(value):
+        # `javascript:`, `data:`, `about:` and malformed host:port input are
+        # refused, not turned into a search that hides the typing error.
         head = lowered.split(":", 1)[0]
-        if head.isalpha() and head not in ALLOWED_SCHEMES:
+        if head.isalpha() or "." in head or head.startswith("["):
             return ""
 
     if "://" not in value:
