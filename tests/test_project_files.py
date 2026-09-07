@@ -122,6 +122,32 @@ def test_saving_replaces_the_file_and_leaves_no_temporary(project):
     assert not list(project.glob("**/*.wynxo-tmp"))
 
 
+def test_saving_preserves_executable_permissions(project):
+    target = project / "src" / "run.sh"
+    target.write_text("#!/bin/sh\necho before\n")
+    target.chmod(0o751)
+
+    files.write_file(project, target, "#!/bin/sh\necho after\n")
+
+    assert target.read_text() == "#!/bin/sh\necho after\n"
+    assert target.stat().st_mode & 0o777 == 0o751
+
+
+def test_saving_a_truncated_large_file_is_refused_without_data_loss(project, monkeypatch):
+    monkeypatch.setattr(files, "MAX_TEXT_BYTES", 64)
+    target = project / "large.txt"
+    original = "first line\n" + ("tail that must survive\n" * 20)
+    target.write_text(original)
+
+    preview = files.read_file(project, target, max_bytes=files.MAX_TEXT_BYTES)
+    assert preview["truncated"] is True
+    with pytest.raises(ValueError, match="read-only"):
+        files.write_file(project, target, preview["text"] + "edited\n")
+
+    assert target.read_text() == original
+    assert not list(project.glob("**/*.wynxo-tmp"))
+
+
 def test_saving_refuses_a_path_outside_the_project(project, tmp_path):
     target = tmp_path.parent / "victim.txt"
     target.write_text("original")

@@ -302,16 +302,28 @@ def read_file(root, path, max_bytes: int = MAX_TEXT_BYTES) -> dict:
 
 
 def write_file(root, path, text: str) -> dict:
-    """Save the viewer's buffer back, atomically, inside the project only."""
+    """Save the viewer's complete buffer back, atomically and without changing its mode.
+
+    A truncated preview is never a complete editor buffer. Refuse to write files
+    above the viewer limit so saving a visible prefix cannot destroy the unseen
+    tail. Atomic replacement also preserves the original permission bits, which
+    matters for scripts and other executable project files.
+    """
     target = resolve_within(root, path)
     if target.is_dir():
         raise ValueError("That path is a folder")
     if not target.exists():
         raise ValueError("That file no longer exists")
+    original = target.stat()
+    if original.st_size > MAX_TEXT_BYTES:
+        raise ValueError(
+            f"Files larger than {human_size(MAX_TEXT_BYTES)} are read-only in Wynxo"
+        )
     payload = str(text)
     temporary = target.with_name(target.name + ".wynxo-tmp")
     try:
         temporary.write_text(payload, encoding="utf-8")
+        os.chmod(temporary, original.st_mode & 0o7777)
         os.replace(temporary, target)
     finally:
         if temporary.exists():

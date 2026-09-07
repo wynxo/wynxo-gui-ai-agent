@@ -19,6 +19,7 @@ Item {
     readonly property bool hasFile: !!(record && record.path)
     readonly property bool isImage: hasFile && !!record.image
     readonly property bool readable: hasFile && !record.error && !record.binary && !record.image
+    readonly property bool editable: readable && !record.truncated
     readonly property bool dirty: !!(dock && dock.fileModified)
     property bool wrap: false
     property bool editing: false
@@ -48,7 +49,7 @@ Item {
         }
     }
 
-    function save() { if (dock) dock.saveFile(); }
+    function save() { if (dock && root.editable) dock.saveFile(); }
     function openFind() {
         if (!readable) return;
         findOpen = true;
@@ -289,13 +290,14 @@ Item {
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.code
                     selectByMouse: true
+                    readOnly: !root.editable
                     wrapMode: root.wrap ? TextEdit.WrapAnywhere : TextEdit.NoWrap
                     textFormat: TextEdit.PlainText
                     persistentSelection: true
-                    Accessible.role: Accessible.EditableText
+                    Accessible.role: root.editable ? Accessible.EditableText : Accessible.StaticText
                     Accessible.name: root.hasFile ? root.record.name : "File contents"
 
-                    onTextChanged: if (root.dock && root.loadedPath) root.dock.setFileBuffer(text)
+                    onTextChanged: if (root.dock && root.loadedPath && root.editable) root.dock.setFileBuffer(text)
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
                             root.save();
@@ -351,6 +353,38 @@ Item {
                 iconName: "file"
                 title: "No file open"
                 detail: "Pick a file in the tree above to read or edit it here."
+            }
+        }
+
+        // ----------------------------------------------- read-only preview
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.record.truncated ? 30 : 0
+            visible: !!root.record.truncated
+            color: Theme.backgroundSoft
+            Rectangle {
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                height: 1; color: Theme.borderSubtle
+            }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.s3
+                anchors.rightMargin: Theme.s3
+                spacing: Theme.s2
+                Icon {
+                    name: "lock"
+                    ink: Theme.textMuted
+                    Layout.preferredWidth: 11
+                    Layout.preferredHeight: 11
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Large-file preview · read-only to protect content not loaded into the editor"
+                    color: Theme.textSecondary
+                    font.family: Theme.sansFamily
+                    font.pixelSize: Theme.micro
+                    elide: Text.ElideRight
+                }
             }
         }
 
