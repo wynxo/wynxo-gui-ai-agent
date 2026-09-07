@@ -2,11 +2,9 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    A small anchored surface for details that do not deserve a whole panel:
-    context previews, the model picker, run details.
-
-    Like WMenu it flips and pulls back to stay inside the window; unlike a
-    sheet it never dims the app, because it is a glance, not a decision.
+    A small anchored surface for details that do not deserve a whole panel.
+    The app underneath stays solid; opening the popover is the transient action
+    that activates the glass treatment.
 */
 Popup {
     id: popover
@@ -20,8 +18,6 @@ Popup {
     focus: true
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent | Popup.CloseOnPressOutside
 
-    // Keep the surface inside the window: flip vertically, and pull back
-    // horizontally, instead of drawing half of it outside the frame.
     property real anchorX: 0
     function place() {
         if (!parent || !Overlay.overlay) return;
@@ -45,14 +41,16 @@ Popup {
         radius: Theme.r3
         tint: Theme.glassTintStrong
         fillOpacity: Theme.glassStrongOpacity
+        glassEnabled: true
         elevated: true
         strongEdge: true
+        sheen: true
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.fast }
-            NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.fast; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.965; to: 1; duration: Theme.fast; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }

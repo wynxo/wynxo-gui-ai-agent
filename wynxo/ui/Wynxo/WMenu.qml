@@ -2,11 +2,9 @@ import QtQuick
 import QtQuick.Controls
 
 /*!
-    A styled dropdown. Items: {id, label, detail, icon, shortcut, checked,
-    danger, disabled, separator, hidden}.
-
-    It flips above or beside its anchor rather than opening off-screen, and
-    arrow keys walk it, so a menu is never a mouse-only surface.
+    Styled dropdown. The closed app stays solid; opening a menu is itself a
+    transient interaction, so the popup may use the glass material while it is
+    visible. Menu rows only glass on hover/keyboard highlight.
 */
 Popup {
     id: menu
@@ -63,14 +61,16 @@ Popup {
         radius: Theme.r3
         tint: Theme.glassTintStrong
         fillOpacity: Theme.glassStrongOpacity
+        glassEnabled: true
         elevated: true
         strongEdge: true
+        sheen: true
     }
 
     enter: Transition {
         ParallelAnimation {
             NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.fast }
-            NumberAnimation { property: "scale"; from: 0.97; to: 1; duration: Theme.fast; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.965; to: 1; duration: Theme.fast; easing.type: Theme.easing }
         }
     }
     exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }
@@ -108,7 +108,7 @@ Popup {
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.width - Theme.s3; height: 1
-                color: Theme.glassEdge
+                color: Theme.borderSubtle
             }
         }
     }
@@ -121,9 +121,12 @@ Popup {
             readonly property real textLeft: entry.icon ? Theme.s3 + 14 + Theme.s3 : Theme.s3
             height: entry.detail ? menu.itemHeight + 14 : menu.itemHeight
             radius: Theme.r2
+            solid: false
+            glassEnabled: on && !entry.disabled
             tint: entry.checked ? Theme.accent : Theme.glassTintHover
             fillOpacity: on && !entry.disabled ? 0.52 : entry.checked ? 0.12 : 0.0
             outlineVisible: on && !entry.disabled
+            strongEdge: on && !entry.disabled
             sheen: on && !entry.disabled
             opacity: entry.disabled ? 0.4 : 1
 

@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Dense single-line field with a liquid-glass focus treatment. */
+/*! Dense single-line field. Solid at rest; focus reveals the glass treatment. */
 TextField {
     id: field
     property string iconName: ""
@@ -20,11 +20,14 @@ TextField {
 
     background: GlassSurface {
         radius: Theme.r2
-        tint: field.activeFocus ? Theme.glassTintStrong : Theme.glassTint
-        fillOpacity: field.activeFocus ? 0.72 : Theme.glassThinOpacity
+        solid: true
+        glassEnabled: field.activeFocus
+        tint: field.activeFocus ? Theme.glassTintStrong : Theme.surfaceSunken
+        fillOpacity: field.activeFocus ? 0.72 : 1.0
         active: field.activeFocus
         strongEdge: field.activeFocus
-        edgeColor: field.activeFocus ? Theme.accentEdge : Theme.glassEdge
+        sheen: field.activeFocus
+        edgeColor: field.activeFocus ? Theme.accentEdge : Theme.borderSubtle
     }
 
     Icon {

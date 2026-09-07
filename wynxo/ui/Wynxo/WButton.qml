@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Compact text button. Variants: primary, secondary, ghost, danger. */
+/*! Compact text button. Solid at rest; glass appears only during interaction. */
 Button {
     id: control
     property string variant: "secondary"
@@ -11,6 +11,7 @@ Button {
     readonly property bool isPrimary: variant === "primary"
     readonly property bool isGhost: variant === "ghost"
     readonly property bool isDanger: variant === "danger"
+    readonly property bool interacting: hovered || down || visualFocus
     readonly property color ink: isPrimary ? Theme.onAccent
                                : isDanger ? Theme.danger
                                : isGhost ? (hovered ? Theme.textPrimary : Theme.textSecondary)
@@ -20,7 +21,7 @@ Button {
     implicitWidth: row.implicitWidth + (compactPadding ? Theme.s3 : Theme.s4) * 2
     hoverEnabled: true
     opacity: enabled ? 1 : 0.42
-    scale: down ? 0.985 : hovered ? 1.01 : 1
+    scale: down ? 0.97 : hovered ? 1.01 : 1
     font.family: Theme.sansFamily
     font.pixelSize: Theme.label
     font.weight: Font.Medium
@@ -55,25 +56,28 @@ Button {
 
     background: GlassSurface {
         radius: Theme.r2
+        solid: !control.isGhost && !control.isDanger
+        glassEnabled: control.interacting
         tint: control.isPrimary
               ? (control.down ? Qt.darker(Theme.accent, 1.08)
                  : control.hovered ? Theme.accentHover : Theme.accent)
               : control.isDanger ? Theme.danger
               : control.down ? Theme.glassTintStrong
-              : control.hovered ? Theme.glassTintHover : Theme.glassTint
-        fillOpacity: control.isPrimary ? (control.down ? 0.98 : control.hovered ? 0.94 : 0.90)
-                   : control.isDanger ? (control.hovered ? 0.17 : 0.10)
-                   : control.isGhost ? (control.hovered || control.down ? 0.48 : 0.0)
-                   : control.down ? 0.80
-                   : control.hovered ? 0.68 : Theme.glassThinOpacity
-        outlineVisible: !control.isGhost || control.hovered || control.visualFocus
-        strongEdge: control.isPrimary || control.hovered
+              : control.hovered ? Theme.glassTintHover
+              : Theme.surfaceRaised
+        fillOpacity: control.isPrimary ? (control.interacting ? (control.down ? 0.82 : 0.88) : 1.0)
+                   : control.isDanger ? (control.interacting ? 0.18 : 0.08)
+                   : control.isGhost ? (control.interacting ? 0.46 : 0.0)
+                   : control.down ? 0.72
+                   : control.hovered ? 0.62 : 1.0
+        outlineVisible: !control.isGhost || control.interacting
+        strongEdge: control.interacting
         active: control.visualFocus
         elevated: control.isPrimary && control.hovered
-        sheen: !control.isGhost || control.hovered
+        sheen: control.interacting
         edgeColor: control.visualFocus ? Theme.accentEdge
-                 : control.isDanger ? Theme.alpha(Theme.danger, 0.34)
-                 : control.isPrimary ? Theme.alpha(Theme.textPrimary, 0.15)
-                 : control.hovered ? Theme.glassEdgeStrong : Theme.glassEdge
+                 : control.isDanger ? Theme.alpha(Theme.danger, control.interacting ? 0.42 : 0.24)
+                 : control.isPrimary ? Theme.alpha(Theme.textPrimary, control.interacting ? 0.18 : 0.10)
+                 : control.interacting ? Theme.glassEdgeStrong : Theme.borderSubtle
     }
 }

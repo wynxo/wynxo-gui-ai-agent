@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-/*! Square icon-only control with an accessible label and a quiet glass hover state. */
+/*! Square icon-only control. Resting state is flat; glass is interaction feedback. */
 Button {
     id: control
     property string iconName: "plus"
@@ -9,16 +9,16 @@ Button {
     property color activeTint: Theme.textPrimary
     property bool active: false
     property real iconSize: Math.round(width * 0.46)
-    // Small icons need a heavier stroke to keep the same optical weight.
     property real iconWeight: iconSize <= 13 ? 2.0 : 1.6
     property string tooltip: ""
     property string shortcut: ""
+    readonly property bool interacting: hovered || down || visualFocus
 
     implicitWidth: Theme.control
     implicitHeight: Theme.control
     hoverEnabled: true
     opacity: enabled ? 1 : 0.35
-    scale: down ? 0.95 : hovered ? 1.025 : 1
+    scale: down ? 0.94 : hovered ? 1.025 : 1
     Accessible.name: tooltip || iconName
 
     Behavior on scale {
@@ -43,18 +43,20 @@ Button {
 
     background: GlassSurface {
         radius: Theme.r2
+        solid: false
+        glassEnabled: control.interacting
         tint: control.active ? Theme.accent
              : control.down ? Theme.glassTintStrong
              : control.hovered ? Theme.glassTintHover : Theme.glassTint
-        fillOpacity: control.down ? 0.74
-                   : control.hovered ? 0.58
-                   : control.active ? 0.14 : 0.0
-        outlineVisible: control.hovered || control.active || control.visualFocus
-        strongEdge: control.hovered || control.active
+        fillOpacity: control.down ? 0.72
+                   : control.hovered ? 0.56
+                   : control.active ? 0.12 : 0.0
+        outlineVisible: control.interacting || control.active
+        strongEdge: control.interacting
         active: control.visualFocus
-        sheen: control.hovered || control.active
+        sheen: control.interacting
         edgeColor: control.visualFocus ? Theme.accentEdge
-                 : control.active ? Theme.accentEdge
-                 : control.hovered ? Theme.glassEdgeStrong : Theme.glassEdge
+                 : control.active && !control.interacting ? Theme.alpha(Theme.accent, 0.28)
+                 : control.interacting ? Theme.glassEdgeStrong : "transparent"
     }
 }

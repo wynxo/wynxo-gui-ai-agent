@@ -5,8 +5,8 @@ import QtQuick.Layouts
 /*!
     A compact token: an attached piece of context, or a small inline control.
 
-    Built on AbstractButton so an interactive chip is reachable by keyboard and
-    announced as a button; a chip that only carries a remove action is not.
+    Chips stay visually solid/quiet at rest. Hover, press and keyboard focus
+    reveal the shared interaction-only glass material.
 */
 AbstractButton {
     id: chip
@@ -17,6 +17,8 @@ AbstractButton {
     property bool selected: false
     property color tone: selected ? Theme.accent : Theme.textMuted
     signal removed()
+
+    readonly property bool interacting: (hovered && interactive) || down || visualFocus
 
     implicitHeight: Theme.controlSmall
     implicitWidth: layout.implicitWidth + leftPadding + rightPadding
@@ -31,15 +33,18 @@ AbstractButton {
 
     background: GlassSurface {
         radius: Theme.rPill
+        solid: !chip.selected
+        glassEnabled: chip.interacting
         tint: chip.selected ? Theme.accent
-             : chip.hovered && chip.interactive ? Theme.glassTintHover : Theme.glassTint
-        fillOpacity: chip.selected ? 0.14
-                   : chip.hovered && chip.interactive ? 0.62 : Theme.glassThinOpacity
-        strongEdge: chip.selected || (chip.hovered && chip.interactive)
+             : chip.interacting ? Theme.glassTintHover : Theme.surfaceRaised
+        fillOpacity: chip.selected ? (chip.interacting ? 0.18 : 0.12)
+                   : chip.interacting ? (chip.down ? 0.68 : 0.58) : 1.0
+        strongEdge: chip.interacting
         active: chip.visualFocus
+        sheen: chip.interacting
         edgeColor: chip.visualFocus ? Theme.accentEdge
-                 : chip.selected ? Theme.accentEdge
-                 : chip.hovered && chip.interactive ? Theme.glassEdgeStrong : Theme.glassEdge
+                 : chip.selected ? Theme.alpha(Theme.accent, 0.34)
+                 : chip.interacting ? Theme.glassEdgeStrong : Theme.borderSubtle
     }
 
     contentItem: RowLayout {
@@ -79,7 +84,6 @@ AbstractButton {
         }
     }
 
-    // A cursor only where there is something to click.
     MouseArea {
         anchors.fill: parent
         anchors.rightMargin: chip.removable ? 26 : 0
