@@ -20,6 +20,12 @@ Item {
     readonly property bool loaded: loader.status === Loader.Ready
 
     function focusAddress() { address.forceActiveFocus(); address.selectAll(); }
+    function comparableAddress(value) {
+        var result = String(value || "").trim().toLowerCase();
+        result = result.replace(/^https?:\/\//, "");
+        while (result.length > 1 && result.endsWith("/")) result = result.slice(0, -1);
+        return result;
+    }
 
     // The address bar shows where you are until you start typing, then it is
     // yours until you commit or leave.
@@ -92,7 +98,19 @@ Item {
                         if (!activeFocus) text = root.shownUrl;
                     }
                     onAccepted: {
-                        if (root.dock && root.dock.navigate(text)) root.editing = false;
+                        if (!root.dock) return;
+                        // A consumed navigation request remains in the backend as
+                        // the current address. Re-entering that exact address used
+                        // to be a no-op because the pending string did not change.
+                        // Treat it as an explicit reload instead.
+                        if (root.loaded && loader.item && root.dock.browserUrl
+                                && root.comparableAddress(text) === root.comparableAddress(root.dock.browserUrl)) {
+                            loader.item.reload();
+                            root.editing = false;
+                            focus = false;
+                            return;
+                        }
+                        if (root.dock.navigate(text)) root.editing = false;
                         focus = false;
                     }
                     Keys.onEscapePressed: { text = root.shownUrl; focus = false; }

@@ -73,8 +73,19 @@ Item {
             }
             IconButton {
                 width: 28; height: 28; iconSize: 12
+                iconName: "clock"
+                tooltip: "Clear command history"
+                enabled: entry.history.length > 0
+                onClicked: {
+                    entry.history = [];
+                    entry.historyCursor = -1;
+                    entry.historyDraft = "";
+                }
+            }
+            IconButton {
+                width: 28; height: 28; iconSize: 12
                 iconName: "trash"
-                tooltip: "Clear"
+                tooltip: "Clear output"
                 onClicked: if (root.dock) root.dock.clearTerminal()
             }
             IconButton {
@@ -176,10 +187,14 @@ Item {
                 Accessible.name: "Jump to the newest output"
                 onClicked: { output.following = true; output.positionViewAtEnd(); }
                 Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
-                background: Rectangle {
+                background: GlassSurface {
                     radius: Theme.rPill
-                    color: tail.hovered ? Theme.surfaceSelected : Theme.surfaceRaised
-                    border.width: 1; border.color: Theme.borderStrong
+                    solid: false
+                    glassEnabled: tail.hovered || tail.down
+                    tint: tail.down ? Theme.glassTintStrong : Theme.glassTintHover
+                    fillOpacity: tail.down ? 0.72 : tail.hovered ? 0.56 : 0.0
+                    outlineVisible: tail.hovered || tail.down
+                    sheen: tail.hovered || tail.down
                 }
                 contentItem: Row {
                     id: tailRow
@@ -238,7 +253,12 @@ Item {
                     Accessible.name: "Terminal command"
 
                     property var history: []
-                    property int cursor: -1
+                    property int historyCursor: -1
+                    property string historyDraft: ""
+
+                    onTextEdited: {
+                        if (historyCursor < 0) historyDraft = text;
+                    }
 
                     onAccepted: {
                         if (!root.dock) return;
@@ -249,27 +269,49 @@ Item {
                         if (command.trim().length) {
                             history = [command].concat(history.filter(function (item) { return item !== command; })).slice(0, 100);
                         }
-                        cursor = -1;
+                        historyCursor = -1;
+                        historyDraft = "";
                         text = "";
                         output.following = true;
                     }
 
+                    // Preserve whatever the user was typing before walking the
+                    // history. The old implementation replaced that draft with
+                    // an empty string when Down returned to the newest entry.
                     Keys.onUpPressed: {
-                        if (cursor + 1 < history.length) { cursor++; text = history[cursor]; cursorPosition = length; }
+                        if (!history.length) return;
+                        if (historyCursor < 0) historyDraft = text;
+                        if (historyCursor + 1 < history.length) {
+                            historyCursor++;
+                            text = history[historyCursor];
+                            cursorPosition = length;
+                        }
                     }
                     Keys.onDownPressed: {
-                        if (cursor > 0) { cursor--; text = history[cursor]; cursorPosition = length; }
-                        else if (cursor === 0) { cursor = -1; text = ""; }
+                        if (historyCursor > 0) {
+                            historyCursor--;
+                            text = history[historyCursor];
+                            cursorPosition = length;
+                        } else if (historyCursor === 0) {
+                            historyCursor = -1;
+                            text = historyDraft;
+                            cursorPosition = length;
+                        }
                     }
                     Keys.onPressed: function(event) {
                         if (!(event.modifiers & Qt.ControlModifier) || !root.dock) return;
-                        if (event.key === Qt.Key_C) {
+                        if ((event.modifiers & Qt.ShiftModifier) && event.key === Qt.Key_C) {
+                            if (bridge) bridge.copyText(root.dock.terminalText());
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_C) {
                             if (selectedText.length) return;       // copying, not interrupting
                             root.dock.interruptTerminal();
                             text = "";
+                            historyCursor = -1;
+                            historyDraft = "";
                             event.accepted = true;
                         } else if (event.key === Qt.Key_D) {
-                            root.dock.writeTerminal("");
+                            root.dock.writeTerminal("\u0004");
                             event.accepted = true;
                         } else if (event.key === Qt.Key_L) {
                             root.dock.clearTerminal();

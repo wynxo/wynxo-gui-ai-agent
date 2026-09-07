@@ -26,6 +26,7 @@ Item {
     property bool planSelected: false
     property bool userSelectedWorkspaceTab: false
     property string observedTaskId: bridge ? bridge.taskId : ""
+    property string pendingFilePath: ""
     readonly property alias resizing: resizer.dragging
     signal widthChangeRequested(int value)
 
@@ -43,9 +44,33 @@ Item {
 
     function openFile(path) {
         if (!dock || !path) return;
+        var absolute = dock.absolutePath(path);
+        if (dock.fileModified && dock.filePath) {
+            // Clicking the already-open file should never throw its buffer away.
+            if (absolute && absolute === dock.filePath) {
+                dock.revealFile(path);
+                return;
+            }
+            unsavedFileSheet.ask("open", path);
+            return;
+        }
+        openFileNow(path);
+    }
+
+    function openFileNow(path) {
+        if (!dock || !path) return;
         planSelected = false;
         dock.openFile(path);
         dock.revealFile(path);
+    }
+
+    function closeFileRequested() {
+        if (!dock) return;
+        if (dock.fileModified) {
+            unsavedFileSheet.ask("close", "");
+            return;
+        }
+        dock.closeFile();
     }
 
     function pickWorkspaceTab(id) {
@@ -189,7 +214,7 @@ Item {
                     SplitView.minimumHeight: 120
                     active: !root.planSelected && root.tab === "files"
                     sourceComponent: FileViewer {
-                        onClosed: if (root.dock) root.dock.closeFile()
+                        onClosed: root.closeFileRequested()
                     }
                 }
             }
@@ -258,6 +283,35 @@ Item {
             onToggleDock: {
                 root.userSelectedWorkspaceTab = true;
                 if (root.dock) root.dock.toggle();
+            }
+        }
+    }
+
+    ConfirmSheet {
+        id: unsavedFileSheet
+        title: "Discard unsaved edits?"
+        confirmText: "Discard"
+        confirmVariant: "danger"
+        property string nextAction: ""
+        function ask(action, path) {
+            nextAction = action;
+            root.pendingFilePath = path || "";
+            message = action === "open"
+                ? "Opening another file will discard the edits in the current file."
+                : "Closing this file will discard its unsaved edits.";
+            detail = root.dock ? root.dock.filePath : "";
+            show();
+        }
+        onConfirmed: {
+            if (!root.dock) return;
+            root.dock.revertFileBuffer();
+            if (nextAction === "open") {
+                var target = root.pendingFilePath;
+                root.pendingFilePath = "";
+                root.openFileNow(target);
+            } else {
+                root.pendingFilePath = "";
+                root.dock.closeFile();
             }
         }
     }

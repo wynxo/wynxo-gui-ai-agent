@@ -22,6 +22,8 @@ Item {
     readonly property bool dirty: !!(dock && dock.fileModified)
     property bool wrap: false
     property bool editing: false
+    property bool findOpen: false
+    property int findPosition: -1
 
     // Built once per file rather than on every repaint. Wrapping hides the
     // gutter, because a wrapped line no longer matches a numbered row.
@@ -40,10 +42,57 @@ Item {
             loadedPath = record.path || "";
             editor.text = record.text || "";
             root.editing = false;
+            root.findPosition = -1;
+            findInput.text = "";
+            root.findOpen = false;
         }
     }
 
     function save() { if (dock) dock.saveFile(); }
+    function openFind() {
+        if (!readable) return;
+        findOpen = true;
+        Qt.callLater(function () { findInput.forceActiveFocus(); findInput.selectAll(); });
+    }
+    function closeFind() {
+        findOpen = false;
+        findPosition = -1;
+        editor.deselect();
+        editor.forceActiveFocus();
+    }
+    function findNext(backwards) {
+        var needle = findInput.text;
+        if (!needle || !readable) {
+            findPosition = -1;
+            editor.deselect();
+            return;
+        }
+        var haystack = editor.text.toLowerCase();
+        var query = needle.toLowerCase();
+        var position = -1;
+        if (backwards) {
+            var before = findPosition > 0 ? findPosition - 1 : haystack.length;
+            position = haystack.lastIndexOf(query, before);
+            if (position < 0) position = haystack.lastIndexOf(query);
+        } else {
+            var after = findPosition >= 0 ? findPosition + query.length : 0;
+            position = haystack.indexOf(query, after);
+            if (position < 0) position = haystack.indexOf(query);
+        }
+        findPosition = position;
+        if (position >= 0) {
+            editor.select(position, position + query.length);
+            editor.cursorPosition = position + query.length;
+        } else {
+            editor.deselect();
+        }
+    }
+
+    Shortcut {
+        sequences: ["Ctrl+F"]
+        enabled: root.readable
+        onActivated: root.openFind()
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -79,6 +128,15 @@ Item {
             IconButton {
                 width: 28; height: 28; iconSize: 12
                 visible: root.readable
+                iconName: "search"
+                tooltip: "Find in file"
+                shortcut: "Ctrl+F"
+                active: root.findOpen
+                onClicked: root.findOpen ? root.closeFind() : root.openFind()
+            }
+            IconButton {
+                width: 28; height: 28; iconSize: 12
+                visible: root.readable
                 iconName: "wrap"
                 tooltip: root.wrap ? "Stop wrapping long lines" : "Wrap long lines"
                 active: root.wrap
@@ -104,6 +162,68 @@ Item {
                 iconName: "close"
                 tooltip: "Close file"
                 onClicked: root.closed()
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.findOpen ? Theme.control + Theme.s2 : 0
+            visible: root.findOpen
+            color: Theme.backgroundSoft
+            Rectangle {
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                height: 1; color: Theme.borderSubtle
+            }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.s2
+                anchors.rightMargin: Theme.s2
+                anchors.topMargin: Theme.s1
+                anchors.bottomMargin: Theme.s1
+                spacing: Theme.s1
+
+                Field {
+                    id: findInput
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.controlSmall
+                    iconName: "search"
+                    placeholderText: "Find in file"
+                    onTextChanged: {
+                        root.findPosition = -1;
+                        if (text.length) root.findNext(false);
+                        else editor.deselect();
+                    }
+                    Keys.onReturnPressed: function(event) {
+                        root.findNext(!!(event.modifiers & Qt.ShiftModifier));
+                        event.accepted = true;
+                    }
+                    Keys.onEscapePressed: function(event) { root.closeFind(); event.accepted = true; }
+                }
+                Text {
+                    text: findInput.text.length && root.findPosition < 0 ? "No match" : ""
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                }
+                IconButton {
+                    Layout.preferredWidth: 26; Layout.preferredHeight: 26
+                    iconName: "up"; iconSize: 11
+                    tooltip: "Previous match"
+                    enabled: findInput.text.length > 0
+                    onClicked: root.findNext(true)
+                }
+                IconButton {
+                    Layout.preferredWidth: 26; Layout.preferredHeight: 26
+                    iconName: "down"; iconSize: 11
+                    tooltip: "Next match"
+                    enabled: findInput.text.length > 0
+                    onClicked: root.findNext(false)
+                }
+                IconButton {
+                    Layout.preferredWidth: 26; Layout.preferredHeight: 26
+                    iconName: "close"; iconSize: 11
+                    tooltip: "Close find"
+                    onClicked: root.closeFind()
+                }
             }
         }
 
@@ -179,6 +299,9 @@ Item {
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
                             root.save();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_F && (event.modifiers & Qt.ControlModifier)) {
+                            root.openFind();
                             event.accepted = true;
                         }
                     }

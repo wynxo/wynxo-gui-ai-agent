@@ -17,8 +17,39 @@ Item {
 
     readonly property var dock: bridge ? bridge.workspaceDock : null
     readonly property bool searching: dock && dock.fileFilter.trim().length >= 2
+    property string pendingFilter: ""
 
     function focusFilter() { filter.forceActiveFocus(); filter.selectAll(); }
+    function relativePath(path) {
+        var value = String(path || "");
+        var base = root.dock ? String(root.dock.projectPath || "") : "";
+        if (!base || !value) return value;
+        if (value === base) return ".";
+        if (value.indexOf(base + "/") === 0 || value.indexOf(base + "\\") === 0)
+            return value.slice(base.length + 1);
+        return value;
+    }
+    function parentFolder(path) {
+        var value = String(path || "");
+        var slash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+        return slash > 0 ? value.slice(0, slash) : value;
+    }
+    function runTerminalAt(path, isDir) {
+        if (!root.dock || !path) return;
+        var directory = isDir ? path : root.parentFolder(path);
+        root.dock.runInTerminal("cd " + JSON.stringify(directory));
+    }
+    function applyFilterNow() {
+        filterDebounce.stop();
+        if (root.dock) root.dock.setFileFilter(root.pendingFilter);
+    }
+
+    Timer {
+        id: filterDebounce
+        interval: 170
+        repeat: false
+        onTriggered: if (root.dock) root.dock.setFileFilter(root.pendingFilter)
+    }
 
     Connections {
         target: root.dock
@@ -64,14 +95,34 @@ Item {
                 iconName: "search"
                 placeholderText: "Find a file"
                 font.pixelSize: Theme.caption
-                onTextChanged: if (root.dock) root.dock.setFileFilter(text)
-                Keys.onEscapePressed: function(event) {
-                    if (text.length) { text = ""; event.accepted = true; }
-                    else event.accepted = false;
+                onTextChanged: {
+                    root.pendingFilter = text;
+                    filterDebounce.restart();
+                    matches.currentIndex = 0;
                 }
-                Keys.onReturnPressed: {
-                    if (matches.count > 0 && root.dock)
-                        root.openRequested(root.dock.fileMatches[0].path);
+                Keys.onEscapePressed: function(event) {
+                    if (text.length) {
+                        text = "";
+                        root.pendingFilter = "";
+                        root.applyFilterNow();
+                        event.accepted = true;
+                    } else event.accepted = false;
+                }
+                Keys.onReturnPressed: function(event) {
+                    root.applyFilterNow();
+                    if (matches.count > 0 && root.dock) {
+                        var index = Math.max(0, matches.currentIndex);
+                        root.openRequested(root.dock.fileMatches[index].path);
+                    }
+                    event.accepted = true;
+                }
+                Keys.onUpPressed: function(event) {
+                    if (matches.count > 0) matches.currentIndex = Math.max(0, matches.currentIndex - 1);
+                    event.accepted = true;
+                }
+                Keys.onDownPressed: function(event) {
+                    if (matches.count > 0) matches.currentIndex = Math.min(matches.count - 1, matches.currentIndex + 1);
+                    event.accepted = true;
                 }
             }
         }
@@ -166,8 +217,7 @@ Item {
                             width: Math.min(implicitWidth,
                                             nodeRow.width - 11 - 13 - Theme.s1 * 2 - (node.dirty ? 14 : 0))
                             text: node.name
-                            color: node.selected ? Theme.textPrimary
-                                 : node.isDir ? Theme.textSecondary : Theme.textSecondary
+                            color: node.selected ? Theme.textPrimary : Theme.textSecondary
                             font.family: Theme.sansFamily
                             font.pixelSize: Theme.caption
                             font.weight: node.selected ? Font.Medium : Font.Normal
@@ -192,22 +242,23 @@ Item {
 
                 WMenu {
                     id: nodeMenu
-                    menuWidth: 214
+                    menuWidth: 232
                     items: [
                         { id: "open", label: node.isDir ? "Expand" : "Open", icon: node.isDir ? "folderOpen" : "file" },
-                        { id: "copy", label: "Copy path", icon: "copy" },
+                        { id: "copy", label: "Copy full path", icon: "copy" },
+                        { id: "copyRelative", label: "Copy relative path", icon: "copy" },
                         { id: "reveal", label: "Reveal in file manager", icon: "launch" },
-                        { separator: true, hidden: !node.isDir },
-                        { id: "terminal", label: "Open terminal here", icon: "terminal", hidden: !node.isDir },
-                        { separator: true, hidden: node.isDir },
-                        { id: "attach", label: "Attach to the conversation", icon: "paperclip", hidden: node.isDir },
+                        { separator: true },
+                        { id: "terminal", label: node.isDir ? "Terminal here" : "Terminal in containing folder", icon: "terminal" },
+                        { id: "attach", label: node.isDir ? "Attach folder to conversation" : "Attach to conversation", icon: "paperclip" },
                     ]
                     onPicked: function(id) {
                         if (!bridge) return;
                         if (id === "open") node.clicked();
                         else if (id === "copy") bridge.copyText(node.path);
+                        else if (id === "copyRelative") bridge.copyText(root.relativePath(node.path));
                         else if (id === "reveal") bridge.revealPath(node.path);
-                        else if (id === "terminal" && root.dock) root.dock.runInTerminal("cd " + JSON.stringify(node.path));
+                        else if (id === "terminal") root.runTerminalAt(node.path, node.isDir);
                         else if (id === "attach") bridge.attachPath(node.path);
                     }
                 }
@@ -223,6 +274,7 @@ Item {
             clip: true
             model: root.dock ? root.dock.fileMatches : []
             boundsBehavior: Flickable.StopAtBounds
+            currentIndex: count > 0 ? 0 : -1
             topMargin: Theme.s1
             bottomMargin: Theme.s3
             ScrollBar.vertical: ScrollBar {
@@ -240,7 +292,15 @@ Item {
                 onClicked: root.openRequested(modelData.path)
 
                 background: Rectangle {
-                    color: match.hovered ? Theme.surfaceHover : "transparent"
+                    color: match.ListView.isCurrentItem || match.hovered || matchMenu.opened
+                           ? Theme.surfaceHover : "transparent"
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 2
+                        height: match.ListView.isCurrentItem ? parent.height - 8 : 0
+                        color: Theme.accent
+                    }
                 }
                 contentItem: RowLayout {
                     anchors.leftMargin: Theme.s3
@@ -271,7 +331,34 @@ Item {
                     }
                     Item { Layout.preferredWidth: Theme.s2 }
                 }
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.RightButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: matchMenu.open()
+                }
                 MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+
+                WMenu {
+                    id: matchMenu
+                    menuWidth: 224
+                    items: [
+                        { id: "open", label: "Open", icon: "file" },
+                        { id: "copyRelative", label: "Copy relative path", icon: "copy" },
+                        { id: "reveal", label: "Reveal in file manager", icon: "launch" },
+                        { separator: true },
+                        { id: "terminal", label: "Terminal in containing folder", icon: "terminal" },
+                        { id: "attach", label: "Attach to conversation", icon: "paperclip" },
+                    ]
+                    onPicked: function(id) {
+                        if (!bridge) return;
+                        if (id === "open") root.openRequested(match.modelData.path);
+                        else if (id === "copyRelative") bridge.copyText(match.modelData.relative);
+                        else if (id === "reveal") bridge.revealPath(match.modelData.path);
+                        else if (id === "terminal") root.runTerminalAt(match.modelData.path, false);
+                        else if (id === "attach") bridge.attachPath(match.modelData.path);
+                    }
+                }
             }
 
             EmptyState {
