@@ -149,10 +149,13 @@ def load_folder(path: str | Path) -> dict:
     entries: list[str] = []
     truncated = False
     try:
-        for index, item in enumerate(sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))):
+        for item in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
             if item.name.startswith("."):
                 continue
-            if index >= MAX_FOLDER_ENTRIES:
+            # The limit is a limit on context the user can actually see. Hidden
+            # entries are intentionally omitted and therefore must not consume
+            # the visible listing budget.
+            if len(entries) >= MAX_FOLDER_ENTRIES:
                 truncated = True
                 break
             if item.is_dir():
