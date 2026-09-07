@@ -139,7 +139,7 @@ def test_saving_a_truncated_large_file_is_refused_without_data_loss(project, mon
     original = "first line\n" + ("tail that must survive\n" * 20)
     target.write_text(original)
 
-    preview = files.read_file(project, target)
+    preview = files.read_file(project, target, max_bytes=files.MAX_TEXT_BYTES)
     assert preview["truncated"] is True
     with pytest.raises(ValueError, match="read-only"):
         files.write_file(project, target, preview["text"] + "edited\n")
