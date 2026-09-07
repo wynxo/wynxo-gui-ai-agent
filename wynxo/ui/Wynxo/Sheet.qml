@@ -37,6 +37,8 @@ Popup {
         tint: Theme.glassTintStrong
         fillOpacity: 0.92
         glassEnabled: true
+        backdropBlur: true
+        blurAmount: 0.70
         elevated: true
         strongEdge: true
         sheen: true

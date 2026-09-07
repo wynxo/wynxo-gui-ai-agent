@@ -1,12 +1,13 @@
 import QtQuick
+import QtQuick.Window
+import QtQuick.Effects
 
 /*!
     Wynxo's interaction-only glass material.
 
-    Permanent chrome stays fully opaque. Liquid Glass is revealed only during
-    an interaction/open state. Direct one-off controls also opt in automatically
-    when they switch to the shared hover tint, become elevated on hover, or show
-    a low-opacity strong-edge drag target.
+    Permanent chrome stays opaque. Floating/open surfaces can additionally opt
+    into a live GPU backdrop blur. This is the closest cross-platform analogue
+    to the optical part of Apple's material without depending on macOS-only APIs.
 */
 Rectangle {
     id: surface
@@ -16,6 +17,8 @@ Rectangle {
     property bool solid: true
     property bool glassEnabled: false
     property bool autoGlass: true
+    property bool backdropBlur: false
+    property real blurAmount: 0.72
     property bool elevated: false
     property bool active: false
     property bool strongEdge: false
@@ -35,11 +38,16 @@ Rectangle {
         clampedFill >= 0.66
         || (tint === Theme.glassTint && clampedFill >= Theme.glassThinOpacity)
     )
+    readonly property bool liveBlurOn: materialOn && backdropBlur && surface.Window.window !== null
+    readonly property var hostContent: surface.Window.window ? surface.Window.window.contentItem : null
+    readonly property point backdropOrigin: hostContent
+        ? surface.mapToItem(hostContent, 0, 0)
+        : Qt.point(0, 0)
 
     antialiasing: true
-    color: materialOn
-           ? Theme.alpha(tint, clampedFill)
-           : opaqueIdle ? tint : Theme.alpha(tint, clampedFill)
+    color: liveBlurOn ? "transparent"
+         : materialOn ? Theme.alpha(tint, clampedFill)
+         : opaqueIdle ? tint : Theme.alpha(tint, clampedFill)
     border.width: outlineVisible ? 1 : 0
     border.color: edgeColor
 
@@ -52,8 +60,45 @@ Rectangle {
         ColorAnimation { duration: Theme.fast }
     }
 
+    // Live crop of whatever is underneath this surface. MultiEffect performs
+    // the actual blur/saturation pass on the GPU.
+    ShaderEffectSource {
+        id: backdropSource
+        visible: false
+        sourceItem: surface.hostContent
+        sourceRect: Qt.rect(surface.backdropOrigin.x, surface.backdropOrigin.y,
+                            Math.max(1, surface.width), Math.max(1, surface.height))
+        textureSize: Qt.size(Math.max(1, Math.round(surface.width)),
+                             Math.max(1, Math.round(surface.height)))
+        live: surface.liveBlurOn
+        recursive: false
+        smooth: true
+    }
+
+    MultiEffect {
+        anchors.fill: parent
+        z: -4
+        visible: surface.liveBlurOn
+        source: backdropSource
+        blurEnabled: true
+        blur: surface.blurAmount
+        blurMax: 48
+        saturation: 0.18
+        brightness: 0.035
+    }
+
+    // Neutral veil over the blurred scene. Keeping the opacity modest allows
+    // colour and shape from the underlying workspace to remain legible.
     Rectangle {
+        anchors.fill: parent
         z: -3
+        radius: surface.radius
+        visible: surface.liveBlurOn
+        color: Theme.alpha(surface.tint, Math.min(0.46, Math.max(0.18, surface.clampedFill * 0.48)))
+    }
+
+    Rectangle {
+        z: -8
         x: -7; y: 4
         width: surface.width + 14; height: surface.height + 10
         radius: surface.radius + 7
@@ -62,7 +107,7 @@ Rectangle {
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
     }
     Rectangle {
-        z: -2
+        z: -7
         x: -4; y: 3
         width: surface.width + 8; height: surface.height + 6
         radius: surface.radius + 4
@@ -71,7 +116,7 @@ Rectangle {
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
     }
     Rectangle {
-        z: -1
+        z: -6
         x: -1; y: 2
         width: surface.width + 2; height: surface.height + 2
         radius: surface.radius + 2
@@ -80,18 +125,21 @@ Rectangle {
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
     }
 
+    // Wide curved highlight plus a tight top-edge sparkle sells the refractive
+    // read even on platforms where compositor blur is less pronounced.
     Rectangle {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 1
-        height: Math.max(surface.radius * 1.55, Math.round(surface.height * 0.46))
+        height: Math.max(surface.radius * 1.7, Math.round(surface.height * 0.50))
         radius: Math.max(0, surface.radius - 1)
         opacity: surface.materialOn && surface.sheen ? 1 : 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
         gradient: Gradient {
             GradientStop { position: 0.0; color: surface.active ? Theme.glassSpecularHot : Theme.glassSpecular }
-            GradientStop { position: 0.58; color: Theme.alpha(Theme.textPrimary, 0.022) }
+            GradientStop { position: 0.30; color: Theme.alpha(Theme.textPrimary, 0.055) }
+            GradientStop { position: 0.70; color: Theme.alpha(Theme.textPrimary, 0.014) }
             GradientStop { position: 1.0; color: "transparent" }
         }
     }
@@ -115,7 +163,7 @@ Rectangle {
         anchors.rightMargin: Math.max(3, Math.round(surface.radius * 0.46))
         height: 1
         color: surface.active ? Theme.glassSpecularHot : Theme.glassSpecular
-        opacity: surface.materialOn && surface.sheen ? 0.74 : 0
+        opacity: surface.materialOn && surface.sheen ? 0.86 : 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
     }
 
@@ -127,7 +175,7 @@ Rectangle {
         anchors.rightMargin: Math.max(4, Math.round(surface.radius * 0.7))
         height: 1
         color: Theme.glassLowlight
-        opacity: surface.materialOn ? 0.50 : 0
+        opacity: surface.materialOn ? 0.58 : 0
         Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
     }
 }
