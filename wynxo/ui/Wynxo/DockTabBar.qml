@@ -27,13 +27,16 @@ Item {
 
     readonly property var entries: bridge && bridge.workspaceDock ? bridge.workspaceDock.tabs : []
 
-    Rectangle {
+    GlassSurface {
         anchors.fill: parent
-        color: Theme.backgroundSoft
+        tint: Theme.backgroundSoft
+        fillOpacity: 0.82
+        outlineVisible: false
+        sheen: true
         Rectangle {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
             width: 1
-            color: Theme.borderSubtle
+            color: Theme.glassEdge
         }
     }
 
@@ -43,8 +46,6 @@ Item {
         anchors.bottomMargin: Theme.s2
         spacing: 2
 
-        // Plan sits first because it describes the task itself; the remaining
-        // tabs are concrete work surfaces used to carry that task out.
         AbstractButton {
             id: planTab
             Layout.alignment: Qt.AlignHCenter
@@ -62,20 +63,19 @@ Item {
             ToolTip.text: "Plan · live task steps"
             ToolTip.delay: 450
 
-            background: Rectangle {
+            background: GlassSurface {
                 radius: Theme.r2
-                color: planTab.down ? Theme.surfacePressed
-                     : planTab.chosen ? Theme.surfaceSelected
-                     : planTab.hovered ? Theme.surfaceHover : "transparent"
-                Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                Rectangle {
-                    anchors.fill: parent
-                    radius: parent.radius
-                    color: "transparent"
-                    visible: planTab.visualFocus
-                    border.width: 2
-                    border.color: Theme.accentEdge
-                }
+                tint: planTab.chosen ? Theme.accent
+                     : planTab.down ? Theme.glassTintStrong : Theme.glassTintHover
+                fillOpacity: planTab.down ? 0.72
+                           : planTab.chosen ? 0.14
+                           : planTab.hovered ? 0.50 : 0.0
+                outlineVisible: planTab.chosen || planTab.hovered || planTab.visualFocus
+                strongEdge: planTab.chosen || planTab.hovered
+                active: planTab.visualFocus
+                sheen: planTab.chosen || planTab.hovered
+                edgeColor: planTab.visualFocus ? Theme.accentEdge
+                         : planTab.chosen ? Theme.accentEdge : Theme.glassEdge
             }
 
             contentItem: Item {
@@ -100,8 +100,6 @@ Item {
                 Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast; easing.type: Theme.easing } }
             }
 
-            // If a plan exists while the dock is closed, this tiny mark says
-            // the task has structure without stealing the current workspace.
             Rectangle {
                 visible: !root.panelOpen && bridge && bridge.planSteps && bridge.planSteps.length >= 2
                 anchors.top: parent.top
@@ -135,20 +133,19 @@ Item {
                 ToolTip.text: modelData.label + " · " + modelData.shortcut
                 ToolTip.delay: 450
 
-                background: Rectangle {
+                background: GlassSurface {
                     radius: Theme.r2
-                    color: tab.down ? Theme.surfacePressed
-                         : tab.chosen ? Theme.surfaceSelected
-                         : tab.hovered ? Theme.surfaceHover : "transparent"
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: parent.radius
-                        color: "transparent"
-                        visible: tab.visualFocus
-                        border.width: 2
-                        border.color: Theme.accentEdge
-                    }
+                    tint: tab.chosen ? Theme.accent
+                         : tab.down ? Theme.glassTintStrong : Theme.glassTintHover
+                    fillOpacity: tab.down ? 0.72
+                               : tab.chosen ? 0.14
+                               : tab.hovered ? 0.50 : 0.0
+                    outlineVisible: tab.chosen || tab.hovered || tab.visualFocus
+                    strongEdge: tab.chosen || tab.hovered
+                    active: tab.visualFocus
+                    sheen: tab.chosen || tab.hovered
+                    edgeColor: tab.visualFocus ? Theme.accentEdge
+                             : tab.chosen ? Theme.accentEdge : Theme.glassEdge
                 }
 
                 contentItem: Item {
@@ -162,7 +159,6 @@ Item {
                     }
                 }
 
-                // The open tab keeps a short accent marker on the window edge.
                 Rectangle {
                     anchors.right: parent.right
                     anchors.rightMargin: -Theme.s2 - 1
@@ -174,7 +170,6 @@ Item {
                     Behavior on height { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast; easing.type: Theme.easing } }
                 }
 
-                // Unread-style dot: the panel has something new while closed.
                 Rectangle {
                     visible: !root.panelOpen && tab.modelData.id === "activity"
                              && bridge && bridge.workspaceDock && bridge.workspaceDock.activityRunning

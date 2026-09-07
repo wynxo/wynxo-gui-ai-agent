@@ -52,8 +52,6 @@ Item {
         userSelectedWorkspaceTab = true;
         if (!dock) return;
         if (planSelected) {
-            // openTab would close the dock when id is already the backend tab.
-            // Leaving Plan therefore sets the tab directly and keeps the dock up.
             planSelected = false;
             dock.setTab(id);
             if (!dock.visible) dock.setVisible(true);
@@ -70,8 +68,6 @@ Item {
             return;
         }
         planSelected = true;
-        // A deliberate Plan click counts as choosing the workspace. Pin the
-        // underlying backend tab too so later suggestions cannot steal it.
         dock.setTab(dock.tab);
         if (!dock.visible) dock.setVisible(true);
     }
@@ -93,12 +89,6 @@ Item {
             if (!bridge || !root.dock || root.userSelectedWorkspaceTab)
                 return;
             var steps = bridge.planSteps || [];
-            // update_plan requires at least two steps. Publishing one therefore
-            // means the agent has explicitly decided this is multi-step work.
-            // Every WorkspaceDock instance selects Plan locally; the backend
-            // visibility flag is shared by the desktop dock and compact drawer,
-            // so using it as a selection guard could leave the visible instance
-            // stuck on Files when the hidden instance handled the signal first.
             if (steps.length >= 2) {
                 root.planSelected = true;
                 if (!root.dock.visible) root.dock.setVisible(true);
@@ -122,7 +112,7 @@ Item {
             Rectangle {
                 anchors.centerIn: parent
                 width: 1; height: parent.height
-                color: resizer.dragging || edge.hovered ? Theme.borderStrong : Theme.borderSubtle
+                color: resizer.dragging || edge.hovered ? Theme.glassEdgeStrong : Theme.glassEdge
                 Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
             }
             HoverHandler { id: edge; cursorShape: Qt.SizeHorCursor }
@@ -152,7 +142,13 @@ Item {
             visible: root.panelOpen
             clip: true
 
-            Rectangle { anchors.fill: parent; color: Theme.background }
+            GlassSurface {
+                anchors.fill: parent
+                tint: Theme.background
+                fillOpacity: 0.86
+                outlineVisible: false
+                sheen: true
+            }
 
             Loader {
                 id: planLoader
@@ -162,7 +158,6 @@ Item {
                 sourceComponent: PlanPanel {}
             }
 
-            // Files keeps the tree and the open file in one column.
             SplitView {
                 id: filesSplit
                 anchors.fill: parent
@@ -175,7 +170,7 @@ Item {
                         anchors.centerIn: parent
                         width: parent.width; height: 1
                         color: SplitHandle.pressed || SplitHandle.hovered
-                               ? Theme.borderStrong : Theme.borderSubtle
+                               ? Theme.glassEdgeStrong : Theme.glassEdge
                     }
                 }
 
@@ -203,8 +198,6 @@ Item {
                 id: terminalLoader
                 anchors.fill: parent
                 visible: !root.planSelected && root.tab === "terminal"
-                // Kept alive once opened: a shell that restarts because you
-                // looked at the diff is not a shell.
                 active: visible || item !== null
                 sourceComponent: TerminalPanel {}
             }
@@ -242,7 +235,6 @@ Item {
                 id: browserLoader
                 anchors.fill: parent
                 visible: !root.planSelected && root.tab === "browser"
-                // A loaded page should survive a look at the terminal.
                 active: visible || item !== null
                 sourceComponent: BrowserPanel {}
             }
@@ -255,7 +247,6 @@ Item {
             }
         }
 
-        // --------------------------------------------------------- the rail
         DockTabBar {
             Layout.preferredWidth: Theme.railWidth
             Layout.fillHeight: true

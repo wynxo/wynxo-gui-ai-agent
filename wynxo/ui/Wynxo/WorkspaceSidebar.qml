@@ -23,8 +23,14 @@ Item {
     readonly property bool inWynxi: bridge && bridge.taskMode === "codex"
     function focusSearch() { search.forceActiveFocus(); search.selectAll(); }
 
-    Rectangle { anchors.fill: parent; color: Theme.backgroundSoft }
-    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.borderSubtle }
+    GlassSurface {
+        anchors.fill: parent
+        tint: Theme.backgroundSoft
+        fillOpacity: 0.82
+        outlineVisible: false
+        sheen: true
+    }
+    Rectangle { anchors.right: parent.right; width: 1; height: parent.height; color: Theme.glassEdge }
 
     // ------------------------------------------------------------ expanded
     ColumnLayout {
@@ -53,9 +59,13 @@ Item {
                 hoverEnabled: true
                 Accessible.name: (root.inWynxi ? "Wynxi" : "Wynxo") + ". Switch product"
                 onClicked: productMenu.opened ? productMenu.close() : productMenu.open()
-                background: Rectangle {
-                    radius: Theme.r1
-                    color: productButton.hovered || productMenu.opened ? Theme.surfaceHover : "transparent"
+                background: GlassSurface {
+                    radius: Theme.r2
+                    tint: Theme.glassTintHover
+                    fillOpacity: productButton.hovered || productMenu.opened ? 0.44 : 0.0
+                    outlineVisible: productButton.hovered || productMenu.opened || productButton.visualFocus
+                    active: productButton.visualFocus
+                    sheen: productButton.hovered || productMenu.opened
                 }
                 contentItem: Row {
                     leftPadding: Theme.s1
@@ -165,11 +175,14 @@ Item {
                 : "Choose a project folder"
             onClicked: projectMenu.opened ? projectMenu.close() : projectMenu.open()
 
-            background: Rectangle {
+            background: GlassSurface {
                 radius: Theme.r2
-                color: projectButton.hovered || projectMenu.opened ? Theme.surfaceHover : Theme.surface
-                border.width: 1
-                border.color: projectButton.visualFocus ? Theme.accentEdge : Theme.borderSubtle
+                tint: projectButton.hovered || projectMenu.opened ? Theme.glassTintHover : Theme.glassTint
+                fillOpacity: projectButton.hovered || projectMenu.opened ? 0.64 : Theme.glassThinOpacity
+                strongEdge: projectButton.hovered || projectMenu.opened
+                active: projectButton.visualFocus
+                edgeColor: projectButton.visualFocus ? Theme.accentEdge
+                         : projectButton.hovered || projectMenu.opened ? Theme.glassEdgeStrong : Theme.glassEdge
             }
 
             contentItem: RowLayout {
@@ -202,8 +215,6 @@ Item {
                         color: Theme.textMuted
                         font.family: bridge && bridge.projectPath ? Theme.monoFamily : Theme.sansFamily
                         font.pixelSize: Theme.micro
-                        // A branch reads from the front; a path reads from its
-                        // tail, so each is cut at the end that matters least.
                         elide: bridge && bridge.workspaceDock && bridge.workspaceDock.branch
                                ? Text.ElideRight : Text.ElideLeft
                     }
@@ -345,11 +356,13 @@ Item {
             hoverEnabled: true
             Accessible.name: "Settings"
             onClicked: root.openSettings()
-            background: Rectangle {
+            background: GlassSurface {
                 radius: Theme.r2
-                color: settingsButton.hovered ? Theme.surfaceHover : "transparent"
-                border.width: settingsButton.visualFocus ? 1 : 0
-                border.color: Theme.accentEdge
+                tint: Theme.glassTintHover
+                fillOpacity: settingsButton.hovered ? 0.46 : 0.0
+                outlineVisible: settingsButton.hovered || settingsButton.visualFocus
+                active: settingsButton.visualFocus
+                sheen: settingsButton.hovered
             }
             contentItem: RowLayout {
                 spacing: Theme.s3
