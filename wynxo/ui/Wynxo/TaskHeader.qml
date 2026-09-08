@@ -221,7 +221,7 @@ Item {
 
             Repeater {
                 model: [
-                    { id: "chat", label: "Chat", icon: "chat", hint: "Answers, explanations, files you attach." },
+                    { id: "chat", label: "Chat", icon: "chat", hint: "Answers and explanations only. No commands, no screen, nothing on this computer is touched." },
                     { id: "work", label: "Work", icon: "cursor", hint: "Runs commands and, when allowed, drives the screen." },
                 ]
                 delegate: AbstractButton {
@@ -340,6 +340,17 @@ Item {
             onClicked: root.openAgentSettings()
             ToolTip.visible: hovered
             ToolTip.text: bridge ? "Permission mode: " + bridge.permissionModeLabel : ""
+        }
+
+        // A Chat task cannot run anything. Saying so on the task itself is the
+        // difference between "it refused" and "it was never able to".
+        Chip {
+            visible: !root.homeMode && bridge && root.resolvedMode === "chat" && root.roomy
+            text: "Chat only"
+            iconName: "chat"
+            onClicked: root.openAgentSettings()
+            ToolTip.visible: hovered
+            ToolTip.text: "This task answers and explains. It has no shell, no screen control and no file access — start a Work or Wynxi task for those."
         }
 
         Chip {

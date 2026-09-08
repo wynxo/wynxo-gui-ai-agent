@@ -18,13 +18,15 @@ Item {
     readonly property string headline: mode === "work" ? "What should I do?"
                                       : mode === "codex" ? "What are we building?"
                                       : "What are we working on?"
-    readonly property string detail: mode === "codex" && !hasProject
-        ? "Open a project and Wynxi can read it, edit it, run it and test it."
-        : mode === "work" && !(bridge && bridge.desktopEnabled)
-            ? "Screen control is requested when Work starts; commands run without it."
-            : hasProject
-                ? "Working in " + (bridge ? bridge.projectLabel : "")
-                : ""
+    readonly property string detail: mode === "chat"
+        ? "Answers and explanations. Chat runs no commands and changes nothing on this computer."
+        : mode === "codex" && !hasProject
+            ? "Open a project and Wynxi can read it, edit it, run it and test it."
+            : mode === "work" && !(bridge && bridge.desktopEnabled)
+                ? "Screen control is requested when Work starts; commands run without it."
+                : hasProject
+                    ? "Working in " + (bridge ? bridge.projectLabel : "")
+                    : ""
 
     implicitHeight: column.implicitHeight
 

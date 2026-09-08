@@ -61,6 +61,7 @@ TerminalPanel 1.0 TerminalPanel.qml
 ChangesPanel 1.0 ChangesPanel.qml
 DiffViewer 1.0 DiffViewer.qml
 ContextPanel 1.0 ContextPanel.qml
+MemoryPanel 1.0 MemoryPanel.qml
 ActivityPanel 1.0 ActivityPanel.qml
 BrowserPanel 1.0 BrowserPanel.qml
 PreviewPanel 1.0 PreviewPanel.qml

@@ -15,6 +15,7 @@ Sheet {
     width: Math.min(820, parent ? parent.width - Theme.s6 : 820)
     height: Math.min(620, parent ? parent.height - Theme.s6 : 620)
     signal openModelManager()
+    signal openMemoryPanel()
 
     readonly property int generalPage: 0
     readonly property int modelPage: 1
@@ -443,7 +444,7 @@ Sheet {
                         }
                         Group {
                             title: "Permission"
-                            description: "How much Wynxo may do on your desktop without asking first."
+                            description: "How much Wynxo may do — commands as well as the desktop — without asking first. It applies to Work and Wynxi tasks. A Chat task has no tools at all, so nothing there is ever approved."
                             Repeater {
                                 model: bridge ? bridge.permissionModes : []
                                 delegate: AbstractButton {
@@ -500,6 +501,57 @@ Sheet {
                                 wrapMode: Text.WordWrap; lineHeight: 1.45
                             }
                         }
+
+                        Group {
+                            title: "Memory"
+                            description: "One Markdown file Wynxo reads at the start of every task, in Wynxo and Wynxi alike, so what you tell it once does not have to be told again. Read it, correct it and delete from it in the Memory panel — Ctrl+Shift+M."
+
+                            Row {
+                                width: parent.width
+                                spacing: Theme.s3
+                                Toggle {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    checked: !!(bridge && bridge.memoryEnabled)
+                                    Accessible.name: "Remember things between tasks"
+                                    onSwitched: function(value) { if (bridge) bridge.setMemoryEnabled(value); }
+                                }
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: 1
+                                    FieldLabel { text: "Remember things between tasks" }
+                                    Text {
+                                        text: bridge ? bridge.memorySummary : ""
+                                        color: Theme.textMuted
+                                        font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                        width: sheet.width - 420
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                            }
+                            Row {
+                                width: parent.width
+                                spacing: Theme.s2
+                                WButton {
+                                    text: "Open the Memory panel"
+                                    variant: "secondary"
+                                    onClicked: { sheet.close(); sheet.openMemoryPanel(); }
+                                }
+                                WButton {
+                                    text: "Show memory.md"
+                                    variant: "ghost"
+                                    onClicked: if (bridge) bridge.revealMemory()
+                                }
+                            }
+                            Text {
+                                width: parent.width
+                                text: "Notes are kept in " + (bridge ? bridge.memoryPath : "memory.md")
+                                     + ", readable only by you. Wynxo is told never to save secrets or credentials there;"
+                                     + " anything you would rather it forgot can be deleted in the panel."
+                                color: Theme.textMuted
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
+                        }
                     }
 
                     // ---------------------------------------------- WORKSPACE
@@ -508,7 +560,7 @@ Sheet {
 
                         Group {
                             title: "The dock"
-                            description: "Files, Terminal, Changes, Context, Activity, Browser and Preview live on the right. The rail is always there; the panel opens beside it with Ctrl+Shift+B."
+                            description: "Files, Terminal, Changes, Context, Memory, Activity, Browser and Preview live on the right. The rail is always there; the panel opens beside it with Ctrl+Shift+B."
 
                             Row {
                                 width: parent.width

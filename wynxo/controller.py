@@ -1,9 +1,10 @@
 """Qt bridge. Network and desktop work never block the GUI thread.
 
-The controller owns four separate pieces of state that the UI reads
+The controller owns five separate pieces of state that the UI reads
 independently: conversation state (``Messages`` + history), Ollama state
 (catalogue, capabilities, connection), desktop state (permission mode, backend,
-pending approvals) and runtime configuration (presets and generation options).
+pending approvals), long-term memory (``memory.md``, read into every run) and
+runtime configuration (presets and generation options).
 Long operations run on ``Job`` threads and report back through Qt signals.
 """
 from __future__ import annotations
@@ -26,9 +27,10 @@ from . import system as system_info
 from .desktop import DesktopController, SessionTokens
 from .dock import DockController
 from .engine import (
-    ASK, AUTO, PERMISSION_LABELS, PERMISSION_MODES, SAFE, AgentEngine, OllamaClient,
-    action_summary,
+    PERMISSION_DETAILS, PERMISSION_LABELS, PERMISSION_MODES, SAFE,
+    AgentEngine, OllamaClient, action_summary, normalise_mode,
 )
+from .memory import Memory
 from .storage import Store
 
 
@@ -109,6 +111,8 @@ TOOL_PRESENTATION = {
     "press_key": ("keyboard", "Pressing keys"),
     "scroll": ("scroll", "Scrolling"),
     "wait": ("clock", "Waiting"),
+    "remember": ("memory", "Saving to memory"),
+    "forget": ("memory", "Forgetting a note"),
 }
 
 STARTERS = [
@@ -367,6 +371,7 @@ class Controller(QObject):
     paletteChanged = Signal()
     catalogChanged = Signal()
     permissionChanged = Signal()
+    memoryChanged = Signal()
     toast = Signal(str)
     focusComposer = Signal()
     quickBarRequested = Signal()
@@ -398,7 +403,7 @@ class Controller(QObject):
     # A permission prompt that is never answered must fail closed.
     PERMISSION_TIMEOUT = 180.0
 
-    def __init__(self, store=None, desktop=None, autoconnect=True):
+    def __init__(self, store=None, desktop=None, autoconnect=True, memory=None):
         super().__init__()
         self.store = store or Store()
         self.desktop = desktop or DesktopController(tokens=_StoredTokens(self.store))
@@ -430,9 +435,16 @@ class Controller(QObject):
         self._runtime_preset = str(setting("runtime_preset", "Balanced"))
         if self._runtime_preset not in self.RUNTIME_PRESETS and self._runtime_preset != "Custom":
             self._runtime_preset = "Custom"
-        self._permission_mode = str(setting("permission_mode", SAFE))
-        if self._permission_mode not in PERMISSION_MODES:
-            self._permission_mode = SAFE
+        self._permission_mode = normalise_mode(setting("permission_mode", SAFE))
+        # A database written before the ladder existed stored "ask"; rewrite it
+        # once so the setting on disk means what the app now shows.
+        if setting("permission_mode", SAFE) != self._permission_mode:
+            self.store.set_setting("permission_mode", self._permission_mode)
+        # Memory belongs beside the history it accompanies, so a store kept in a
+        # temporary folder gets a temporary memory file rather than the real one.
+        database = getattr(self.store, "path", None)
+        self.memory = memory or Memory(Path(database).parent / "memory.md" if database else None)
+        self._memory_enabled = bool(setting("memory_enabled", True))
         self._favorites = [str(m) for m in (setting("favorite_models", []) or []) if str(m)]
         self._recent_models = [str(m) for m in (setting("recent_models", []) or []) if str(m)]
         self._working_directory = str(setting("working_directory", "") or "")
@@ -688,11 +700,10 @@ class Controller(QObject):
     def permissionModeLabel(self): return PERMISSION_LABELS[self._permission_mode]
     @Property("QVariantList", constant=True)
     def permissionModes(self):
-        return [
-            {"id": ASK, "label": "Ask", "detail": "Approve commands and desktop actions before they run."},
-            {"id": SAFE, "label": "Safe auto", "detail": "Open apps directly; confirm commands, typing and key presses."},
-            {"id": AUTO, "label": "Auto", "detail": "Run commands and desktop actions without interrupting you."},
-        ]
+        return [{"id": mode, "label": PERMISSION_LABELS[mode], "detail": PERMISSION_DETAILS[mode]}
+                for mode in PERMISSION_MODES]
+    @Property(str, notify=changed)
+    def permissionModeDetail(self): return PERMISSION_DETAILS[self._permission_mode]
     @Property(bool, notify=permissionChanged)
     def permissionPending(self): return self._pending_permission is not None
     @Property(str, notify=permissionChanged)
@@ -715,6 +726,27 @@ class Controller(QObject):
     def permissionDirectory(self):
         directory = (self._pending_permission or {}).get("directory", "")
         return ctx.working_directory_label(directory) if directory else ""
+
+    # -------------------------------------------------------------- memory
+    @Property(bool, notify=memoryChanged)
+    def memoryEnabled(self): return self._memory_enabled
+    @Property(str, notify=memoryChanged)
+    def memoryPath(self): return str(self.memory.path)
+    @Property(str, notify=memoryChanged)
+    def memoryText(self): return self.memory.read()
+    @Property(int, notify=memoryChanged)
+    def memoryCount(self): return int(self.memory.stats()["notes"])
+    @Property(str, notify=memoryChanged)
+    def memorySummary(self):
+        stats = self.memory.stats()
+        if not self._memory_enabled:
+            return "Memory is off. Nothing is read from this file or written to it."
+        notes = stats["notes"]
+        if not notes:
+            return "Nothing remembered yet. Tell Wynxo something worth keeping, or write it here."
+        return (f"{notes} note{'' if notes == 1 else 's'} across "
+                f"{stats['sections']} section{'' if stats['sections'] == 1 else 's'}, "
+                f"read into every task.")
 
     @Property(str, notify=changed)
     def taskTitle(self): return self._task_title
@@ -1736,7 +1768,7 @@ class Controller(QObject):
         self.activityChanged.emit()
         self._refresh_tasks()
         self.changed.emit()
-        engine = AgentEngine(OllamaClient(self._endpoint), self.desktop)
+        engine = AgentEngine(OllamaClient(self._endpoint), self.desktop, self._memory_for_run())
         model, enabled, think = self._model, self.desktopEnabled, self._think
         num_ctx, temperature = self._num_ctx, self._temperature
         keep_alive, max_steps = self._keep_alive, self._max_steps
@@ -1788,7 +1820,9 @@ class Controller(QObject):
     # ------------------------------------------------------- permissioning
     def _confirm_action(self, name: str, args: dict, risk: str) -> bool:
         """Called on the worker thread; blocks it until the user answers."""
-        if self._session_auto:
+        # "Allow the rest of this task" is trust in a task, not a blank cheque:
+        # a command that cannot be undone is still put in front of the user.
+        if self._session_auto and risk != "destructive":
             return True
         self._permission_event.clear()
         self._permission_answer = False
@@ -1823,7 +1857,7 @@ class Controller(QObject):
         self._session_auto = True
         self._permission_answer = True
         self._permission_event.set()
-        self.toast.emit("Approving the rest of this task automatically")
+        self.toast.emit("Approving the rest of this task, except anything that cannot be undone")
 
     @Slot(str)
     def setPermissionMode(self, mode):
@@ -1833,7 +1867,76 @@ class Controller(QObject):
         self._permission_mode = mode
         self.store.set_setting("permission_mode", mode)
         self.changed.emit()
-        self.toast.emit(f"Screen control set to {PERMISSION_LABELS[mode]}")
+        # The mode governs commands as much as the screen, so name it for what
+        # it is rather than calling all of it "screen control".
+        self.toast.emit(f"Permission set to {PERMISSION_LABELS[mode]}")
+
+    # -------------------------------------------------------------- memory
+    def _memory_for_run(self):
+        """The memory a run may read and write, or None while memory is off."""
+        return self.memory if self._memory_enabled else None
+
+    @Slot(bool)
+    def setMemoryEnabled(self, enabled):
+        enabled = bool(enabled)
+        if enabled == self._memory_enabled:
+            return
+        self._memory_enabled = enabled
+        self.store.set_setting("memory_enabled", enabled)
+        self.memoryChanged.emit()
+        self.changed.emit()
+        self.toast.emit("Memory is on. Notes are read into every task."
+                        if enabled else "Memory is off. The file is kept, but nothing reads it.")
+
+    @Slot(str)
+    def saveMemory(self, text):
+        """Save the memory file as edited in Wynxo, replacing what was there."""
+        try:
+            self.memory.write(text)
+        except (OSError, ValueError) as exc:
+            self.toast.emit(str(exc))
+            return
+        self.memoryChanged.emit()
+        self.toast.emit("Memory saved")
+
+    @Slot(str)
+    def rememberNote(self, note):
+        """Add one note by hand, the same way the model's remember tool does."""
+        try:
+            result = self.memory.remember(note, project=self._working_directory)
+        except (OSError, ValueError) as exc:
+            self.toast.emit(str(exc))
+            return
+        self.memoryChanged.emit()
+        self.toast.emit("Remembered" if result.get("stored") else "Already remembered")
+
+    @Slot()
+    def clearMemory(self):
+        try:
+            self.memory.clear()
+        except OSError as exc:
+            self.toast.emit(str(exc))
+            return
+        self.memoryChanged.emit()
+        self.toast.emit("Memory cleared")
+
+    @Slot()
+    def reloadMemory(self):
+        """Re-read the file — it is plain Markdown, so anything may have edited it."""
+        self.memoryChanged.emit()
+
+    @Slot()
+    def revealMemory(self):
+        if not self.memory.exists():
+            try:
+                self.memory.clear()
+            except OSError as exc:
+                self.toast.emit(str(exc))
+                return
+            self.memoryChanged.emit()
+        if not notify.open_path(str(self.memory.path)):
+            self.copyText(str(self.memory.path))
+            self.toast.emit("No application opened it, so the path was copied instead.")
 
     # --------------------------------------------------------------- events
     def _on_event(self, event):
@@ -1888,6 +1991,10 @@ class Controller(QObject):
                 output = f"{len(result['apps'])} applications found"
             elif not output and result.get("width"):
                 output = f"Captured {result['width']} × {result['height']} pixels"
+            elif not output and event.get("name") == "remember":
+                output = ("Remembered: " if result.get("stored") else "Already known: ") + str(result.get("note", ""))
+            elif not output and event.get("name") == "forget":
+                output = f"Forgot {result.get('forgotten', 0)} note(s)"
             patch = {"state": state, "ms": int(event.get("ms", 0) or 0), "output": output[:32000]}
             self.messages.update_last_step(**patch)
             self.dock.record_update(**patch)
@@ -1896,6 +2003,8 @@ class Controller(QObject):
                 self.activityChanged.emit()
             if event.get("name") in ("run_command", "write_file", "edit_file"):
                 self.dock.refreshChanges()
+            if event.get("name") in ("remember", "forget"):
+                self.memoryChanged.emit()
         elif kind == "metrics":
             rate = event.get("tokens_per_second", 0)
             previous = self._run_metrics

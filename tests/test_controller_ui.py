@@ -8,7 +8,7 @@ from PySide6.QtCore import QCoreApplication
 
 from wynxo import context as ctx
 from wynxo.controller import Controller, Messages, derive_title, group_for
-from wynxo.engine import ASK, AUTO, SAFE
+from wynxo.engine import AUTO, FULL, MANUAL, SAFE
 from wynxo.storage import Store
 
 APP = QCoreApplication.instance() or QCoreApplication([])
@@ -193,12 +193,35 @@ def test_capability_warning_is_silent_while_probing(tmp_path):
 def test_permission_mode_is_validated_and_persisted(tmp_path):
     bridge = controller(tmp_path)
     assert bridge.permissionMode == SAFE
-    bridge.setPermissionMode(ASK)
-    assert bridge.permissionMode == ASK
-    assert bridge.permissionModeLabel == "Ask"
-    assert bridge.store.get_setting("permission_mode") == ASK
+    bridge.setPermissionMode(MANUAL)
+    assert bridge.permissionMode == MANUAL
+    assert bridge.permissionModeLabel == "Manual"
+    assert bridge.store.get_setting("permission_mode") == MANUAL
     bridge.setPermissionMode("nonsense")
-    assert bridge.permissionMode == ASK
+    assert bridge.permissionMode == MANUAL
+    bridge.shutdown()
+
+
+def test_the_permission_ladder_is_offered_whole_and_described(tmp_path):
+    bridge = controller(tmp_path)
+    offered = bridge.permissionModes
+    assert [entry["id"] for entry in offered] == [MANUAL, SAFE, AUTO, FULL]
+    assert [entry["label"] for entry in offered] == ["Manual", "Auto-approve", "Auto", "Full access"]
+    # Every rung says what it does; an unexplained mode is one nobody picks.
+    assert all(len(entry["detail"]) > 20 for entry in offered)
+    bridge.setPermissionMode(FULL)
+    assert bridge.permissionModeDetail == offered[3]["detail"]
+    bridge.shutdown()
+
+
+def test_a_database_written_before_the_ladder_is_migrated_once(tmp_path):
+    """"ask" was the old id for what is now Manual. Reading it must not drop the
+    user back to the default, and the setting on disk is rewritten to match."""
+    store = Store(tmp_path / "history.sqlite3")
+    store.set_setting("permission_mode", "ask")
+    bridge = Controller(store=store, desktop=IdleDesktop(), autoconnect=False)
+    assert bridge.permissionMode == MANUAL
+    assert bridge.store.get_setting("permission_mode") == MANUAL
     bridge.shutdown()
 
 

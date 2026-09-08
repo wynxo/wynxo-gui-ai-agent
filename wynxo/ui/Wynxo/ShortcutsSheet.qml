@@ -43,6 +43,7 @@ Sheet {
             { keys: "Ctrl+`", label: "Terminal" },
             { keys: "Ctrl+Shift+G", label: "Changes" },
             { keys: "Ctrl+Shift+K", label: "Context" },
+            { keys: "Ctrl+Shift+M", label: "Memory" },
             { keys: "Ctrl+Shift+A", label: "Activity" },
             { keys: "Ctrl+Shift+W", label: "Browser" },
             { keys: "Ctrl+Shift+U", label: "Preview" },

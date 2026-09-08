@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import context as ctx
 from . import markdown as md
+from .memory import Memory
 from .storage import Store
 from .workspace import WorkspaceController
 
@@ -235,11 +236,29 @@ class DemoController(WorkspaceController):
         if theme:
             store.set_setting("theme", theme)
         connected = scene in ("desktop", "conversation", "run", "empty-work-locked")
-        super().__init__(store=store, desktop=DemoDesktop(connected), autoconnect=False)
+        # A preview must never read or write the real memory file.
+        super().__init__(store=store, desktop=DemoDesktop(connected), autoconnect=False,
+                         memory=Memory(Path(directory) / "memory.md"))
         self._preview_directory = Path(directory)
         self._page_server = None
         self.scene = scene
         self._seed()
+        self._seed_memory()
+
+    def _seed_memory(self):
+        """Plausible notes, so the Memory panel shows memory rather than a shrug.
+
+        Seeded after the scene so the project section matches the folder the
+        preview actually opened.
+        """
+        for note in ("Prefers short answers with the command first, the explanation after",
+                     "Runs NixOS; installs nothing with apt",
+                     "Ollama lives on the homelab box at 192.168.1.50"):
+            self.memory.remember(note)
+        for note in ("Tests are pytest, run from the repository root",
+                     "The QML shell is loaded from wynxo/ui; qmldir must list every component"):
+            self.memory.remember(note, scope="project", project=self._working_directory)
+        self.memoryChanged.emit()
 
     def refreshModels(self):
         self._apply_catalog()
@@ -407,8 +426,8 @@ class DemoController(WorkspaceController):
             self.dock.record_update(**{k: step[k] for k in ("state", "ms", "output")})
         self._seed_answer()
         self.dock.setVisible(True)
-        self.dock.setTab(tab if tab in ("files", "terminal", "changes",
-                                        "context", "activity", "browser", "preview") else "files")
+        self.dock.setTab(tab if tab in ("files", "terminal", "changes", "context",
+                                        "memory", "activity", "browser", "preview") else "files")
         if tab == "files":
             target = Path(self._working_directory) / "wynxo" / "ui" / "Wynxo" / "Composer.qml"
             if target.is_file():
@@ -508,6 +527,7 @@ SCENES = [
     ("22-dock-browser", "dock-browser", ""),
     ("23-dock-context", "dock-context", ""),
     ("24-dock-activity", "dock-activity", ""),
+    ("27-dock-memory", "dock-memory", ""),
     ("25-system", "conversation", "system"),
     ("26-code-run", "codex-run", ""),
 ]

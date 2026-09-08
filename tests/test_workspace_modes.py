@@ -1,6 +1,9 @@
 """Task-scoped Chat / Work / Wynxi behavior."""
+import threading
+
 from PySide6.QtCore import QCoreApplication
 
+from wynxo.memory import Memory
 from wynxo.storage import Store
 from wynxo.workspace import WorkspaceController
 
@@ -100,4 +103,143 @@ def test_work_mode_is_task_scoped(tmp_path):
     bridge.newTask()
     assert bridge.taskMode == "chat"
     assert bridge.taskModeLocked is False
+    bridge.shutdown()
+
+
+# ------------------------------------------------------- chat is only chat
+# A Chat task is not a Work task with the tools declined: the tools are never
+# offered to the model, so there is nothing for it to try and nothing to approve.
+
+class ToolDesktop(IdleDesktop):
+    def __init__(self):
+        super().__init__(connected=True)
+        self.calls = []
+
+    def execute(self, name, args, cancel):
+        self.calls.append(name)
+        return {"ok": True, "action": name}
+
+
+class Recorder:
+    def __init__(self, script=(), capabilities=("completion", "tools", "vision")):
+        self.script = list(script)
+        self.requests = []
+        self._capabilities = list(capabilities)
+
+    def capabilities(self, model):
+        return self._capabilities
+
+    def stream_chat(self, payload, cancel):
+        self.requests.append(payload)
+        chunk = self.script.pop(0) if self.script else {"message": {"content": "ok"}, "done": True}
+        for part in (chunk if isinstance(chunk, list) else [chunk]):
+            yield part
+
+
+def engine_run(bridge, mode, script=(), memory=None):
+    """Run one turn the way the controller does, capturing the request."""
+    from wynxo.workspace import PlanningAgentEngine
+    client = Recorder(script)
+    desktop = ToolDesktop()
+    events = []
+    PlanningAgentEngine(client, desktop, memory).run(
+        [{"role": "user", "content": "go"}], "local:test", mode == "work",
+        threading.Event(), events.append, permission_mode="full",
+        confirm=lambda *a: True, tools_allowed=mode != "chat")
+    return client, desktop, events
+
+
+def test_a_chat_task_is_offered_no_tools_at_all(tmp_path):
+    client, desktop, _ = engine_run(controller(tmp_path), "chat")
+    assert client.requests[0].get("tools") is None
+    assert desktop.calls == []
+
+
+def test_a_work_task_is_offered_the_local_tools(tmp_path):
+    client, _, _ = engine_run(controller(tmp_path), "work")
+    offered = {tool["function"]["name"] for tool in client.requests[0]["tools"]}
+    assert "run_command" in offered
+    assert "open_app" in offered
+
+
+def test_a_chat_task_cannot_run_a_command_even_if_the_model_asks(tmp_path):
+    client, desktop, events = engine_run(
+        controller(tmp_path), "chat",
+        [{"message": {"tool_calls": [{"function": {"name": "run_command",
+                                                   "arguments": {"command": "rm -rf ~"}}}]}, "done": True},
+         {"message": {"content": "I cannot do that here."}, "done": True}])
+    assert desktop.calls == []
+    end = next(event for event in events if event["type"] == "tool_end")
+    assert end["result"]["ok"] is False
+    assert "not enabled" in end["result"]["error"]
+
+
+def test_a_chat_task_is_told_plainly_what_it_cannot_do(tmp_path):
+    client, _, events = engine_run(controller(tmp_path), "chat")
+    system = client.requests[0]["messages"][0]["content"]
+    assert "This is a Chat task" in system
+    assert "cannot" in system
+    assert "run commands" in system
+    # The desktop prompt's instructions to act must not survive into it.
+    assert "For command-line work use run_command" not in system
+    assert any(event.get("type") == "status" and "Chat task" in event.get("text", "")
+               for event in events)
+
+
+def test_a_chat_task_has_no_plan_tool_either(tmp_path):
+    client, _, _ = engine_run(controller(tmp_path), "chat")
+    assert client.requests[0].get("tools") is None
+    work, _, _ = engine_run(controller(tmp_path), "work")
+    assert "update_plan" in {tool["function"]["name"] for tool in work.requests[0]["tools"]}
+
+
+def test_a_chat_task_can_still_remember_and_recall(tmp_path):
+    """Chat has no shell, but memory is a note in Wynxo's own file — the one
+    thing a conversation must be able to carry into the next one."""
+    memory = Memory(tmp_path / "memory.md")
+    memory.remember("Answers in Portuguese")
+    client, desktop, _ = engine_run(
+        controller(tmp_path), "chat",
+        [{"message": {"tool_calls": [{"function": {"name": "remember",
+                                                   "arguments": {"note": "Learned in a chat"}}}]}, "done": True},
+         {"message": {"content": "noted"}, "done": True}],
+        memory=memory)
+    offered = {tool["function"]["name"] for tool in client.requests[0]["tools"]}
+    assert offered == {"remember", "forget"}
+    assert "Answers in Portuguese" in client.requests[0]["messages"][0]["content"]
+    assert "Learned in a chat" in memory.notes()
+    assert desktop.calls == []
+
+
+def test_the_controller_puts_a_chat_task_into_chat_only_mode(tmp_path, monkeypatch):
+    bridge = controller(tmp_path, connected=True)
+    bridge._online = True
+    bridge._model_capabilities = ["completion", "tools"]
+    captured = {}
+
+    class Spy:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def run(self, *args, **kwargs):
+            captured.update(kwargs)
+            return []
+
+    def job(fn, result=None, failure=None, event=None):
+        fn(threading.Event(), lambda payload: None)
+        return None
+
+    monkeypatch.setattr("wynxo.workspace.PlanningAgentEngine", Spy)
+    monkeypatch.setattr("wynxo.workspace.OllamaClient", lambda endpoint: None)
+    monkeypatch.setattr(bridge, "_job", job)
+
+    bridge.send("just talk to me")
+    assert bridge.taskMode == "chat"
+    assert captured["tools_allowed"] is False
+
+    bridge._busy = False
+    bridge.newTaskMode("work")
+    bridge.send("now do something")
+    assert bridge.taskMode == "work"
+    assert captured["tools_allowed"] is True
     bridge.shutdown()

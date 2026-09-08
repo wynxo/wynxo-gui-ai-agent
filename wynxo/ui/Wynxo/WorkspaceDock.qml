@@ -251,6 +251,13 @@ Item {
 
             Loader {
                 anchors.fill: parent
+                visible: !root.planSelected && root.tab === "memory"
+                active: visible
+                sourceComponent: MemoryPanel {}
+            }
+
+            Loader {
+                anchors.fill: parent
                 visible: !root.planSelected && root.tab === "activity"
                 active: visible
                 sourceComponent: ActivityPanel {}

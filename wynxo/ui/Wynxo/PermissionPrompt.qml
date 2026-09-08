@@ -19,7 +19,10 @@ Popup {
     visible: bridge ? bridge.permissionPending : false
     property bool showDetails: false
     onVisibleChanged: if (!visible) showDetails = false
-    readonly property bool sensitive: bridge && bridge.permissionRisk === "sensitive"
+    // "destructive" is the one risk that survives Auto: a command that can take
+    // something away for good. It is named, not merely tinted a warmer colour.
+    readonly property bool destructive: bridge && bridge.permissionRisk === "destructive"
+    readonly property bool sensitive: prompt.destructive || (bridge && bridge.permissionRisk === "sensitive")
     readonly property bool isCommand: !!(bridge && bridge.permissionCommand)
 
     Overlay.modal: Rectangle { color: Theme.scrim }
@@ -55,7 +58,9 @@ Popup {
                 color: prompt.sensitive ? Theme.warningMuted : Theme.surfaceHover
                 Icon {
                     anchors.centerIn: parent
-                    name: prompt.isCommand ? "terminal" : prompt.sensitive ? "warning" : "cursor"
+                    name: prompt.destructive ? "warning"
+                        : prompt.isCommand ? "terminal"
+                        : prompt.sensitive ? "warning" : "cursor"
                     ink: prompt.sensitive ? Theme.warning : Theme.textSecondary
                     width: 17; height: 17
                 }
@@ -65,7 +70,8 @@ Popup {
                 spacing: 2
                 Text {
                     Layout.fillWidth: true
-                    text: prompt.isCommand ? "Wynxo wants to run a command"
+                    text: prompt.destructive ? "This command cannot be undone"
+                        : prompt.isCommand ? "Wynxo wants to run a command"
                         : prompt.sensitive ? "Wynxo wants to change something"
                         : "Allow this action?"
                     color: Theme.textPrimary
@@ -74,7 +80,9 @@ Popup {
                 }
                 Text {
                     Layout.fillWidth: true
-                    text: prompt.isCommand
+                    text: prompt.destructive
+                          ? "It can delete files, change the system, or act as another user. Read it before you allow it."
+                        : prompt.isCommand
                           ? "It runs as you, with your files and your permissions."
                         : prompt.sensitive
                           ? "This can save, send or delete in whatever has focus."
@@ -198,7 +206,7 @@ Popup {
                 compactPadding: true
                 onClicked: if (bridge) bridge.allowRestOfTask()
                 ToolTip.visible: hovered
-                ToolTip.text: "Stop asking until this task finishes"
+                ToolTip.text: "Stop asking until this task finishes. A command that cannot be undone is still asked about."
             }
             Item { Layout.fillWidth: true }
             WButton {

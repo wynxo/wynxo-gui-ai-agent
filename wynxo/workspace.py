@@ -79,7 +79,7 @@ class PlanningAgentEngine(AgentEngine):
 
     def run(self, *args, **kwargs):
         desktop = self.desktop
-        if desktop is None:
+        if desktop is None or not kwargs.get("tools_allowed", True):
             return super().run(*args, **kwargs)
         original_execute = desktop.execute
 
@@ -412,9 +412,13 @@ class WorkspaceController(Controller):
         self.activityChanged.emit()
         self._refresh_tasks()
         self.changed.emit()
-        engine = PlanningAgentEngine(OllamaClient(self._endpoint), self.desktop)
+        engine = PlanningAgentEngine(OllamaClient(self._endpoint), self.desktop, self._memory_for_run())
         model = self._model
         enabled = self._task_mode == "work" and self.desktopEnabled
+        # Chat is chat. A Chat task never reaches the shell, the desktop or the
+        # project — not "asks first", not "only safe commands": the tools are
+        # not offered to the model at all, so there is nothing to approve.
+        tools_allowed = self._task_mode != "chat"
         think = self._think
         num_ctx, temperature = self._num_ctx, self._temperature
         keep_alive, max_steps = self._keep_alive, self._max_steps
@@ -424,7 +428,8 @@ class WorkspaceController(Controller):
                 list(history), model, enabled, cancel, emit, think=think,
                 max_steps=max_steps, num_ctx=num_ctx, temperature=temperature,
                 keep_alive=keep_alive, permission_mode=permission_mode,
-                project=project, confirm=self._confirm_action),
+                project=project, confirm=self._confirm_action,
+                tools_allowed=tools_allowed),
             self._run_done, self._run_failed, self._on_event,
         )
 

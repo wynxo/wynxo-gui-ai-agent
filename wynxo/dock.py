@@ -2,7 +2,7 @@
 
 One QObject per concern, assembled here and exposed to QML as `bridge.dock`.
 The main controller stays about the conversation; the dock owns Files,
-Terminal, Changes, Context, Activity, Browser and Preview.
+Terminal, Changes, Context, Memory, Activity, Browser and Preview.
 
 Three rules shape everything below:
 
@@ -29,13 +29,14 @@ from . import project_files as files
 from .activity import ActivityLog
 from .terminal import ShellSession
 
-TABS = ("files", "terminal", "changes", "context", "activity", "browser", "preview")
+TABS = ("files", "terminal", "changes", "context", "memory", "activity", "browser", "preview")
 
 TAB_META = {
     "files":    {"label": "Files",    "icon": "folder",   "shortcut": "Ctrl+Shift+E"},
     "terminal": {"label": "Terminal", "icon": "terminal", "shortcut": "Ctrl+`"},
     "changes":  {"label": "Changes",  "icon": "branch",   "shortcut": "Ctrl+Shift+G"},
     "context":  {"label": "Context",  "icon": "layers",   "shortcut": "Ctrl+Shift+K"},
+    "memory":   {"label": "Memory",   "icon": "memory",   "shortcut": "Ctrl+Shift+M"},
     "activity": {"label": "Activity", "icon": "bolt",     "shortcut": "Ctrl+Shift+A"},
     "browser":  {"label": "Browser",  "icon": "globe",    "shortcut": "Ctrl+Shift+W"},
     "preview":  {"label": "Preview",  "icon": "image",    "shortcut": "Ctrl+Shift+U"},

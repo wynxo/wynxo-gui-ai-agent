@@ -4,14 +4,15 @@
 
 Wynxo is a native Python + Qt Quick application. Choose the folder you are
 working in, describe a task, and watch it run: a model on your own machine
-answers, reads the files, folders and screenshots you attach, and — when you
-turn it on — sees your screen and drives your mouse and keyboard.
+answers, reads the files, folders and screenshots you attach, remembers what
+you tell it from one task to the next, and — when you turn it on — sees your
+screen and drives your mouse and keyboard.
 
 Three columns: your tasks on the left, the conversation in the middle, and a
 workspace dock on the right holding the tools the work actually needs — a file
 tree and viewer, a real shell, the project's uncommitted changes and their
-diffs, what the model can currently see, the full run timeline, an embedded
-browser, and a preview.
+diffs, what the model can currently see, what it remembers between tasks, the
+full run timeline, an embedded browser, and a preview.
 
 No browser, no Node.js, no account, no API key, no cloud AI. Ollama does the
 inference; Wynxo is the interface.
@@ -59,6 +60,7 @@ tab, and after that it stays where you put it.
 | **Terminal** | A real PTY-backed shell in the project folder. `cd` persists, prompts appear, Ctrl+C reaches the foreground process, and ANSI colour survives. Command history on the arrow keys. |
 | **Changes** | Uncommitted work read from Git, per file, with `+`/`−` counts and a unified diff. Discarding a file's changes asks first. |
 | **Context** | Everything the model can currently see — the workspace, attachments, the open file, the browser page — with the context window meter. Removing something here removes the real thing. |
+| **Memory** | What Wynxo remembers between tasks: `memory.md` itself, edited in place. Add a note, correct one, or forget the lot. |
 | **Activity** | The whole session's run timeline: every step, its state, its timing, and its output when you open it. |
 | **Browser** | An embedded Qt WebEngine view with address, back, forward, reload and open-externally. Only `http` and `https`; pop-ups and permission requests are refused. The page reaches the model only when you attach it. |
 | **Preview** | Images and captures at full size. |
@@ -97,17 +99,49 @@ line you can read in a second. The pointer travels rather than teleporting,
 so you can see what it is about to do — and Escape stops it.
 
 **Permission modes**
-Local commands and screen actions share the selected approval mode:
+Local commands and screen actions share the selected approval mode, a ladder
+from approving everything to approving nothing:
 
 | Mode | Behaviour |
 | --- | --- |
-| Ask | Approve commands and non-observation desktop actions |
-| Safe auto *(default)* | Open apps directly; confirm commands, typing and key presses |
-| Auto | Run commands and desktop actions without interrupting you |
+| Manual | Approve every command and desktop action before it runs |
+| Auto-approve *(default)* | Open apps and click directly; approve commands, typing and key presses |
+| Auto | Run unattended — but a command that could destroy data is still approved |
+| Full access | Never ask, destructive commands included |
 
 Reading the screen and moving the pointer never prompt — they change nothing.
 Commands, typing and key chords can save, send or delete in whatever has focus, so they
-stay behind a prompt unless you choose Auto.
+stay behind a prompt until you choose Auto.
+
+**Auto and Full access differ on one thing.** Auto reads the command before it
+runs it, and a command that deletes files, repartitions a disk, pipes a download
+into a shell, removes packages, elevates to another user, or throws away work in
+Git is put in front of you anyway. Full access does not ask about anything, which
+makes it a mode for a session you are watching rather than one you walk away
+from. *Allow all in this task* follows the same rule: it stops the prompting for
+the rest of the run, except for the things that cannot be undone.
+
+**Chat is only chat.** A Chat task is not a Work task with its tools declined —
+the model is never offered a shell, screen control or file access at all, so
+there is nothing there to approve and nothing that can run by accident. It
+answers, explains, plans and writes code as text, and says so plainly when a
+request needs the machine. Work drives the screen and runs commands; Wynxi runs
+commands in the project. The mode is chosen once per task and stays chosen.
+
+**Memory**
+One Markdown file, read at the start of every task. Tell Wynxo something once —
+how you deploy, what the test command is, that you would rather have the command
+first and the explanation after — and it is there in the next task, and the one
+after that, in Wynxo and Wynxi alike. The model saves and drops notes itself
+through two tools; you can do the same by hand.
+
+It is deliberately a file you own, not a table you cannot see: `memory.md` lives
+beside the history database and the Memory panel (`Ctrl+Shift+M`) is that file,
+edited in place. Notes are scoped — what is true everywhere is separate from what
+is true only in one project, and a task only ever reads the global notes plus its
+own project's, so one repository's conventions never leak into another's. Nothing
+is remembered while the switch in **Settings → Agent → Memory** is off, and
+*Forget everything* is one button with one confirmation.
 
 **Models**
 Browse what Ollama has installed with parameter size, quantisation, disk usage,
@@ -148,8 +182,9 @@ Every image below is a real capture of the running Qt application, produced by
 | **A new task** — one question, then the openings<br>![](docs/screenshots/01-new-task.png) | **Files** — the project tree, and the file under it<br>![](docs/screenshots/19-dock-files.png) |
 | **Terminal** — a real shell, in the project folder<br>![](docs/screenshots/20-dock-terminal.png) | **Changes** — every uncommitted file, and its diff<br>![](docs/screenshots/21-dock-changes.png) |
 | **Browser** — a page beside the conversation<br>![](docs/screenshots/22-dock-browser.png) | **Context** — everything the model can see<br>![](docs/screenshots/23-dock-context.png) |
-| **Activity** — the whole run, not just the summary<br>![](docs/screenshots/24-dock-activity.png) | **System** — measured, or absent<br>![](docs/screenshots/25-system.png) |
-| **A coding run** — read, search, edit, then the command<br>![](docs/screenshots/26-code-run.png) | **A desktop run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) |
+| **Activity** — the whole run, not just the summary<br>![](docs/screenshots/24-dock-activity.png) | **Memory** — what carries from one task to the next<br>![](docs/screenshots/27-dock-memory.png) |
+| **System** — measured, or absent<br>![](docs/screenshots/25-system.png) | **A desktop run** — every action, then one summary line<br>![](docs/screenshots/03-agent-run.png) |
+| **A coding run** — read, search, edit, then the command<br>![](docs/screenshots/26-code-run.png) | **Chat** — answers only, and it says so<br>![](docs/screenshots/18-chat-locked-home.png) |
 | **Permission** — the exact command, and where it would run<br>![](docs/screenshots/04-permission.png) | **Local context** — files, folders and captures as chips<br>![](docs/screenshots/05-context.png) |
 | **Settings** — six sections, nothing repeated<br>![](docs/screenshots/08-settings.png) | **Command palette** — every action, one keystroke away<br>![](docs/screenshots/09-command-palette.png) |
 | **Model** — switch and set the speed in one place<br>![](docs/screenshots/06-models.png) | **Model manager** — capabilities, size, favourites, downloads<br>![](docs/screenshots/07-model-manager.png) |
@@ -344,6 +379,7 @@ The workspace dock:
 | Ctrl+` | Terminal |
 | Ctrl+Shift+G | Changes |
 | Ctrl+Shift+K | Context |
+| Ctrl+Shift+M | Memory |
 | Ctrl+Shift+A | Activity |
 | Ctrl+Shift+W | Browser |
 | Ctrl+Shift+U | Preview |
@@ -381,6 +417,10 @@ off every transition and looping animation rather than just shortening them.
 - Conversations live in a private SQLite file at
   `~/.local/share/wynxo/history.sqlite3` (or `$XDG_DATA_HOME/wynxo`), created
   with `0600` permissions.
+- Long-term memory is one Markdown file beside it, `~/.local/share/wynxo/memory.md`,
+  also `0600`. It is read into every task and never leaves your machine. Wynxo is
+  told not to save secrets or credentials there; read it, edit it and empty it
+  yourself in the Memory panel, and turn it off entirely in Settings → Agent.
 - Screenshots go to your local model and are **not** written into task history.
   The Wayland portal may create its own temporary capture files.
 - No account, no API key, no telemetry, no hosted backend.
@@ -450,6 +490,7 @@ To see the interface without any real history, Ollama, or desktop access:
 .venv/bin/python -m wynxo --ui-preview dock-changes    # Git changes and a diff
 .venv/bin/python -m wynxo --ui-preview dock-browser    # the embedded browser
 .venv/bin/python -m wynxo --ui-preview dock-context    # what the model can see
+.venv/bin/python -m wynxo --ui-preview dock-memory     # what carries between tasks
 .venv/bin/python -m wynxo --ui-preview dock-activity   # the run timeline
 .venv/bin/python -m wynxo --ui-preview codex-run       # a coding turn, start to finish
 ```

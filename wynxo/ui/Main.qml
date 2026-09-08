@@ -135,6 +135,7 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+`"]; onActivated: window.openDock("terminal") }
     Shortcut { sequences: ["Ctrl+Shift+G"]; onActivated: window.openDock("changes") }
     Shortcut { sequences: ["Ctrl+Shift+K"]; onActivated: window.openDock("context") }
+    Shortcut { sequences: ["Ctrl+Shift+M"]; onActivated: window.openDock("memory") }
     Shortcut { sequences: ["Ctrl+Shift+A"]; onActivated: window.openDock("activity") }
     Shortcut { sequences: ["Ctrl+Shift+W"]; onActivated: window.openDock("browser") }
     Shortcut { sequences: ["Ctrl+Shift+U"]; onActivated: window.openDock("preview") }
@@ -318,6 +319,9 @@ ApplicationWindow {
                     visible: window.homeMode
                     onStarterChosen: function(prompt) { composer.insert(prompt); }
                     onCommandInvoked: function(action) { window.runCommand(action); }
+                    onModeRequested: function(mode) {
+                        if (bridge && !bridge.connecting) bridge.setTaskMode(mode);
+                    }
                 }
 
                 Item {
@@ -391,7 +395,11 @@ ApplicationWindow {
 
     // --------------------------------------------------------- overlays
     ModelManager { id: models }
-    SettingsSheet { id: settings; onOpenModelManager: models.open() }
+    SettingsSheet {
+        id: settings
+        onOpenModelManager: models.open()
+        onOpenMemoryPanel: window.openDock("memory")
+    }
     ShortcutsSheet { id: shortcuts }
     CommandPalette { id: palette; onInvoked: function(action) { window.runCommand(action); } }
     PermissionPrompt { id: permission }
@@ -572,6 +580,7 @@ ApplicationWindow {
         case "terminal-panel": window.openDock("terminal"); break;
         case "changes": window.openDock("changes"); break;
         case "context": window.openDock("context"); break;
+        case "memory": window.openDock("memory"); break;
         case "activity": window.openDock("activity"); break;
         case "browser": window.openDock("browser"); break;
         case "preview": window.openDock("preview"); break;
