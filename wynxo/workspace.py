@@ -25,6 +25,7 @@ from PySide6.QtCore import Property, Signal, Slot
 from . import context as ctx
 from . import engine as engine_module
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
+from .memory_learning import learnable_memories
 from .usage import TokenUsageTracker
 
 
@@ -431,8 +432,39 @@ class WorkspaceController(Controller):
         self._set_plan(self._saved_plan(task_id), persist=False)
         self._emit_mode()
 
+    def _learn_user_memory(self, text: str) -> int:
+        """Quietly persist high-confidence durable facts from an accepted message.
+
+        This path is deliberately independent of model tool calling. A small or
+        tool-less local model should still remember a preferred name or a stable
+        repo convention. The Markdown memory file remains the source of truth,
+        and its normal dedupe/size/privacy rules still apply.
+        """
+        if not self._memory_enabled:
+            return 0
+        stored = 0
+        for candidate in learnable_memories(text, self._working_directory):
+            try:
+                result = self.memory.remember(
+                    candidate["note"], candidate["scope"], self._working_directory)
+            except (OSError, ValueError):
+                continue
+            stored += int(bool(result.get("stored")))
+        if stored:
+            self.memoryChanged.emit()
+        return stored
+
     @Slot(str)
     def send(self, text):
+        # Learn only messages the base controller would actually accept. Never
+        # turn an offline draft, an empty submit or a click while busy into
+        # durable profile data. Learning happens before the run starts so the
+        # same turn can benefit from the freshly updated memory if useful.
+        accepted_text = str(text).strip()
+        accepted = bool(accepted_text and not self._busy and not self._connecting and self._online)
+        if accepted:
+            self._learn_user_memory(accepted_text)
+
         was_new = not self._task_id
         if was_new and not self._task_mode_locked:
             self._task_mode = "chat"
