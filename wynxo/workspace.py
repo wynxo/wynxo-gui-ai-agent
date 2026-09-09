@@ -304,6 +304,11 @@ class WorkspaceController(Controller):
     def tokenUsage(self):
         return self._usage.summary
 
+    @Slot()
+    def refreshTokenUsage(self):
+        if self._usage.refresh():
+            self.usageChanged.emit()
+
     @Property(str, notify=endpointChanged)
     def endpointScope(self):
         return endpoint_scope(self._endpoint)
