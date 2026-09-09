@@ -24,6 +24,7 @@ from PySide6.QtCore import Property, QTimer, Signal, Slot
 
 from . import context as ctx
 from . import engine as engine_module
+from . import project_context
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
 from .memory_learning import learnable_memories
 from .usage import TokenUsageTracker
@@ -84,6 +85,17 @@ class PlanningAgentEngine(AgentEngine):
         desktop = self.desktop
         if desktop is None or not kwargs.get("tools_allowed", True):
             return super().run(*args, **kwargs)
+
+        # Work/Wynxi get a small locally generated repo map before inference.
+        # It is metadata only, generated on this worker thread, and stripped
+        # from the returned history so it never becomes chat or memory.
+        project = str(kwargs.get("project", "") or "")
+        if project:
+            if args:
+                args = (project_context.inject(list(args[0]), project),) + args[1:]
+            else:
+                kwargs["messages"] = project_context.inject(list(kwargs.get("messages", [])), project)
+
         original_execute = desktop.execute
 
         def execute(name, arguments, cancel=None):
@@ -95,7 +107,7 @@ class PlanningAgentEngine(AgentEngine):
         # on the worker thread for the lifetime of this generation.
         desktop.execute = execute
         try:
-            return super().run(*args, **kwargs)
+            return project_context.strip(super().run(*args, **kwargs))
         finally:
             desktop.execute = original_execute
 
