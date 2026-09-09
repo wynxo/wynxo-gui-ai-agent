@@ -55,7 +55,8 @@ def run(script, mode, confirm, capabilities=("completion", "tools", "vision")):
 @pytest.mark.parametrize("name,risk", [
     ("screenshot", "low"), ("move_pointer", "low"), ("scroll", "low"),
     ("list_apps", "low"), ("wait", "low"),
-    ("click", "normal"), ("drag", "normal"), ("open_app", "normal"),
+    ("open_app", "normal"),
+    ("click", "sensitive"), ("drag", "sensitive"),
     ("type_text", "sensitive"), ("press_key", "sensitive"), ("run_command", "sensitive"),
 ])
 def test_every_tool_has_a_deliberate_risk_level(name, risk):
@@ -70,11 +71,13 @@ def test_ask_mode_confirms_everything_except_observation():
     assert needs_confirmation("move_pointer", ASK) is False
 
 
-def test_safe_auto_confirms_only_the_actions_that_commit_something():
+def test_safe_auto_confirms_actions_that_can_commit_application_state():
     assert needs_confirmation("type_text", SAFE) is True
     assert needs_confirmation("press_key", SAFE) is True
-    assert needs_confirmation("click", SAFE) is False
+    assert needs_confirmation("click", SAFE) is True
+    assert needs_confirmation("drag", SAFE) is True
     assert needs_confirmation("open_app", SAFE) is False
+    assert needs_confirmation("scroll", SAFE) is False
 
 
 def test_auto_never_interrupts():
@@ -169,16 +172,48 @@ def test_permission_mode_is_described_to_the_model():
 
 def test_an_unknown_mode_falls_back_to_the_safest_available_behaviour():
     asked = []
-    run([{"message": {"tool_calls": [call("type_text", text="x")]}, "done": True},
+    run([{"message": {"tool_calls": [call("click", x=4, y=5)]}, "done": True},
          {"message": {"content": "ok"}, "done": True}],
         "nonsense", lambda name, args, risk: asked.append(name) or True)
     # A mode nobody recognises resolves to the default the controller ships,
     # not to the one that asks for nothing. The controller only ever passes a
     # validated value; this is what happens when something else does not.
-    assert asked == ["type_text"]
+    assert asked == ["click"]
     assert normalise_mode("nonsense") == SAFE
     assert normalise_mode("") == SAFE
     assert normalise_mode(None) == SAFE
+
+
+def test_active_run_re_reads_a_callable_permission_mode_before_each_action():
+    state = {"mode": AUTO}
+    asked = []
+
+    class ModeChangingDesktop(FakeDesktop):
+        def execute(self, name, args, cancel):
+            result = super().execute(name, args, cancel)
+            if name == "open_app":
+                state["mode"] = SAFE
+            return result
+
+    desktop = ModeChangingDesktop()
+    events = []
+    AgentEngine(Client([
+        {"message": {"tool_calls": [
+            call("open_app", app="firefox"),
+            call("click", x=10, y=20),
+        ]}, "done": True},
+        {"message": {"content": "done"}, "done": True},
+    ]), desktop).run(
+        [{"role": "user", "content": "go"}], "local:test", True, threading.Event(),
+        events.append, permission_mode=lambda: state["mode"],
+        confirm=lambda name, args, risk: asked.append((name, risk)) or True)
+
+    assert asked == [("click", "sensitive")]
+    assert ("open_app", {"app": "firefox"}) in desktop.calls
+    assert ("click", {"x": 10, "y": 20}) in desktop.calls
+    click_start = next(event for event in events
+                       if event["type"] == "tool_start" and event["name"] == "click")
+    assert click_start["confirming"] is True
 
 
 def test_session_event_reports_the_active_mode():
