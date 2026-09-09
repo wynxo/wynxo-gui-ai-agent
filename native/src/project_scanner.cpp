@@ -1,9 +1,9 @@
 #include "project_scanner.hpp"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <filesystem>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
