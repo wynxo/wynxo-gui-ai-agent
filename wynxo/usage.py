@@ -50,15 +50,15 @@ class TokenUsageTracker:
     def __init__(self, store, clock=None):
         self.store = store
         self._clock = clock or time.monotonic
-        summary = getattr(self.store, "token_usage_summary", None)
-        self._summary = summary() if callable(summary) else _blank_summary()
+        self._summary = _blank_summary()
+        self.refresh()
         self.reset()
 
     def reset(self) -> None:
         self.live_output_tokens = 0
         self.live_rate = 0.0
         self._segment_text = ""
-        self._segment_started = 0.0
+        self._segment_started: float | None = None
         self._exact_base = 0
         self._weighted_rate = 0.0
         self._metrics = _blank_metrics()
@@ -72,6 +72,14 @@ class TokenUsageTracker:
     def summary(self) -> dict:
         return copy.deepcopy(self._summary)
 
+    def refresh(self) -> bool:
+        """Refresh day/week/month buckets when a long-running UI asks for them."""
+        summary = getattr(self.store, "token_usage_summary", None)
+        fresh = summary() if callable(summary) else _blank_summary()
+        changed = fresh != self._summary
+        self._summary = fresh
+        return changed
+
     def stream(self, text: str) -> bool:
         """Advance the provisional count from text that became visible.
 
@@ -83,7 +91,7 @@ class TokenUsageTracker:
         if not text:
             return False
         now = float(self._clock())
-        if not self._segment_started:
+        if self._segment_started is None:
             self._segment_started = now
         before_tokens = self.live_output_tokens
         before_rate = self.live_rate
@@ -124,7 +132,7 @@ class TokenUsageTracker:
         self.live_output_tokens = total_output
         self.live_rate = rate or self._metrics["tokens_per_second"]
         self._segment_text = ""
-        self._segment_started = 0.0
+        self._segment_started = None
         return (before_tokens != self.live_output_tokens
                 or abs(before_rate - self.live_rate) >= 0.05)
 
@@ -135,11 +143,10 @@ class TokenUsageTracker:
             return False
         self._recorded = True
         record = getattr(self.store, "record_token_usage", None)
-        summary = getattr(self.store, "token_usage_summary", None)
         if not callable(record):
             return False
         stored = bool(record(conversation_id, model, self._metrics,
                              created_at=created_at))
-        if stored and callable(summary):
-            self._summary = summary()
+        if stored:
+            self.refresh()
         return stored
