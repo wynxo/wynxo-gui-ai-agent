@@ -131,7 +131,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
       WYNXO_REQUIRE_NATIVE: "1"
-      WYNXO_SCREENSHOT_DIR: ${{ runner.temp }}/wynxo-ui-artifacts
+      WYNXO_SCREENSHOT_DIR: /tmp/wynxo-ui-artifacts
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -163,4 +163,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wynxo-screenshots
-          path: ${{ runner.temp }}/wynxo-ui-artifacts
+          path: /tmp/wynxo-ui-artifacts
