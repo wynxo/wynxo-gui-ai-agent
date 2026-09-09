@@ -4,6 +4,17 @@ on:
   pull_request:
 
 jobs:
+  native-core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure native core
+        run: cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
+      - name: Build native core
+        run: cmake --build build/native --parallel 2
+      - name: Test native core
+        run: ctest --test-dir build/native --output-on-failure
+
   linux:
     runs-on: ubuntu-24.04
     strategy:
