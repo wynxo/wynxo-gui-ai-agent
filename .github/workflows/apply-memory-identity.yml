@@ -1,0 +1,41 @@
+name: Update identity memory
+
+on:
+  push:
+    branches:
+      - work/finish-astra-gui-core
+    paths:
+      - .github/workflows/apply-memory-identity.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+      - name: Replace stale preferred-name memories
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("wynxo/workspace.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''        stored = 0\n        for candidate in learnable_memories(text, self._working_directory):\n            try:\n                result = self.memory.remember(\n                    candidate["note"], candidate["scope"], self._working_directory)\n            except (OSError, ValueError):\n                continue\n            stored += int(bool(result.get("stored")))\n'''
+          new = '''        stored = 0\n        identity_prefixes = ("User prefers to be called ", "User's preferred name is ")\n        for candidate in learnable_memories(text, self._working_directory):\n            try:\n                note = candidate["note"]\n                # A preferred name is a single-valued identity slot, not a list\n                # of likes. Replace an older name instead of injecting two\n                # contradictory names into every future task.\n                if candidate["scope"] == "global" and note.startswith(identity_prefixes):\n                    existing = self.memory.notes("global")\n                    same = any(item.casefold() == note.casefold() for item in existing)\n                    if not same:\n                        self.memory.forget("User prefers to be called", "global")\n                        self.memory.forget("User's preferred name is", "global")\n                result = self.memory.remember(\n                    note, candidate["scope"], self._working_directory)\n            except (OSError, ValueError):\n                continue\n            stored += int(bool(result.get("stored")))\n'''
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected one learner block, found {count}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          git config user.name "wynxo-ci"
+          git config user.email "318229878+wynxo@users.noreply.github.com"
+          git rm .github/workflows/apply-memory-identity.yml
+          git add wynxo/workspace.py
+          git diff --cached --check
+          git commit -m "Replace stale preferred-name memories"
+          git push origin HEAD:work/finish-astra-gui-core
