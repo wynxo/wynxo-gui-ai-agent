@@ -5,6 +5,7 @@ option(WYNXO_NATIVE_BUILD_TESTS "Build the native core tests" ON)
 
 add_library(wynxo_native_core SHARED
     src/permission_policy.cpp
+    src/project_scanner.cpp
     src/c_api.cpp
 )
 
