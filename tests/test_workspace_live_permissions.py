@@ -53,13 +53,18 @@ def test_workspace_passes_a_live_permission_provider_to_the_engine(tmp_path, mon
     assert callable(provider)
     assert provider() == "safe"
 
-    # setPermissionMode deliberately works while a run is active. The provider
-    # captured by the worker must observe the new value immediately rather than
-    # returning the mode that existed when send() started the task.
+    # "Allow all in this task" is only valid while the permission setting stays
+    # where it was. Tightening/changing the mode later must revoke that shortcut
+    # before the next action is evaluated.
+    bridge._session_auto = True
     bridge.setPermissionMode("manual")
     assert provider() == "manual"
+    assert bridge._session_auto is False
+
+    bridge._session_auto = True
     bridge.setPermissionMode("full")
     assert provider() == "full"
+    assert bridge._session_auto is False
 
     bridge._busy = False
     bridge.shutdown()
