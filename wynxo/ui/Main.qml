@@ -233,12 +233,14 @@ ApplicationWindow {
             }
 
             ColumnLayout {
+                id: contentColumn
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.leftMargin: Theme.gutter
                 Layout.rightMargin: Theme.gutter
                 Layout.bottomMargin: Theme.s4
                 spacing: Theme.s3
+                readonly property real centredReadingWidth: Math.min(Theme.readingWidth, width)
 
                 // A fresh task centres one block — question, composer,
                 // openings — rather than stranding a title above an empty page
@@ -250,8 +252,8 @@ ApplicationWindow {
                 }
 
                 TaskStart {
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: contentColumn.centredReadingWidth
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: Theme.s2
                     visible: window.homeMode
@@ -267,8 +269,8 @@ ApplicationWindow {
                 }
 
                 Rectangle {
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: contentColumn.centredReadingWidth
                     Layout.alignment: Qt.AlignHCenter
                     visible: bridge && bridge.capabilityWarning.length > 0
                     Layout.preferredHeight: visible ? warningText.implicitHeight + Theme.s3 * 2 : 0
@@ -295,8 +297,8 @@ ApplicationWindow {
                 }
 
                 ErrorBanner {
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: contentColumn.centredReadingWidth
                     Layout.alignment: Qt.AlignHCenter
                     onActionInvoked: function(action) { window.runCommand(action); }
                 }
@@ -304,16 +306,16 @@ ApplicationWindow {
                 Composer {
                     id: composer
                     objectName: "mainComposer"
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: contentColumn.centredReadingWidth
                     Layout.alignment: Qt.AlignHCenter
                     onSubmitted: function(text) { if (bridge) bridge.send(text); }
                     onOpenModelManager: models.open()
                 }
 
                 TaskStarters {
-                    Layout.fillWidth: true
-                    Layout.maximumWidth: Theme.readingWidth
+                    Layout.fillWidth: false
+                    Layout.preferredWidth: contentColumn.centredReadingWidth
                     Layout.alignment: Qt.AlignHCenter
                     Layout.topMargin: Theme.s1
                     visible: window.homeMode
