@@ -46,6 +46,32 @@ def test_missing_paths_report_clearly(tmp_path):
         ctx.load_path(tmp_path / "nope.txt")
 
 
+def test_dropped_file_urls_decode_spaces_hashes_and_unicode(tmp_path):
+    target = tmp_path / "my notes # кот.txt"
+    target.write_text("dragged", encoding="utf-8")
+
+    # Modern callers may hand over the URL intact.
+    full_url = target.as_uri()
+    assert ctx.load_path(full_url)["text"] == "dragged"
+
+    # Older controller builds strip file:// first but leave percent escapes.
+    stripped_url = full_url.replace("file://", "", 1)
+    attachment = ctx.load_path(stripped_url)
+    assert attachment["title"] == target.name
+    assert attachment["path"] == str(target)
+
+
+def test_literal_percent_encoded_looking_filename_wins_when_it_exists(tmp_path):
+    literal = tmp_path / "notes%20old.txt"
+    decoded = tmp_path / "notes old.txt"
+    literal.write_text("literal", encoding="utf-8")
+    decoded.write_text("decoded", encoding="utf-8")
+
+    attachment = ctx.load_path(literal)
+    assert attachment["text"] == "literal"
+    assert attachment["path"] == str(literal)
+
+
 def test_images_are_detected_and_base64_encoded(tmp_path):
     pillow = pytest.importorskip("PIL.Image")
     target = tmp_path / "shot.png"
