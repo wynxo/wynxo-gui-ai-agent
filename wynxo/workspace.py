@@ -200,6 +200,7 @@ class WorkspaceController(Controller):
     endpointChanged = Signal()
     planChanged = Signal()
     usageChanged = Signal()
+    contextStateChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
     LAST_TASK_KEY = "workspace:last_task"
     DRAFT_KEY_PREFIX = "workspace:draft:"
@@ -396,15 +397,15 @@ class WorkspaceController(Controller):
         completed = sum(step["status"] in {"completed", "skipped"} for step in self._plan_steps)
         return f"{completed} of {len(self._plan_steps)} complete"
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=contextStateChanged)
     def projectInstructionsSummary(self):
         return self._project_instructions_summary
 
-    @Property(int, notify=Controller.changed)
+    @Property(int, notify=contextStateChanged)
     def contextOmittedTurns(self):
         return int(self._context_omitted_turns)
 
-    @Property(str, notify=Controller.changed)
+    @Property(str, notify=contextStateChanged)
     def contextCompactionLabel(self):
         count = int(self._context_omitted_turns)
         if not count:
@@ -416,6 +417,7 @@ class WorkspaceController(Controller):
         fresh = project_instructions.summary(self._working_directory)
         if fresh != self._project_instructions_summary:
             self._project_instructions_summary = fresh
+            self.contextStateChanged.emit()
             self.changed.emit()
 
     @Property(int, notify=usageChanged)
@@ -481,7 +483,10 @@ class WorkspaceController(Controller):
             return False
         self._working_directory = path
         self.store.set_setting("working_directory", path)
-        self._project_instructions_summary = project_instructions.summary(path)
+        fresh_instructions = project_instructions.summary(path)
+        if fresh_instructions != self._project_instructions_summary:
+            self._project_instructions_summary = fresh_instructions
+            self.contextStateChanged.emit()
         if path:
             self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
             del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
@@ -628,7 +633,9 @@ class WorkspaceController(Controller):
 
     def _start_run(self, history):
         self._refresh_project_instructions()
-        self._context_omitted_turns = 0
+        if self._context_omitted_turns:
+            self._context_omitted_turns = 0
+            self.contextStateChanged.emit()
         self._busy = True
         self._clear_error()
         self._status = "Thinking"
@@ -686,7 +693,10 @@ class WorkspaceController(Controller):
     def _on_event(self, event):
         kind = event.get("type")
         if kind == "context_compacted":
-            self._context_omitted_turns = max(0, int(event.get("omitted_turns", 0) or 0))
+            fresh_omitted = max(0, int(event.get("omitted_turns", 0) or 0))
+            if fresh_omitted != self._context_omitted_turns:
+                self._context_omitted_turns = fresh_omitted
+                self.contextStateChanged.emit()
             self.changed.emit()
             return
         if kind == "tool_start" and event.get("name") == "update_plan":
