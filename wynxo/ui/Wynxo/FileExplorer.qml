@@ -20,6 +20,16 @@ Item {
     property string pendingFilter: ""
 
     function focusFilter() { filter.forceActiveFocus(); filter.selectAll(); }
+    function clearFilter() {
+        // Assigning the field fires onTextChanged and restarts the debounce, so
+        // stop it *after* clearing the visible text, then commit the empty
+        // backend filter immediately. Cross-panel reveals depend on this being
+        // deterministic rather than waiting 170 ms.
+        filter.text = "";
+        filterDebounce.stop();
+        root.pendingFilter = "";
+        if (root.dock) root.dock.setFileFilter("");
+    }
     function relativePath(path) {
         var value = String(path || "");
         var base = root.dock ? String(root.dock.projectPath || "") : "";
@@ -102,9 +112,7 @@ Item {
                 }
                 Keys.onEscapePressed: function(event) {
                     if (text.length) {
-                        text = "";
-                        root.pendingFilter = "";
-                        root.applyFilterNow();
+                        root.clearFilter();
                         event.accepted = true;
                     } else event.accepted = false;
                 }
