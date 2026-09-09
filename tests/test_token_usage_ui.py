@@ -30,13 +30,19 @@ def test_token_usage_has_live_count_rate_and_every_requested_period():
         assert feature in qml
 
 
-def test_live_token_numbers_animate_and_honor_reduced_motion():
+def test_live_and_period_token_numbers_animate_and_honor_reduced_motion():
     qml = (MODULE / "TokenUsage.qml").read_text(encoding="utf-8")
     assert "Behavior on displayedTokens" in qml
     assert "Behavior on displayedRate" in qml
-    assert "Behavior on animatedTotal" in qml
-    # Every numeric transition in this control must become instant when the
-    # user enables reduced motion.
+    assert "function revealTotal()" in qml
+    assert "SequentialAnimation {" in qml
+    assert "PauseAnimation { duration: stat.index * 45 }" in qml
+    assert 'property: "displayedTotal"' in qml
+    assert "to: stat.targetTotal" in qml
+    assert "if (Theme.reducedMotion)" in qml
+    # Property Behaviors in this control must still become instant when the
+    # user enables reduced motion. The staggered card reveal is skipped by
+    # revealTotal() entirely in that mode.
     behavior_count = qml.count("Behavior on ")
     assert behavior_count >= 5
     assert qml.count("enabled: !Theme.reducedMotion") >= behavior_count
