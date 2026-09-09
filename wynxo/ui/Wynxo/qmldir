@@ -41,6 +41,7 @@ TaskStart 1.0 TaskStart.qml
 TaskStarters 1.0 TaskStarters.qml
 TaskView 1.0 TaskView.qml
 Composer 1.0 Composer.qml
+TokenUsage 1.0 TokenUsage.qml
 
 # The shell
 WorkspaceSidebar 1.0 WorkspaceSidebar.qml
