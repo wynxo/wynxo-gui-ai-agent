@@ -7,8 +7,8 @@ import QtQuick.Layouts
 
     Compact text actions, not cards. Each one either fills the composer with a
     prompt or opens the tool it names — nothing here is decorative, and nothing
-    is offered that this machine cannot do. Idle actions stay readable; glass
-    appears only as interaction feedback.
+    is offered that the current task cannot actually use. Idle actions stay
+    readable; glass appears only as interaction feedback.
 */
 Item {
     id: root
@@ -18,35 +18,48 @@ Item {
 
     readonly property string mode: bridge ? bridge.taskMode : "chat"
     readonly property bool hasProject: !!(bridge && bridge.projectPath)
-    // A task whose mode is still open can be turned into a Work task by
-    // picking a starter that needs one. A locked Chat task cannot, so it is
-    // not offered openings it would have to refuse.
+    // A fresh task can promote itself into the mode required by a starter. A
+    // locked Chat task cannot, so it gets conversation-only openings instead
+    // of dead buttons for tools that are deliberately unavailable.
     readonly property bool modeOpen: !!(bridge && !bridge.taskModeLocked)
-    readonly property bool canAct: root.mode !== "chat" || root.modeOpen
+    readonly property bool lockedChat: root.mode === "chat" && !root.modeOpen
 
     implicitHeight: flow.implicitHeight
 
     readonly property var actions: {
         var list = [];
-        if (!root.hasProject)
-            list.push({ label: "Open project", icon: "folder", command: "project" });
-        else
-            list.push({ label: "Browse files", icon: "folderOpen", command: "files" });
-        list.push({ label: "Terminal", icon: "terminal", command: "terminal-panel" });
-        if (root.hasProject)
-            list.push({ label: "Explain this project", icon: "code",
-                        prompt: "Inspect this project and explain how it is put together." });
-        if (root.mode !== "codex" && root.canAct)
-            list.push({ label: "Read my screen", icon: "eye", needs: "work",
-                        prompt: "What is on my screen? Help me with it." });
-        if (root.canAct)
-            list.push({ label: "Run a command", icon: "bolt", needs: "work",
-                        prompt: "Check my disk space and explain what you find." });
-        if (root.mode === "chat" && !root.modeOpen)
+
+        if (root.lockedChat) {
+            list.push({ label: "Explain a concept", icon: "chat",
+                        prompt: "Explain this clearly and give me a practical example: " });
             list.push({ label: "Review some code", icon: "code",
                         prompt: "Review this code and tell me what you would change:\n\n" });
+            list.push({ label: "Brainstorm", icon: "bolt",
+                        prompt: "Help me brainstorm a few strong approaches for this: " });
+            return list;
+        }
+
+        if (!root.hasProject)
+            list.push({ label: "Open project", icon: "folder", command: "project", needs: "codex" });
+        else
+            list.push({ label: "Browse files", icon: "folderOpen", command: "files", needs: "codex" });
+
+        list.push({ label: "Terminal", icon: "terminal", command: "terminal-panel", needs: "codex" });
+
+        if (root.hasProject)
+            list.push({ label: "Explain this project", icon: "code", needs: "codex",
+                        prompt: "Inspect this project and explain how it is put together." });
+
+        if (root.mode !== "codex")
+            list.push({ label: "Read my screen", icon: "eye", needs: "work",
+                        prompt: "What is on my screen? Help me with it." });
+
+        list.push({ label: "Run a command", icon: "bolt", needs: "work",
+                    prompt: "Check my disk space and explain what you find." });
+
         if (bridge && bridge.workspaceDock && bridge.workspaceDock.browserAvailable)
-            list.push({ label: "Browser", icon: "globe", command: "browser" });
+            list.push({ label: "Browser", icon: "globe", command: "browser", needs: "work" });
+
         return list;
     }
 
@@ -67,12 +80,12 @@ Item {
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
                 onClicked: {
-                    // A command or screen opening is a Work opening: choose the
-                    // mode with it rather than sending it into a Chat task that
-                    // has no way to carry it out.
-                    if (modelData.needs && root.modeOpen) root.modeRequested(modelData.needs);
-                    if (modelData.command) root.commandInvoked(modelData.command);
-                    else root.starterChosen(modelData.prompt);
+                    if (modelData.needs && root.modeOpen)
+                        root.modeRequested(modelData.needs);
+                    if (modelData.command)
+                        root.commandInvoked(modelData.command);
+                    else
+                        root.starterChosen(modelData.prompt);
                 }
                 background: GlassSurface {
                     radius: Theme.r2
