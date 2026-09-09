@@ -8,6 +8,7 @@ CMake build. Callers can check ``native_core.available`` before using it.
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 from pathlib import Path
 from typing import Iterable
@@ -104,6 +105,10 @@ class NativeCore:
             ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p
         ]
         library.wynxo_permission_needs_confirmation.restype = ctypes.c_int
+        library.wynxo_scan_directory_json.argtypes = [ctypes.c_char_p, ctypes.c_size_t]
+        library.wynxo_scan_directory_json.restype = ctypes.c_char_p
+        library.wynxo_native_last_error.argtypes = []
+        library.wynxo_native_last_error.restype = ctypes.c_char_p
 
     def _require(self) -> ctypes.CDLL:
         if self._library is None:
@@ -134,6 +139,44 @@ class NativeCore:
         return bool(self._require().wynxo_permission_needs_confirmation(
             self._bytes(action), self._bytes(mode), self._bytes(command)
         ))
+
+    def scan_directory(self, directory: str | os.PathLike,
+                       max_entries: int = 4000) -> dict:
+        """Return raw metadata for one directory from the C++ filesystem core.
+
+        The caller remains responsible for authorising/containing ``directory``
+        and for product-specific filtering/sorting. Paths use the OS filesystem
+        encoding so Linux filenames containing undecodable bytes still survive
+        the FFI round-trip through surrogateescape.
+        """
+        library = self._require()
+        limit = max(0, min(int(max_entries), 100000))
+        raw = library.wynxo_scan_directory_json(
+            os.fsencode(os.fspath(directory)), ctypes.c_size_t(limit)
+        )
+        if not raw:
+            detail = library.wynxo_native_last_error()
+            message = os.fsdecode(detail) if detail else "native directory scan failed"
+            raise RuntimeError(message)
+        try:
+            payload = json.loads(os.fsdecode(raw))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("native directory scanner returned invalid JSON") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("entries"), list):
+            raise RuntimeError("native directory scanner returned an invalid payload")
+        if not isinstance(payload.get("truncated"), bool):
+            raise RuntimeError("native directory scanner omitted its truncation state")
+        for entry in payload["entries"]:
+            if not isinstance(entry, dict):
+                raise RuntimeError("native directory scanner returned an invalid entry")
+            if not isinstance(entry.get("name"), str) or not isinstance(entry.get("path"), str):
+                raise RuntimeError("native directory scanner returned an invalid path")
+            if not isinstance(entry.get("isDir"), bool) or not isinstance(entry.get("link"), bool):
+                raise RuntimeError("native directory scanner returned invalid file flags")
+            size = entry.get("size")
+            if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+                raise RuntimeError("native directory scanner returned an invalid file size")
+        return payload
 
 
 native_core = NativeCore()
