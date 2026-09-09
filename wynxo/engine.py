@@ -370,6 +370,8 @@ SENSITIVE = {"type_text", "press_key", "run_command", "click", "drag"}
 # with them. Auto runs everything else unattended; these it still puts in front
 # of the user, because "it did what I asked, on the wrong folder" is the whole
 # category of damage an unattended agent can do that cannot be undone.
+# Keep this tuple semantically identical to native/src/permission_policy.cpp;
+# tests/test_permission_parity.py compares both implementations directly.
 _DESTRUCTIVE_PATTERNS = (
     r"\brm\s+(-[a-z]*[rf][a-z]*\s+)+",         # rm -rf / rm -f, any flag order
     r"\brmdir\s+/",
@@ -382,8 +384,8 @@ _DESTRUCTIVE_PATTERNS = (
     r"\b(sudo|doas|pkexec|su)\s",
     r"\b(userdel|usermod|groupdel|chpasswd|visudo)\b",
     r"(^|[;&|]\s*)passwd\b",                 # reading /etc/passwd is not this
-    r"\bchmod\s+(-[a-zA-Z]+\s+)*(777|-R\s+777)",
-    r"\bcho(wn|rp)\s+(-[a-zA-Z]+\s+)*[^\s]+\s+/(\s|$)",
+    r"\bchmod\s+(-[a-z]+\s+)*(777|-R\s+777)",
+    r"\bcho(wn|rp)\s+(-[a-z]+\s+)*[^\s]+\s+/(\s|$)",
     r"\b(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z|k|da)?sh\b",
     r"\b(apt|apt-get|dnf|yum|pacman|zypper|snap|flatpak|pip3?|npm|cargo)\b"
     r"[^|;&]*\b(remove|purge|uninstall|autoremove|-R|-Rns)\b",
@@ -392,8 +394,9 @@ _DESTRUCTIVE_PATTERNS = (
     r"\bfind\b[^|;&]*-(delete|exec\s+rm)\b",
     r"\bkill(all)?\s+(-9\s+)?-1\b",
     r"\bdocker\s+(system\s+prune|volume\s+rm|rm\s+-f)\b",
-    r"\btruncate\b[^|;&]*-s\s*0",
-    r":\(\)\s*\{.*\|.*&.*\}",                # the fork bomb
+    r"\btruncate\b[^|;&]*-s\s*0\b",
+    r":\(\)\s*\{[^}]*\|[^}]*&[^}]*\}",       # the fork bomb
+    r"\b(init\s+0|telinit\s+[06])\b",
 )
 _DESTRUCTIVE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DESTRUCTIVE_PATTERNS)
 
