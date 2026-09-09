@@ -6,9 +6,9 @@ import QtQuick.Layouts
     One command box for Chat, Work and Wynxi.
 
     The prompt gets the space. Context, project, model and run controls live on
-    one quiet toolbar underneath it. The shell is now the primary liquid-glass
-    object in the conversation: substantial enough to feel tactile, still quiet
-    enough that it never competes with the prompt.
+    one quiet toolbar underneath it. The composer is a permanent workspace
+    surface, so it stays opaque at rest; material/shadow feedback appears only
+    while the user is actively focused on it or interacting with its controls.
 */
 Item {
     id: root
@@ -53,12 +53,16 @@ Item {
         width: parent.width
         height: content.implicitHeight + Theme.s3 + Theme.s2
         radius: Theme.r4
-        tint: input.activeFocus ? Theme.glassTintStrong : Theme.glassTint
-        fillOpacity: input.activeFocus ? 0.78 : Theme.glassOpacity
-        elevated: true
-        strongEdge: true
+        tint: input.activeFocus ? Theme.glassTintStrong : Theme.surfaceRaised
+        fillOpacity: input.activeFocus ? Theme.glassStrongOpacity : 1.0
+        solid: true
+        autoGlass: false
+        glassEnabled: input.activeFocus
+        elevated: input.activeFocus
+        strongEdge: input.activeFocus
         active: input.activeFocus
-        edgeColor: input.activeFocus ? Theme.accentEdge : Theme.glassEdgeStrong
+        sheen: input.activeFocus
+        edgeColor: input.activeFocus ? Theme.accentEdge : Theme.borderStrong
 
         ColumnLayout {
             id: content
