@@ -4,6 +4,7 @@
 #include "project_scanner.hpp"
 
 #include <exception>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
