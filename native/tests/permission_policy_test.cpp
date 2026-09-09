@@ -1,7 +1,11 @@
 #include <wynxo/native_core.h>
 
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -24,10 +28,54 @@ bool confirms(const char* action, const char* mode, const char* command = nullpt
     return wynxo_permission_needs_confirmation(action, mode, command) == 1;
 }
 
+std::filesystem::path temporary_project() {
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto path = std::filesystem::temp_directory_path()
+              / ("wynxo-native-core-" + std::to_string(stamp));
+    std::filesystem::create_directories(path / "src");
+    std::ofstream(path / "README.md") << "# Native scanner\n";
+    std::ofstream(path / "src" / "main.cpp") << "int main() { return 0; }\n";
+    return path;
+}
+
+void test_scanner() {
+    const auto project = temporary_project();
+    try {
+        const std::string root = project.string();
+        const char* raw = wynxo_scan_directory_json(root.c_str(), 10);
+        expect(raw != nullptr, "directory scanner returns JSON");
+        const std::string payload = raw == nullptr ? std::string{} : std::string(raw);
+        expect(payload.find("\"entries\":[") != std::string::npos,
+               "scanner payload contains entries");
+        expect(payload.find("\"name\":\"README.md\"") != std::string::npos,
+               "scanner reports regular files");
+        expect(payload.find("\"name\":\"src\"") != std::string::npos,
+               "scanner reports directories");
+        expect(payload.find("\"truncated\":false") != std::string::npos,
+               "ordinary scan is not truncated");
+
+        const char* bounded = wynxo_scan_directory_json(root.c_str(), 1);
+        expect(bounded != nullptr, "bounded directory scan returns JSON");
+        const std::string bounded_payload = bounded == nullptr ? std::string{} : std::string(bounded);
+        expect(bounded_payload.find("\"truncated\":true") != std::string::npos,
+               "scanner reports truncation at its bound");
+
+        const std::string missing = (project / "gone").string();
+        expect(wynxo_scan_directory_json(missing.c_str(), 10) == nullptr,
+               "missing directory returns null");
+        expect(std::string_view(wynxo_native_last_error()).size() > 0,
+               "scanner exposes a readable error");
+    } catch (...) {
+        std::filesystem::remove_all(project);
+        throw;
+    }
+    std::filesystem::remove_all(project);
+}
+
 }  // namespace
 
 int main() {
-    expect(std::string_view(wynxo_native_version()) == "0.1.0",
+    expect(std::string_view(wynxo_native_version()) == "0.2.0",
            "native ABI reports its version");
 
     expect(mode_is("manual", "manual"), "manual mode remains manual");
@@ -73,10 +121,12 @@ int main() {
     expect(wynxo_command_is_destructive("rm build/output.log") == 0,
            "plain rm remains outside destructive escalation policy");
 
+    test_scanner();
+
     if (failures != 0) {
-        std::cerr << failures << " native policy test(s) failed\n";
+        std::cerr << failures << " native core test(s) failed\n";
         return EXIT_FAILURE;
     }
-    std::cout << "native permission policy: ok\n";
+    std::cout << "native core: ok\n";
     return EXIT_SUCCESS;
 }
