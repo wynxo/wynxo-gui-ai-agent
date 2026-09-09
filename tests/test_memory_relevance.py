@@ -1,6 +1,9 @@
 """Long memory should spend context on the facts most useful to this turn."""
+import threading
+
 import wynxo.memory as memory_module
-from wynxo.memory import GLOBAL, PROJECT, Memory
+from wynxo.engine import AgentEngine
+from wynxo.memory import PROJECT, Memory
 
 
 def test_small_memory_keeps_everything_even_without_a_query(tmp_path):
@@ -65,3 +68,33 @@ def test_other_projects_never_enter_relevance_ranking(tmp_path, monkeypatch):
 
     assert "project-b-tooling" in prompt
     assert "secret-project-a-tooling" not in prompt
+
+
+def test_engine_uses_the_latest_user_request_as_the_memory_relevance_query():
+    class Client:
+        def capabilities(self, model):
+            return ["completion"]
+
+        def stream_chat(self, payload, cancel):
+            yield {"message": {"content": "done"}, "done": True}
+
+    class SpyMemory:
+        def __init__(self):
+            self.seen = None
+
+        def prompt(self, project, query=""):
+            self.seen = (project, query)
+            return ""
+
+    memory = SpyMemory()
+    AgentEngine(Client(), None, memory).run(
+        [
+            {"role": "user", "content": "old question"},
+            {"role": "assistant", "content": "old answer"},
+            {"role": "user", "content": "Why is my CMake Ninja build failing?"},
+        ],
+        "local:test", False, threading.Event(), lambda event: None,
+        tools_allowed=False,
+    )
+
+    assert memory.seen == ("", "Why is my CMake Ninja build failing?")
