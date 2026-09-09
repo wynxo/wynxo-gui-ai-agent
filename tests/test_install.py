@@ -25,7 +25,12 @@ class InstallerTests(unittest.TestCase):
         (self.source / "wynxo/__main__.py").write_text("VERSION = 'original'\n")
         (self.source / "assets").mkdir()
         (self.source / "assets/wynxo.svg").write_text("<svg/>")
-        for name in ("pyproject.toml", "README.md", "LICENSE", "install.py", "uninstall.py"):
+        (self.source / "native").mkdir()
+        (self.source / "native/CMakeLists.txt").write_text("cmake_minimum_required(VERSION 3.20)\n")
+        for name in (
+            "pyproject.toml", "setup.py", "MANIFEST.in", "README.md", "LICENSE",
+            "install.py", "uninstall.py",
+        ):
             (self.source / name).write_text("fixture\n")
         shutil.copy2(installer.__file__, self.source / "install.py")
         shutil.copy2(remover.__file__, self.source / "uninstall.py")
@@ -62,6 +67,13 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("--uninstall", launcher.read_text())
         shutil.rmtree(self.source)
         self.assertEqual((self.root / "current/source/wynxo/__main__.py").read_text(), "VERSION = 'original'\n")
+
+    def test_release_copy_keeps_native_build_inputs(self):
+        self.install()
+        release_source = self.root / "current/source"
+        self.assertTrue((release_source / "setup.py").is_file())
+        self.assertTrue((release_source / "MANIFEST.in").is_file())
+        self.assertTrue((release_source / "native/CMakeLists.txt").is_file())
 
     def test_installed_uninstall_command_works_after_checkout_removed(self):
         launcher = self.install()
