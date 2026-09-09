@@ -124,11 +124,14 @@ jobs:
 
   screenshots:
     # Renders the real QML with fixed demo state so a UI regression is visible
-    # in the artifacts rather than only in a reviewer's local checkout.
+    # in the artifacts rather than only in a reviewer's local checkout. Render
+    # outside the checkout: otherwise the Changes scene sees the screenshots it
+    # is currently creating as untracked Git files and ceases to test real code.
     env:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
       WYNXO_REQUIRE_NATIVE: "1"
+      WYNXO_SCREENSHOT_DIR: ${{ runner.temp }}/wynxo-ui-artifacts
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -145,22 +148,19 @@ jobs:
       - name: Install package
         run: python -m pip install .
       - name: Render the interface
-        run: python -m wynxo --snapshot artifacts/screenshots
+        run: python -m wynxo --snapshot "$WYNXO_SCREENSHOT_DIR/screenshots"
       - name: Render token usage states
         run: |
-          python tests/token_usage_snapshot.py artifacts/token-usage-live.png live
-          python tests/token_usage_snapshot.py artifacts/token-usage-idle.png idle
+          python tests/token_usage_snapshot.py "$WYNXO_SCREENSHOT_DIR/token-usage-live.png" live
+          python tests/token_usage_snapshot.py "$WYNXO_SCREENSHOT_DIR/token-usage-idle.png" idle
       - name: Check every scene rendered
         run: |
-          count=$(ls artifacts/screenshots/*.png | wc -l)
+          count=$(ls "$WYNXO_SCREENSHOT_DIR"/screenshots/*.png | wc -l)
           expected=$(python -c "from wynxo.demo import SCENES; print(len(SCENES))")
           test "$count" -eq "$expected" || { echo "expected $expected screenshots, got $count"; exit 1; }
-          test -s artifacts/token-usage-live.png || { echo "live token usage snapshot missing"; exit 1; }
-          test -s artifacts/token-usage-idle.png || { echo "idle token usage snapshot missing"; exit 1; }
+          test -s "$WYNXO_SCREENSHOT_DIR/token-usage-live.png" || { echo "live token usage snapshot missing"; exit 1; }
+          test -s "$WYNXO_SCREENSHOT_DIR/token-usage-idle.png" || { echo "idle token usage snapshot missing"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: wynxo-screenshots
-          path: |
-            artifacts/screenshots
-            artifacts/token-usage-live.png
-            artifacts/token-usage-idle.png
+          path: ${{ runner.temp }}/wynxo-ui-artifacts
