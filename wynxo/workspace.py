@@ -443,10 +443,21 @@ class WorkspaceController(Controller):
         if not self._memory_enabled:
             return 0
         stored = 0
+        identity_prefixes = ("User prefers to be called ", "User's preferred name is ")
         for candidate in learnable_memories(text, self._working_directory):
             try:
+                note = candidate["note"]
+                # A preferred name is a single-valued identity slot, not a list
+                # of likes. Replace an older name instead of injecting two
+                # contradictory names into every future task.
+                if candidate["scope"] == "global" and note.startswith(identity_prefixes):
+                    existing = self.memory.notes("global")
+                    same = any(item.casefold() == note.casefold() for item in existing)
+                    if not same:
+                        self.memory.forget("User prefers to be called", "global")
+                        self.memory.forget("User's preferred name is", "global")
                 result = self.memory.remember(
-                    candidate["note"], candidate["scope"], self._working_directory)
+                    note, candidate["scope"], self._working_directory)
             except (OSError, ValueError):
                 continue
             stored += int(bool(result.get("stored")))
