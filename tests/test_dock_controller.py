@@ -123,7 +123,7 @@ def test_the_dock_remembers_where_it_was_left(application, tmp_path):
 
 # ---------------------------------------------------------------- the files
 def test_opening_a_project_fills_the_tree(dock, project):
-    dock.set_project(str(project))
+    assert dock.set_project(str(project)) is True
     assert dock.projectName == "proj"
     assert dock.fileModel.rowCount() == 2          # src, README.md
 
@@ -138,7 +138,7 @@ def test_expanding_a_folder_splices_its_children_in(dock, project):
 
 def test_opening_a_file_loads_it_and_selects_it(dock, project):
     dock.set_project(str(project))
-    dock.openFile(str(project / "README.md"))
+    assert dock.openFile(str(project / "README.md")) is True
     assert dock.filePath.endswith("README.md")
     assert dock.file["text"] == "# Hi\n"
     assert dock.fileModified is False
@@ -165,6 +165,40 @@ def test_discarding_an_edit_restores_the_loaded_text(dock, project):
     assert (project / "README.md").read_text() == "# Hi\n"
 
 
+def test_dirty_buffer_blocks_programmatic_destructive_transitions(dock, project, tmp_path):
+    """The Python boundary protects edits even when a caller bypasses QML."""
+    other = tmp_path / "other"
+    other.mkdir()
+    target = project / "README.md"
+    replacement = project / "src" / "app.py"
+
+    assert dock.set_project(str(project)) is True
+    assert dock.openFile(str(target)) is True
+    dock.setFileBuffer("# unsaved in memory\n")
+    assert dock.fileModified is True
+
+    # Reopening the same file is a no-op, never a reload from disk.
+    assert dock.openFile(str(target)) is True
+    assert dock._viewer_buffer == "# unsaved in memory\n"
+    assert dock.fileModified is True
+
+    assert dock.openFile(str(replacement)) is False
+    assert dock.filePath == str(target)
+    assert dock._viewer_buffer == "# unsaved in memory\n"
+    assert dock.closeFile() is False
+    assert dock.filePath == str(target)
+    assert dock.set_project(str(other)) is False
+    assert dock.projectPath == str(project)
+    assert dock._viewer_buffer == "# unsaved in memory\n"
+
+    # An explicit discard is the permission to make those transitions.
+    dock.revertFileBuffer()
+    assert dock.openFile(str(replacement)) is True
+    assert dock.closeFile() is True
+    assert dock.set_project(str(other)) is True
+    assert dock.projectPath == str(other)
+
+
 def test_a_file_outside_the_project_is_refused_by_the_viewer(dock, project, tmp_path):
     outside = tmp_path / "outside.txt"
     outside.write_text("not yours")
@@ -187,7 +221,7 @@ def test_changing_project_clears_the_previous_one(dock, project, tmp_path):
     other.mkdir()
     dock.set_project(str(project))
     dock.openFile(str(project / "README.md"))
-    dock.set_project(str(other))
+    assert dock.set_project(str(other)) is True
     assert dock.filePath == ""
     assert dock.fileModel.rowCount() == 0
 
