@@ -5,9 +5,17 @@ Wynxo die while importing, before the normal GUI smoke test even creates a
 window. Keep an explicit import guard so that class-definition failures are
 reported immediately.
 """
+from pathlib import Path
 
 
 def test_workspace_controller_imports_cleanly():
-    from wynxo.workspace import WorkspaceController
+    import wynxo.workspace as workspace
 
-    assert WorkspaceController.__name__ == "WorkspaceController"
+    assert workspace.WorkspaceController.__name__ == "WorkspaceController"
+
+
+def test_workspace_does_not_reference_inherited_changed_as_a_local_name():
+    import wynxo.workspace as workspace
+
+    source = Path(workspace.__file__).read_text(encoding="utf-8")
+    assert "notify=changed" not in source
