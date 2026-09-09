@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 from PySide6.QtCore import Property, Signal, Slot
 
+from . import context as ctx
 from . import engine as engine_module
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
 from .usage import TokenUsageTracker
@@ -339,6 +340,37 @@ class WorkspaceController(Controller):
         if result:
             self.endpointChanged.emit()
         return result
+
+    def _set_project(self, path: str):
+        """Switch folders only after the dock accepts losing its current state.
+
+        A dirty editor buffer is owned by the dock. Let that boundary veto the
+        transition before updating settings/recent-project history, otherwise a
+        refused switch would leave the controller and dock pointing at different
+        projects.
+        """
+        path = str(path or "")
+        if path == self._working_directory:
+            return True
+        if not self.dock.set_project(path):
+            return False
+        self._working_directory = path
+        self.store.set_setting("working_directory", path)
+        if path:
+            self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
+            del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
+            self.store.set_setting("recent_projects", self._recent_projects)
+            self.dock.suggest("files")
+        self.changed.emit()
+        return True
+
+    @Slot()
+    def chooseProject(self):
+        from PySide6.QtWidgets import QFileDialog
+        start = self._working_directory or ctx.default_directory()
+        path = QFileDialog.getExistingDirectory(None, "Choose a project folder", start)
+        if path and self._set_project(path):
+            self.toast.emit(f"Working in {ctx.working_directory_label(path)}")
 
     @Slot(str, result=bool)
     def setTaskMode(self, mode):
