@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from .native_core import native_core
+
 # A directory listing is cheap, but a node_modules with 40 000 entries is not.
 MAX_ENTRIES = 4000
 # The viewer is a viewer, not an editor for a 400 MB core dump.
@@ -138,49 +140,94 @@ def _sort_key(entry: os.DirEntry) -> tuple:
     return (0 if is_dir else 1, 0 if not name.startswith(".") else 1, name.casefold())
 
 
+def _record_sort_key(entry: dict) -> tuple:
+    name = str(entry.get("name", ""))
+    return (0 if entry.get("isDir") else 1,
+            0 if not name.startswith(".") else 1,
+            name.casefold())
+
+
+def _python_directory_records(target: Path) -> tuple[list[dict], bool]:
+    """The compatibility scanner used when the native core is unavailable."""
+    found: list[dict] = []
+    truncated = False
+    with os.scandir(target) as scan:
+        for entry in scan:
+            if len(found) >= MAX_ENTRIES:
+                truncated = True
+                break
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError:
+                continue
+            try:
+                info = entry.stat(follow_symlinks=False)
+                size = 0 if is_dir else info.st_size
+            except OSError:
+                size = 0
+            found.append({
+                "name": entry.name,
+                "path": entry.path,
+                "isDir": is_dir,
+                "size": int(size),
+                "link": entry.is_symlink(),
+            })
+    return found, truncated
+
+
+def _directory_records(target: Path) -> tuple[list[dict], bool]:
+    if native_core.available:
+        try:
+            payload = native_core.scan_directory(target, MAX_ENTRIES)
+            return payload["entries"], payload["truncated"]
+        except (OSError, RuntimeError, ValueError):
+            # Keep source checkouts and unusual filesystems usable. The Python
+            # fallback below also preserves the pre-native exception behavior
+            # if the directory itself genuinely cannot be read.
+            pass
+    return _python_directory_records(target)
+
+
 def list_directory(root, directory=None, show_hidden: bool = False) -> list[dict]:
     """One level of the tree, sorted and bounded.
 
-    Returns plain dicts so the caller can hand them straight to QML.
+    Returns plain dicts so the caller can hand them straight to QML. Python
+    still authorizes the directory and reconstructs every returned path; the
+    optional C++ core owns only the raw bounded filesystem scan.
     """
     base = Path(root).expanduser().resolve(strict=True)
     target = resolve_within(base, directory) if directory else base
     if not target.is_dir():
         raise ValueError("That path is not a folder")
 
+    found, truncated = _directory_records(target)
     entries: list[dict] = []
-    truncated = False
-    with os.scandir(target) as scan:
-        found = []
-        for entry in scan:
-            if len(found) >= MAX_ENTRIES:
-                truncated = True
-                break
-            found.append(entry)
-
-    for entry in sorted(found, key=_sort_key):
-        name = entry.name
+    for record in sorted(found, key=_record_sort_key):
+        name = record.get("name")
+        if not isinstance(name, str) or not name or Path(name).name != name or name in {".", ".."}:
+            # A filesystem directory entry cannot legitimately contain a path
+            # separator. Treat anything else as a malformed native record.
+            continue
         if not show_hidden and name.startswith("."):
             continue
-        try:
-            is_dir = entry.is_dir(follow_symlinks=False)
-        except OSError:
-            continue
+        is_dir = bool(record.get("isDir"))
         if is_dir and name in NOISE_DIRECTORIES:
             continue
         try:
-            info = entry.stat(follow_symlinks=False)
-            size = 0 if is_dir else info.st_size
-        except OSError:
+            size = 0 if is_dir else max(0, int(record.get("size", 0)))
+        except (TypeError, ValueError):
             size = 0
         entries.append({
             "name": name,
+            # Never trust a transport-provided path. `target` was contained by
+            # resolve_within() above; joining its actual entry name preserves
+            # that boundary even if the native scanner is buggy.
             "path": str(target / name),
             "isDir": is_dir,
             "kind": kind_for(name, is_dir),
             "size": int(size),
             "sizeLabel": "" if is_dir else human_size(size),
-            "link": entry.is_symlink(),
+            "link": bool(record.get("link")),
         })
     if truncated:
         entries.append({"name": f"…and more than {MAX_ENTRIES} entries", "path": "",
