@@ -158,23 +158,29 @@ Item {
             // Keep the newest response's controls clearly discoverable without
             // turning every historical answer into a permanent toolbar. Older
             // turns stay content-first and reveal actions on hover.
-            opacity: root.streaming ? 0 : (hover.hovered ? 1 : root.latest ? 0.78 : 0)
+            opacity: root.streaming ? 0 : (hover.hovered ? 1 : root.latest ? 0.86 : 0)
             visible: !root.streaming && root.body.length > 0 && (root.latest || hover.hovered)
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
                 width: 26; height: 26; iconSize: 12
                 iconName: "copy"; tooltip: "Copy response"
+                tint: root.latest ? Theme.textSecondary : Theme.textMuted
+                activeTint: Theme.textPrimary
                 onClicked: if (bridge) bridge.copyText(root.body)
             }
             IconButton {
                 width: 26; height: 26; iconSize: 12
                 iconName: "retry"; tooltip: "Regenerate"; shortcut: "Ctrl+R"
+                tint: root.latest ? Theme.textSecondary : Theme.textMuted
+                activeTint: Theme.textPrimary
                 enabled: bridge && bridge.canRegenerate
                 onClicked: if (bridge) bridge.regenerate()
             }
             IconButton {
                 width: 26; height: 26; iconSize: 12
                 iconName: "branch"; tooltip: "Branch from here"
+                tint: root.latest ? Theme.textSecondary : Theme.textMuted
+                activeTint: Theme.textPrimary
                 onClicked: root.branched()
             }
             Text {
@@ -184,7 +190,7 @@ Item {
                 text: bridge ? bridge.runMetrics.rate.toFixed(1) + " tokens/s · "
                              + bridge.runMetrics.tokens + " out · "
                              + bridge.runMetrics.totalSeconds.toFixed(1) + "s" : ""
-                color: Theme.textMuted
+                color: Theme.textSecondary
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.micro
             }
