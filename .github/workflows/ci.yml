@@ -52,12 +52,16 @@ jobs:
             libnss3 libxcomposite1 libxdamage1 libxrandr2 libasound2t64
       - name: Install package and test tools
         run: python -m pip install . pytest
-      - name: Test
+      - name: Test core suite
         # The dock's tests run a real shell and a real Git repository, so both
-        # have to be present; runners have them, but say so.
+        # have to be present; runners have them, but say so. The live streaming
+        # suite owns QCoreApplication + real QThreads and is isolated below so
+        # Qt object teardown from hundreds of earlier tests cannot poison it.
         run: |
           git --version && /bin/bash --version | head -1
-          python -m pytest -q
+          python -m pytest -q --ignore=tests/test_live_stream.py
+      - name: Test live Qt streaming
+        run: python -m pytest -q tests/test_live_stream.py
       - name: Validate Python sources
         run: python -m compileall -q wynxo install.py uninstall.py
       - name: Load native GUI
