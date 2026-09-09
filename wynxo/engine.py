@@ -24,6 +24,7 @@ import httpx
 
 from .commands import run_command
 from .memory import GLOBAL as MEMORY_GLOBAL, SCOPES as MEMORY_SCOPES
+from .native_core import native_core
 
 LOG = logging.getLogger(__name__)
 DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
@@ -324,20 +325,21 @@ _NONVISUAL = {"open_app", "list_apps", "wait", "run_command"} | MEMORY_TOOLS
 # Permission modes: a ladder, from approving every action to approving none.
 #
 #   manual  every action that changes anything is approved first
-#   safe    apps open directly; commands, typing and key presses are approved
+#   safe    apps open directly; commands, clicks, drags, typing and key presses
+#           are approved before they can change application state
 #   auto    everything runs unattended, except a command that could destroy
 #           data or reach the wider system, which is still approved
 #   full    nothing is ever approved, including destructive commands
 #
-# Reading the screen and moving the pointer are observation: they change
-# nothing, so they never prompt in any mode.
+# Reading the screen, scrolling, and moving the pointer are observation: they
+# do not commit an application action, so they never prompt in any mode.
 MANUAL, SAFE, AUTO, FULL = "manual", "safe", "auto", "full"
 PERMISSION_MODES = (MANUAL, SAFE, AUTO, FULL)
 PERMISSION_LABELS = {MANUAL: "Manual", SAFE: "Auto-approve",
                      AUTO: "Auto", FULL: "Full access"}
 PERMISSION_DETAILS = {
     MANUAL: "Approve every command and desktop action before it runs.",
-    SAFE: "Open apps and click directly; approve commands, typing and key presses.",
+    SAFE: "Open apps directly; approve clicks, drags, commands, typing and key presses.",
     AUTO: "Run unattended. A command that could destroy data is still approved.",
     FULL: "Never ask. Destructive commands run too — only for a session you are watching.",
 }
@@ -348,15 +350,21 @@ ASK = MANUAL  # kept so older callers and stored settings keep resolving
 
 def normalise_mode(mode) -> str:
     """Resolve a stored or supplied mode, falling back to the safe default."""
+    if native_core.available:
+        try:
+            return native_core.normalize_permission_mode(None if mode is None else str(mode))
+        except RuntimeError:
+            pass
     value = str(mode or "").strip().lower()
     value = LEGACY_MODES.get(value, value)
     return value if value in PERMISSION_MODES else SAFE
 
 
 LOW_RISK = {"screenshot", "list_apps", "wait", "move_pointer", "scroll", "remember"}
-# Typing and key chords can save, send, delete, or confirm in whatever has
-# focus, so they stay behind a prompt in every mode except auto and full.
-SENSITIVE = {"type_text", "press_key", "run_command"}
+# Typing, key chords, clicks and drags can save, send, delete, submit, or move
+# data in whichever application is focused. Safe mode therefore keeps all of
+# them behind approval; Auto and Full deliberately opt into unattended input.
+SENSITIVE = {"type_text", "press_key", "run_command", "click", "drag"}
 
 # Commands that can take the machine, its disks, its packages or its accounts
 # with them. Auto runs everything else unattended; these it still puts in front
@@ -393,6 +401,11 @@ _DESTRUCTIVE = tuple(re.compile(pattern, re.IGNORECASE) for pattern in _DESTRUCT
 def command_risk(command) -> str:
     """Read a shell command: is it one that can take something away for good?"""
     text = str(command or "")
+    if native_core.available:
+        try:
+            return "destructive" if native_core.command_is_destructive(text) else "normal"
+        except RuntimeError:
+            pass
     return "destructive" if any(pattern.search(text) for pattern in _DESTRUCTIVE) else "normal"
 
 
@@ -411,6 +424,12 @@ def action_risk(name: str, args: dict | None = None) -> str:
 
 def needs_confirmation(name: str, mode: str, args: dict | None = None) -> bool:
     """Whether ``mode`` requires the user to approve ``name`` before it runs."""
+    if native_core.available:
+        try:
+            command = str(args.get("command", "")) if name == "run_command" and isinstance(args, dict) else None
+            return native_core.needs_confirmation(name, mode, command)
+        except RuntimeError:
+            pass
     mode = normalise_mode(mode)
     risk = action_risk(name, args)
     if mode == FULL or risk == "low":
@@ -550,7 +569,7 @@ class AgentEngine:
     def run(self, messages: list[dict], model: str, desktop_enabled: bool, cancel,
             emit: Callable[[dict], None], think: bool = False, max_steps: int = 20,
             num_ctx: int = 16384, temperature: float = 0.7, keep_alive: str = "5m",
-            permission_mode: str = SAFE, project: str = "",
+            permission_mode: str | Callable[[], str] = SAFE, project: str = "",
             confirm: Callable[[str, dict, str], bool] | None = None,
             tools_allowed: bool = True) -> list[dict]:
         """Answer the conversation, running tools until the model stops asking.
@@ -558,12 +577,24 @@ class AgentEngine:
         ``tools_allowed`` is Chat mode's switch. With it off the model gets no
         shell, no desktop and no project tools at all — only the two memory
         tools, which write a note to Wynxo's own file and touch nothing else.
+        A callable ``permission_mode`` is re-read before each action so a user
+        can tighten or relax the active run without restarting it.
         """
         # Capture fresh screen context for each request. A later chat-only/nonvisual
         # model must not inherit screenshots from an earlier desktop task.
         history = copy.deepcopy([m for m in messages if not (m.get("images") and
                                  m.get("content", "").startswith("Current desktop screenshot ("))])
-        permission_mode = normalise_mode(permission_mode)
+        permission_source = permission_mode
+
+        def current_permission_mode() -> str:
+            try:
+                value = permission_source() if callable(permission_source) else permission_source
+            except Exception:
+                LOG.exception("Permission mode provider failed; falling back to Safe")
+                value = SAFE
+            return normalise_mode(value)
+
+        initial_permission_mode = current_permission_mode()
         max_steps = max(1, min(int(max_steps), 100))
         num_ctx = max(2048, min(int(num_ctx), 131072))
         temperature = max(0.0, min(float(temperature), 2.0))
@@ -585,10 +616,11 @@ class AgentEngine:
 
         def tool_result(name: str, args: dict, allowed: set[str]) -> dict:
             risk = action_risk(name, args)
+            action_mode = current_permission_mode()
+            confirming = needs_confirmation(name, action_mode, args) and name in allowed
             started = time.monotonic()
             event("tool_start", name=name, args=args, risk=risk,
-                  summary=action_summary(name, args),
-                  confirming=needs_confirmation(name, permission_mode, args) and name in allowed)
+                  summary=action_summary(name, args), confirming=confirming)
 
             def finish(result: dict, **extra) -> dict:
                 # Pixel payloads go only into the vision input, never into logs or tool cards.
@@ -605,7 +637,7 @@ class AgentEngine:
                 status = self.desktop.status() if self.desktop else {}
                 if name not in _NONVISUAL and not status.get("connected"):
                     raise RuntimeError("Desktop permission was disconnected")
-                if confirm is not None and needs_confirmation(name, permission_mode, args):
+                if confirm is not None and confirming:
                     if not confirm(name, args, risk):
                         if _stopped(cancel):
                             raise Cancelled("Stopped")
@@ -665,11 +697,11 @@ class AgentEngine:
                        if tools_enabled else set()) | memory_tools
             if tools_enabled:
                 gate = {MANUAL: "The user approves every desktop action and command before it runs.",
-                        SAFE: "Commands, typing and key presses need the user's approval before they run.",
+                        SAFE: "Commands, clicks, drags, typing and key presses need the user's approval before they run.",
                         AUTO: "Commands and desktop actions run without a per-action prompt, "
                               "but a command that could destroy data is still put to the user.",
                         FULL: "Every action runs immediately, with no approval at any point. "
-                              "You are responsible for not doing anything the user did not ask for."}[permission_mode]
+                              "You are responsible for not doing anything the user did not ask for."}[initial_permission_mode]
                 system = _SYSTEM + f"\nLocal tools are enabled. {gate}"
                 if not visual:
                     system += "\nScreen control is unavailable. Do not click or type on screen; local commands and app launching still work."
@@ -708,7 +740,7 @@ class AgentEngine:
                     append_screen(result)
             steps = 0
             if tools_enabled:
-                event("session", permission_mode=permission_mode, visual=visual, max_steps=max_steps)
+                event("session", permission_mode=initial_permission_mode, visual=visual, max_steps=max_steps)
             for turn in range(max_steps + 1):
                 if _stopped(cancel):
                     raise Cancelled("Stopped")
