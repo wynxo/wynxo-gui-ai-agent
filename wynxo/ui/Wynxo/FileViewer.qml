@@ -22,8 +22,8 @@ Item {
     readonly property bool editable: readable && !record.truncated
     readonly property bool dirty: !!(dock && dock.fileModified)
     property bool wrap: false
-    property bool editing: false
     property bool findOpen: false
+    property bool goLineOpen: false
     property int findPosition: -1
     property int findCount: 0
     property int findOrdinal: 0
@@ -46,19 +46,31 @@ Item {
         if (record.path !== loadedPath) {
             loadedPath = record.path || "";
             editor.text = record.text || "";
-            root.editing = false;
             root.findPosition = -1;
             root.findCount = 0;
             root.findOrdinal = 0;
             root.findCountCapped = false;
             findInput.text = "";
+            lineInput.text = "";
             root.findOpen = false;
+            root.goLineOpen = false;
         }
     }
 
     function save() { if (dock && root.editable) dock.saveFile(); }
+    function parentFolder(path) {
+        var value = String(path || "");
+        var slash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+        return slash > 0 ? value.slice(0, slash) : value;
+    }
+    function terminalInFileFolder() {
+        if (!dock || !root.hasFile) return;
+        var directory = root.parentFolder(root.record.path);
+        dock.runInTerminal("cd " + JSON.stringify(directory));
+    }
     function openFind() {
         if (!readable) return;
+        goLineOpen = false;
         findOpen = true;
         root.recountFindMatches();
         Qt.callLater(function () { findInput.forceActiveFocus(); findInput.selectAll(); });
@@ -69,6 +81,50 @@ Item {
         findOrdinal = 0;
         editor.deselect();
         editor.forceActiveFocus();
+    }
+    function openGoLine() {
+        if (!readable) return;
+        findOpen = false;
+        findPosition = -1;
+        findOrdinal = 0;
+        editor.deselect();
+        goLineOpen = true;
+        lineInput.text = "";
+        Qt.callLater(function () { lineInput.forceActiveFocus(); });
+    }
+    function closeGoLine() {
+        goLineOpen = false;
+        editor.forceActiveFocus();
+    }
+    function positionForLine(value) {
+        var wanted = Math.round(Number(value) || 0);
+        var total = Math.max(1, Number(root.record.lines || 1));
+        if (wanted < 1 || wanted > total) return -1;
+        if (wanted === 1) return 0;
+        var position = 0;
+        for (var line = 1; line < wanted; line++) {
+            var newline = editor.text.indexOf("\n", position);
+            if (newline < 0) return editor.text.length;
+            position = newline + 1;
+        }
+        return position;
+    }
+    function goToLine() {
+        var position = root.positionForLine(lineInput.text);
+        if (position < 0) return;
+        editor.deselect();
+        editor.cursorPosition = position;
+        goLineOpen = false;
+        editor.forceActiveFocus();
+        // TextEdit sits inside our own Flickable, so moving its cursor does not
+        // automatically scroll the outer viewport. Keep the destination about
+        // a third of the way down the panel so nearby code remains visible.
+        Qt.callLater(function () {
+            var maximum = Math.max(0, flick.contentHeight - flick.height);
+            var desired = Math.max(0, editor.cursorRectangle.y - flick.height * 0.33);
+            flick.contentY = Math.min(maximum, desired);
+            flick.contentX = 0;
+        });
     }
     function recountFindMatches() {
         var query = findInput.text.toLowerCase();
@@ -141,6 +197,11 @@ Item {
         enabled: root.readable
         onActivated: root.openFind()
     }
+    Shortcut {
+        sequences: ["Ctrl+G"]
+        enabled: root.readable
+        onActivated: root.openGoLine()
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -191,18 +252,34 @@ Item {
                 onClicked: root.wrap = !root.wrap
             }
             IconButton {
-                width: 28; height: 28; iconSize: 12
-                visible: root.readable
-                iconName: "copy"
-                tooltip: "Copy the whole file"
-                onClicked: if (bridge) bridge.copyText(editor.text)
-            }
-            IconButton {
+                id: fileMore
                 width: 28; height: 28; iconSize: 12
                 visible: root.hasFile
-                iconName: "launch"
-                tooltip: "Open outside Wynxo"
-                onClicked: if (bridge) bridge.revealPath(root.record.path)
+                iconName: "moreVertical"
+                tooltip: "File actions"
+                active: fileMenu.opened
+                onClicked: fileMenu.opened ? fileMenu.close() : fileMenu.open()
+
+                WMenu {
+                    id: fileMenu
+                    anchorX: -menuWidth + fileMore.width
+                    menuWidth: 246
+                    items: [
+                        { id: "line", label: "Go to line…", icon: "code", shortcut: "Ctrl+G", disabled: !root.readable },
+                        { id: "copy", label: "Copy whole file", icon: "copy", disabled: !root.readable },
+                        { separator: true },
+                        { id: "attach", label: "Attach to conversation", icon: "paperclip" },
+                        { id: "terminal", label: "Terminal in containing folder", icon: "terminal" },
+                        { id: "reveal", label: "Reveal outside Wynxo", icon: "launch" },
+                    ]
+                    onPicked: function(id) {
+                        if (id === "line") root.openGoLine();
+                        else if (id === "copy" && bridge) bridge.copyText(editor.text);
+                        else if (id === "attach" && bridge) bridge.attachPath(root.record.path);
+                        else if (id === "terminal") root.terminalInFileFolder();
+                        else if (id === "reveal" && bridge) bridge.revealPath(root.record.path);
+                    }
+                }
             }
             IconButton {
                 width: 28; height: 28; iconSize: 12
@@ -276,6 +353,54 @@ Item {
                     iconName: "close"; iconSize: 11
                     tooltip: "Close find"
                     onClicked: root.closeFind()
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: root.goLineOpen ? Theme.control + Theme.s2 : 0
+            visible: root.goLineOpen
+            color: Theme.backgroundSoft
+            Rectangle {
+                anchors { left: parent.left; right: parent.right; bottom: parent.bottom }
+                height: 1; color: Theme.borderSubtle
+            }
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.s2
+                anchors.rightMargin: Theme.s2
+                anchors.topMargin: Theme.s1
+                anchors.bottomMargin: Theme.s1
+                spacing: Theme.s2
+
+                Field {
+                    id: lineInput
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Theme.controlSmall
+                    iconName: "code"
+                    placeholderText: "Line 1–" + Math.max(1, root.record.lines || 1)
+                    validator: IntValidator { bottom: 1; top: Math.max(1, root.record.lines || 1) }
+                    Keys.onReturnPressed: function(event) { root.goToLine(); event.accepted = true; }
+                    Keys.onEscapePressed: function(event) { root.closeGoLine(); event.accepted = true; }
+                }
+                Text {
+                    text: (root.record.lines || 0) + " lines"
+                    color: Theme.textMuted
+                    font.family: Theme.monoFamily; font.pixelSize: Theme.micro
+                }
+                WButton {
+                    text: "Go"
+                    compactPadding: true
+                    implicitHeight: 24
+                    enabled: lineInput.acceptableInput
+                    onClicked: root.goToLine()
+                }
+                IconButton {
+                    Layout.preferredWidth: 26; Layout.preferredHeight: 26
+                    iconName: "close"; iconSize: 11
+                    tooltip: "Close go to line"
+                    onClicked: root.closeGoLine()
                 }
             }
         }
@@ -363,6 +488,9 @@ Item {
                             event.accepted = true;
                         } else if (event.key === Qt.Key_F && (event.modifiers & Qt.ControlModifier)) {
                             root.openFind();
+                            event.accepted = true;
+                        } else if (event.key === Qt.Key_G && (event.modifiers & Qt.ControlModifier)) {
+                            root.openGoLine();
                             event.accepted = true;
                         }
                     }
