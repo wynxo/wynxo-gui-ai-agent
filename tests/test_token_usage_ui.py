@@ -30,6 +30,14 @@ def test_token_usage_has_live_count_rate_and_every_requested_period():
         assert feature in qml
 
 
+def test_idle_popover_shows_real_period_usage_not_a_fake_zero_run():
+    qml = (MODULE / "TokenUsage.qml").read_text(encoding="utf-8")
+    assert "readonly property bool hasLiveRun" in qml
+    assert 'root.hasLiveRun ? "LATEST RUN" : "USAGE TODAY"' in qml
+    assert 'root.formatCount(animatedValue) + " total"' in qml
+    assert 'root.bucket("today").runs + " run"' in qml
+
+
 def test_live_and_period_token_numbers_animate_and_honor_reduced_motion():
     qml = (MODULE / "TokenUsage.qml").read_text(encoding="utf-8")
     assert "Behavior on implicitWidth" in qml
