@@ -25,6 +25,10 @@ Item {
     property bool editing: false
     property bool findOpen: false
     property int findPosition: -1
+    property int findCount: 0
+    property int findOrdinal: 0
+    property bool findCountCapped: false
+    readonly property int maxFindMatches: 10000
 
     // Built once per file rather than on every repaint. Wrapping hides the
     // gutter, because a wrapped line no longer matches a numbered row.
@@ -44,6 +48,9 @@ Item {
             editor.text = record.text || "";
             root.editing = false;
             root.findPosition = -1;
+            root.findCount = 0;
+            root.findOrdinal = 0;
+            root.findCountCapped = false;
             findInput.text = "";
             root.findOpen = false;
         }
@@ -53,18 +60,57 @@ Item {
     function openFind() {
         if (!readable) return;
         findOpen = true;
+        root.recountFindMatches();
         Qt.callLater(function () { findInput.forceActiveFocus(); findInput.selectAll(); });
     }
     function closeFind() {
         findOpen = false;
         findPosition = -1;
+        findOrdinal = 0;
         editor.deselect();
         editor.forceActiveFocus();
+    }
+    function recountFindMatches() {
+        var query = findInput.text.toLowerCase();
+        if (!query || !readable) {
+            findCount = 0;
+            findOrdinal = 0;
+            findCountCapped = false;
+            return;
+        }
+        var haystack = editor.text.toLowerCase();
+        var cursor = 0;
+        var count = 0;
+        var next = -1;
+        while ((next = haystack.indexOf(query, cursor)) >= 0) {
+            count++;
+            cursor = next + Math.max(1, query.length);
+            if (count >= maxFindMatches) {
+                findCountCapped = haystack.indexOf(query, cursor) >= 0;
+                break;
+            }
+        }
+        findCount = count;
+        if (!count) findOrdinal = 0;
+    }
+    function ordinalFor(haystack, query, target) {
+        if (target < 0 || !query) return 0;
+        var cursor = 0;
+        var ordinal = 0;
+        var next = -1;
+        while ((next = haystack.indexOf(query, cursor)) >= 0) {
+            ordinal++;
+            if (next === target) return ordinal;
+            if (ordinal >= maxFindMatches) return maxFindMatches;
+            cursor = next + Math.max(1, query.length);
+        }
+        return 0;
     }
     function findNext(backwards) {
         var needle = findInput.text;
         if (!needle || !readable) {
             findPosition = -1;
+            findOrdinal = 0;
             editor.deselect();
             return;
         }
@@ -81,6 +127,7 @@ Item {
             if (position < 0) position = haystack.indexOf(query);
         }
         findPosition = position;
+        findOrdinal = root.ordinalFor(haystack, query, position);
         if (position >= 0) {
             editor.select(position, position + query.length);
             editor.cursorPosition = position + query.length;
@@ -191,6 +238,7 @@ Item {
                     placeholderText: "Find in file"
                     onTextChanged: {
                         root.findPosition = -1;
+                        root.recountFindMatches();
                         if (text.length) root.findNext(false);
                         else editor.deselect();
                     }
@@ -201,22 +249,26 @@ Item {
                     Keys.onEscapePressed: function(event) { root.closeFind(); event.accepted = true; }
                 }
                 Text {
-                    text: findInput.text.length && root.findPosition < 0 ? "No match" : ""
-                    color: Theme.textMuted
-                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                    Layout.minimumWidth: implicitWidth
+                    text: !findInput.text.length ? ""
+                        : root.findCount === 0 ? "No matches"
+                        : (root.findOrdinal > 0 ? root.findOrdinal : 1) + " / "
+                          + root.findCount + (root.findCountCapped ? "+" : "")
+                    color: root.findCount === 0 && findInput.text.length ? Theme.warning : Theme.textMuted
+                    font.family: Theme.monoFamily; font.pixelSize: Theme.micro
                 }
                 IconButton {
                     Layout.preferredWidth: 26; Layout.preferredHeight: 26
                     iconName: "up"; iconSize: 11
                     tooltip: "Previous match"
-                    enabled: findInput.text.length > 0
+                    enabled: root.findCount > 0
                     onClicked: root.findNext(true)
                 }
                 IconButton {
                     Layout.preferredWidth: 26; Layout.preferredHeight: 26
                     iconName: "down"; iconSize: 11
                     tooltip: "Next match"
-                    enabled: findInput.text.length > 0
+                    enabled: root.findCount > 0
                     onClicked: root.findNext(false)
                 }
                 IconButton {
@@ -297,7 +349,14 @@ Item {
                     Accessible.role: root.editable ? Accessible.EditableText : Accessible.StaticText
                     Accessible.name: root.hasFile ? root.record.name : "File contents"
 
-                    onTextChanged: if (root.dock && root.loadedPath && root.editable) root.dock.setFileBuffer(text)
+                    onTextChanged: {
+                        if (root.dock && root.loadedPath && root.editable) root.dock.setFileBuffer(text);
+                        if (root.findOpen && findInput.text.length) {
+                            root.findPosition = -1;
+                            root.recountFindMatches();
+                            root.findNext(false);
+                        }
+                    }
                     Keys.onPressed: function(event) {
                         if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
                             root.save();
