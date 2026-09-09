@@ -34,9 +34,11 @@ ApplicationWindow {
     readonly property bool sidebarCollapsed: bridge ? bridge.sidebarCollapsed : false
     readonly property bool sidebarDocked: roomForSidebar
     readonly property bool homeMode: bridge && !bridge.hasMessages
-    // Chat is deliberately conversation-only. Do not leave a rail full of
-    // unavailable workspace tools hanging off the side of those tasks.
-    readonly property bool workspaceAvailable: !!(bridge && bridge.taskMode !== "chat")
+    // Chat normally has no workspace tools. A persisted plan is the one
+    // exception: it is presentation state, not a capability, and must remain
+    // viewable after reopening a task even if that task currently says Chat.
+    readonly property bool hasPresentablePlan: !!(bridge && bridge.planSteps && bridge.planSteps.length >= 2)
+    readonly property bool workspaceAvailable: !!(bridge && (bridge.taskMode !== "chat" || hasPresentablePlan))
     property int sidebarUserWidth: 248
     readonly property int sidebarWidth: sidebarCollapsed ? 52
         : Math.max(200, Math.min(sidebarUserWidth, Math.round(width * 0.3)))
