@@ -19,7 +19,7 @@ Item {
                                       : mode === "codex" ? "What should we build?"
                                       : "What do you want to figure out?"
     readonly property string detail: mode === "chat"
-        ? "Conversation only — no commands, files, or desktop actions."
+        ? "Conversation only — no shell, workspace tools, or desktop control."
         : mode === "codex" && !hasProject
             ? "Open a project to read, edit, run, and test code in its workspace."
             : mode === "work"
