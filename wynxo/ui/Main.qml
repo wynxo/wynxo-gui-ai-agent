@@ -34,6 +34,9 @@ ApplicationWindow {
     readonly property bool sidebarCollapsed: bridge ? bridge.sidebarCollapsed : false
     readonly property bool sidebarDocked: roomForSidebar
     readonly property bool homeMode: bridge && !bridge.hasMessages
+    // Chat is deliberately conversation-only. Do not leave a rail full of
+    // unavailable workspace tools hanging off the side of those tasks.
+    readonly property bool workspaceAvailable: !!(bridge && bridge.taskMode !== "chat")
     property int sidebarUserWidth: 248
     readonly property int sidebarWidth: sidebarCollapsed ? 52
         : Math.max(200, Math.min(sidebarUserWidth, Math.round(width * 0.3)))
@@ -44,7 +47,8 @@ ApplicationWindow {
     property int dockUserWidth: 380
     readonly property int dockMaxWidth: Math.max(280, Math.round(width * 0.42))
     readonly property int dockWidth: Math.min(dockUserWidth, dockMaxWidth)
-    readonly property bool dockOpen: roomForDock && !!(dockState && dockState.visible)
+    readonly property bool dockOpen: workspaceAvailable && roomForDock
+        && !!(dockState && dockState.visible)
 
     property bool closing: false
 
@@ -217,7 +221,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 sidebarCollapsed: !window.sidebarDocked || window.sidebarCollapsed
                 drawerOpen: sidebarDrawer.opened
-                dockAvailable: true
+                dockAvailable: window.workspaceAvailable
                 dockOpen: window.roomForDock ? window.dockOpen : dockDrawer.opened
                 onToggleSidebar: window.toggleSidebar()
                 onToggleDock: window.toggleDock()
@@ -272,39 +276,52 @@ ApplicationWindow {
                     onLinkClicked: function(link) { linkSheet.ask(link); }
                 }
 
-                Rectangle {
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: contentColumn.centredReadingWidth
-                    Layout.alignment: Qt.AlignHCenter
+                Item {
+                    id: warningLane
+                    Layout.fillWidth: true
                     visible: bridge && bridge.capabilityWarning.length > 0
-                    Layout.preferredHeight: visible ? warningText.implicitHeight + Theme.s3 * 2 : 0
-                    radius: Theme.r2
-                    color: Theme.warningMuted
-                    border.width: 1
-                    border.color: Theme.alpha(Theme.warning, 0.3)
-                    Accessible.role: Accessible.StaticText
-                    Accessible.name: bridge ? bridge.capabilityWarning : ""
-                    Row {
-                        anchors.fill: parent
-                        anchors.margins: Theme.s3
-                        spacing: Theme.s3
-                        Icon { name: "info"; ink: Theme.warning; width: 14; height: 14 }
-                        Text {
-                            id: warningText
-                            width: parent.width - 14 - Theme.s3
-                            text: bridge ? bridge.capabilityWarning : ""
-                            color: Theme.textSecondary
-                            font.family: Theme.sansFamily; font.pixelSize: Theme.caption
-                            wrapMode: Text.WordWrap; lineHeight: 1.45
+                    Layout.preferredHeight: visible ? warningCard.height : 0
+
+                    Rectangle {
+                        id: warningCard
+                        width: Math.min(Theme.readingWidth, parent.width)
+                        height: warningText.implicitHeight + Theme.s3 * 2
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        radius: Theme.r2
+                        color: Theme.warningMuted
+                        border.width: 1
+                        border.color: Theme.alpha(Theme.warning, 0.3)
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: bridge ? bridge.capabilityWarning : ""
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: Theme.s3
+                            spacing: Theme.s3
+                            Icon { name: "info"; ink: Theme.warning; width: 14; height: 14 }
+                            Text {
+                                id: warningText
+                                width: parent.width - 14 - Theme.s3
+                                text: bridge ? bridge.capabilityWarning : ""
+                                color: Theme.textSecondary
+                                font.family: Theme.sansFamily; font.pixelSize: Theme.caption
+                                wrapMode: Text.WordWrap; lineHeight: 1.45
+                            }
                         }
                     }
                 }
 
-                ErrorBanner {
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: contentColumn.centredReadingWidth
-                    Layout.alignment: Qt.AlignHCenter
-                    onActionInvoked: function(action) { window.runCommand(action); }
+                Item {
+                    id: errorLane
+                    Layout.fillWidth: true
+                    visible: bridge && bridge.error.length > 0
+                    Layout.preferredHeight: visible ? errorBanner.implicitHeight : 0
+
+                    ErrorBanner {
+                        id: errorBanner
+                        width: Math.min(Theme.readingWidth, parent.width)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        onActionInvoked: function(action) { window.runCommand(action); }
+                    }
                 }
 
                 Item {
@@ -354,7 +371,7 @@ ApplicationWindow {
             id: dock
             Layout.preferredWidth: implicitWidth
             Layout.fillHeight: true
-            visible: window.roomForDock
+            visible: window.roomForDock && window.workspaceAvailable
             panelOpen: window.dockOpen
             panelWidth: window.dockWidth
             onWidthChangeRequested: function(value) {
@@ -401,6 +418,7 @@ ApplicationWindow {
         width: Math.min(420, window.width - 32)
         height: window.height
         dragMargin: 0
+        enabled: window.workspaceAvailable
         background: Rectangle { color: Theme.background }
         WorkspaceDock {
             id: drawerDock
@@ -548,6 +566,7 @@ ApplicationWindow {
     }
 
     function toggleDock() {
+        if (!window.workspaceAvailable) return;
         if (!window.roomForDock) {
             drawerDock.userSelectedWorkspaceTab = true;
             if (dockDrawer.opened) dockDrawer.close();
@@ -559,7 +578,7 @@ ApplicationWindow {
     }
 
     function openDock(tab) {
-        if (!window.dockState) return;
+        if (!window.workspaceAvailable || !window.dockState) return;
         if (!window.roomForDock) {
             drawerDock.userSelectedWorkspaceTab = true;
             drawerDock.planSelected = false;
