@@ -14,6 +14,7 @@ Item {
     property bool compact: false
     implicitWidth: usageButton.implicitWidth
     implicitHeight: 30
+    readonly property bool hasLiveRun: !!(bridge && (bridge.busy || bridge.liveOutputTokens > 0 || bridge.liveTokenRate > 0))
 
     function showUsage() { usagePopover.open(); }
 
@@ -164,19 +165,24 @@ Item {
                             ColumnLayout {
                                 spacing: 1
                                 Text {
-                                    text: bridge && bridge.busy ? "CURRENT RUN" : "LATEST RUN"
+                                    text: bridge && bridge.busy ? "CURRENT RUN"
+                                        : root.hasLiveRun ? "LATEST RUN" : "USAGE TODAY"
                                     color: Theme.textMuted
                                     font.family: Theme.sansFamily
                                     font.pixelSize: Theme.micro
                                     font.weight: Font.DemiBold
                                 }
                                 Text {
-                                    property real animatedValue: bridge ? bridge.liveOutputTokens : 0
+                                    property real animatedValue: root.hasLiveRun
+                                        ? (bridge ? bridge.liveOutputTokens : 0)
+                                        : Number(root.bucket("today").tokens || 0)
                                     Behavior on animatedValue {
                                         enabled: !Theme.reducedMotion
                                         NumberAnimation { duration: Theme.base; easing.type: Theme.easing }
                                     }
-                                    text: root.formatCount(animatedValue) + " generated"
+                                    text: root.hasLiveRun
+                                        ? root.formatCount(animatedValue) + " generated"
+                                        : root.formatCount(animatedValue) + " total"
                                     color: Theme.textPrimary
                                     font.family: Theme.monoFamily
                                     font.pixelSize: Theme.heading
@@ -190,7 +196,10 @@ Item {
                                     enabled: !Theme.reducedMotion
                                     NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
                                 }
-                                text: animatedRate > 0 ? animatedRate.toFixed(1) + " tokens/s" : "— tokens/s"
+                                text: root.hasLiveRun
+                                    ? (animatedRate > 0 ? animatedRate.toFixed(1) + " tokens/s" : "— tokens/s")
+                                    : root.bucket("today").runs + " run"
+                                      + (root.bucket("today").runs === 1 ? "" : "s")
                                 color: bridge && bridge.busy ? Theme.accent : Theme.textSecondary
                                 font.family: Theme.monoFamily
                                 font.pixelSize: Theme.label
