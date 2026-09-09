@@ -5,23 +5,29 @@ from pathlib import Path
 MAIN = Path(__file__).resolve().parents[1] / "wynxo" / "ui" / "Main.qml"
 
 
-def test_home_reading_surfaces_use_a_centered_preferred_width():
+def test_home_primary_surfaces_use_explicit_centering_lanes():
     text = MAIN.read_text(encoding="utf-8")
-    assert "readonly property real centredReadingWidth: Math.min(Theme.readingWidth, width)" in text
 
-    # Qt Quick Layouts can clamp a fill-width item to maximumWidth while still
-    # leaving it at the layout's left edge. The homescreen bug came from exactly
-    # that combination. These reading surfaces must opt out of fillWidth and use
-    # an explicit preferred width before AlignHCenter can actually centre them.
-    for component in ("TaskStart {", "ErrorBanner {", "Composer {", "TaskStarters {"):
-        block = text.split(component, 1)[1].split("}", 1)[0]
-        assert "Layout.fillWidth: false" in block, component
-        assert "Layout.preferredWidth: contentColumn.centredReadingWidth" in block, component
-        assert "Layout.alignment: Qt.AlignHCenter" in block, component
+    # Qt Quick Layouts may clamp a preferred-width child yet still place its
+    # layout cell at the left edge. The rendered homescreen exposed exactly
+    # that failure. The primary surfaces therefore live in full-width lanes and
+    # centre themselves with anchors, outside Layout's horizontal placement.
+    for identifier in ("homeIntro", "composer", "homeStarters"):
+        marker = f"id: {identifier}"
+        assert marker in text, identifier
+        block = text.split(marker, 1)[1].split("}", 1)[0]
+        assert "anchors.horizontalCenter: parent.horizontalCenter" in block, identifier
+        assert "width: Math.min(Theme.readingWidth, parent.width)" in block, identifier
+
+    assert "id: composerLane" in text
+    lane = text.split("id: composerLane", 1)[1].split("Composer {", 1)[0]
+    assert "Layout.fillWidth: true" in lane
 
 
-def test_home_centering_does_not_return_to_maximum_width_clamping():
+def test_composer_does_not_rely_on_layout_alignment_for_centering():
     text = MAIN.read_text(encoding="utf-8")
-    composer = text.split("Composer {", 1)[1].split("onSubmitted:", 1)[0]
+    composer = text.split("id: composer", 1)[1].split("onSubmitted:", 1)[0]
+    assert "Layout.alignment: Qt.AlignHCenter" not in composer
+    assert "Layout.preferredWidth" not in composer
     assert "Layout.maximumWidth" not in composer
-    assert "Layout.fillWidth: true" not in composer
+    assert "anchors.horizontalCenter: parent.horizontalCenter" in composer

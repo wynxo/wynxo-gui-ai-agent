@@ -251,12 +251,16 @@ ApplicationWindow {
                     visible: window.homeMode
                 }
 
-                TaskStart {
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: contentColumn.centredReadingWidth
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.bottomMargin: Theme.s2
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? homeIntro.implicitHeight + Theme.s2 : 0
                     visible: window.homeMode
+
+                    TaskStart {
+                        id: homeIntro
+                        width: Math.min(Theme.readingWidth, parent.width)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
                 }
 
                 TaskView {
@@ -303,26 +307,37 @@ ApplicationWindow {
                     onActionInvoked: function(action) { window.runCommand(action); }
                 }
 
-                Composer {
-                    id: composer
-                    objectName: "mainComposer"
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: contentColumn.centredReadingWidth
-                    Layout.alignment: Qt.AlignHCenter
-                    onSubmitted: function(text) { if (bridge) bridge.send(text); }
-                    onOpenModelManager: models.open()
+                Item {
+                    id: composerLane
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: composer.implicitHeight
+
+                    Composer {
+                        id: composer
+                        objectName: "mainComposer"
+                        width: Math.min(Theme.readingWidth, parent.width)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        onSubmitted: function(text) { if (bridge) bridge.send(text); }
+                        onOpenModelManager: models.open()
+                    }
                 }
 
-                TaskStarters {
-                    Layout.fillWidth: false
-                    Layout.preferredWidth: contentColumn.centredReadingWidth
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.topMargin: Theme.s1
+                Item {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: visible ? homeStarters.implicitHeight + Theme.s1 : 0
                     visible: window.homeMode
-                    onStarterChosen: function(prompt) { composer.insert(prompt); }
-                    onCommandInvoked: function(action) { window.runCommand(action); }
-                    onModeRequested: function(mode) {
-                        if (bridge && !bridge.connecting) bridge.setTaskMode(mode);
+
+                    TaskStarters {
+                        id: homeStarters
+                        width: Math.min(Theme.readingWidth, parent.width)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.top: parent.top
+                        anchors.topMargin: Theme.s1
+                        onStarterChosen: function(prompt) { composer.insert(prompt); }
+                        onCommandInvoked: function(action) { window.runCommand(action); }
+                        onModeRequested: function(mode) {
+                            if (bridge && !bridge.connecting) bridge.setTaskMode(mode);
+                        }
                     }
                 }
 
