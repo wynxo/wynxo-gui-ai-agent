@@ -34,7 +34,9 @@ Item {
     AbstractButton {
         id: usageButton
         height: 30
-        implicitWidth: liveRow.implicitWidth + Theme.s3 * 2
+        readonly property real desiredWidth: Math.max(root.compact ? 46 : 64,
+                                                      liveRow.implicitWidth + Theme.s3 * 2)
+        implicitWidth: desiredWidth
         hoverEnabled: true
         Accessible.role: Accessible.Button
         Accessible.name: "Token usage"
@@ -44,6 +46,13 @@ Item {
                 ? root.bucket("today").tokens + " tokens used today; open usage statistics"
                 : "Open token usage statistics"
         onClicked: usagePopover.opened ? usagePopover.close() : usagePopover.open()
+
+        // `Usage` can become `45 tokens · 2.5 tokens/s` in one stream event.
+        // Move the neighboring model/send controls instead of snapping them.
+        Behavior on implicitWidth {
+            enabled: !Theme.reducedMotion
+            NumberAnimation { duration: Theme.base; easing.type: Theme.easing }
+        }
 
         background: GlassSurface {
             radius: Theme.r2
