@@ -155,8 +155,12 @@ Item {
         Row {
             spacing: 0
             height: 26
-            opacity: hover.hovered && !root.streaming ? 1 : 0
-            visible: opacity > 0 && root.body.length > 0
+            // Keep the newest response's controls gently visible. Older turns
+            // stay content-first and reveal actions on hover. This removes the
+            // "hidden affordance" feel without creating a toolbar under every
+            // response in a long conversation.
+            opacity: root.streaming ? 0 : (hover.hovered ? 1 : root.latest ? 0.62 : 0)
+            visible: !root.streaming && root.body.length > 0 && (root.latest || hover.hovered)
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
                 width: 26; height: 26; iconSize: 12
