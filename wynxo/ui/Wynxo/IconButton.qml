@@ -17,11 +17,20 @@ Button {
     implicitWidth: Theme.control
     implicitHeight: Theme.control
     hoverEnabled: true
-    opacity: enabled ? 1 : 0.35
-    scale: down ? 0.94 : hovered ? 1.025 : 1
+    focusPolicy: Qt.StrongFocus
+    opacity: enabled ? 1 : 0.34
+
+    // Hover scaling made dense toolbars look like they were wobbling as the
+    // pointer crossed them. Keep the control geometrically stable and reserve
+    // motion for the physical press itself.
+    scale: down ? 0.96 : 1
     Accessible.name: tooltip || iconName
 
     Behavior on scale {
+        enabled: !Theme.reducedMotion
+        NumberAnimation { duration: Theme.fast; easing.type: Theme.easing }
+    }
+    Behavior on opacity {
         enabled: !Theme.reducedMotion
         NumberAnimation { duration: Theme.fast; easing.type: Theme.easing }
     }
@@ -33,7 +42,8 @@ Button {
     contentItem: Item {
         Icon {
             name: control.iconName
-            ink: control.active || control.hovered ? control.activeTint : control.tint
+            ink: control.active || control.hovered || control.visualFocus
+                 ? control.activeTint : control.tint
             weight: control.iconWeight
             width: control.iconSize; height: control.iconSize
             anchors.centerIn: parent
@@ -47,9 +57,10 @@ Button {
         glassEnabled: control.interacting
         tint: control.active ? Theme.accent
              : control.down ? Theme.glassTintStrong
-             : control.hovered ? Theme.glassTintHover : Theme.glassTint
+             : control.hovered || control.visualFocus ? Theme.glassTintHover : Theme.glassTint
         fillOpacity: control.down ? 0.72
-                   : control.hovered ? 0.56
+                   : control.hovered ? 0.52
+                   : control.visualFocus ? 0.42
                    : control.active ? 0.12 : 0.0
         outlineVisible: control.interacting || control.active
         strongEdge: control.interacting
