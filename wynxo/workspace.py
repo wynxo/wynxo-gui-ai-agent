@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 from PySide6.QtCore import Property, QTimer, Signal, Slot
 
 from . import context as ctx
+from . import context_budget
 from . import engine as engine_module
 from . import project_context
 from . import project_instructions
@@ -80,41 +81,60 @@ def _install_plan_tool() -> None:
 
 
 class PlanningAgentEngine(AgentEngine):
-    """AgentEngine with one non-desktop tool consumed by the workspace UI."""
+    """AgentEngine with planning, bounded history and project orientation."""
 
     def run(self, *args, **kwargs):
+        # The complete conversation is the archive. Build a temporary recent
+        # view for this inference, then append only newly generated messages
+        # back onto the untouched archive. This applies to Chat, Work and Wynxi.
+        if args:
+            full_history = copy.deepcopy(list(args[0]))
+        else:
+            full_history = copy.deepcopy(list(kwargs.get("messages", [])))
+        fit = context_budget.fit_history(full_history, kwargs.get("num_ctx", 16384))
+        inference_messages = fit.messages
+
+        emit = args[4] if len(args) > 4 else kwargs.get("emit")
+        if fit.compacted and callable(emit):
+            emit({"type": "context_compacted", "omitted_turns": fit.omitted_turns,
+                  "estimated_tokens": fit.estimated_tokens})
+
         desktop = self.desktop
-        if desktop is None or not kwargs.get("tools_allowed", True):
-            return super().run(*args, **kwargs)
-
-        # Work/Wynxi get a small locally generated repo map before inference.
-        # It is metadata only, generated on this worker thread, and stripped
-        # from the returned history so it never becomes chat or memory.
+        tools_allowed = bool(kwargs.get("tools_allowed", True))
         project = str(kwargs.get("project", "") or "")
-        if project:
-            if args:
-                messages = project_context.inject(list(args[0]), project)
-                messages = project_instructions.inject(messages, project)
-                args = (messages,) + args[1:]
-            else:
-                messages = project_context.inject(list(kwargs.get("messages", [])), project)
-                kwargs["messages"] = project_instructions.inject(messages, project)
+        if tools_allowed and desktop is not None and project:
+            inference_messages = project_context.inject(inference_messages, project)
+            inference_messages = project_instructions.inject(inference_messages, project)
 
-        original_execute = desktop.execute
+        if args:
+            run_args = (inference_messages,) + args[1:]
+            run_kwargs = kwargs
+        else:
+            run_args = args
+            run_kwargs = {**kwargs, "messages": inference_messages}
 
-        def execute(name, arguments, cancel=None):
-            if name == "update_plan":
-                return {"ok": True, "steps": len(arguments.get("steps", []))}
-            return original_execute(name, arguments, cancel)
+        if desktop is None or not tools_allowed:
+            result = super().run(*run_args, **run_kwargs)
+        else:
+            original_execute = desktop.execute
 
-        # Runs are serialized by Controller; this temporary adapter exists only
-        # on the worker thread for the lifetime of this generation.
-        desktop.execute = execute
-        try:
-            result = super().run(*args, **kwargs)
-            return project_context.strip(project_instructions.strip(result))
-        finally:
-            desktop.execute = original_execute
+            def execute(name, arguments, cancel=None):
+                if name == "update_plan":
+                    return {"ok": True, "steps": len(arguments.get("steps", []))}
+                return original_execute(name, arguments, cancel)
+
+            # Runs are serialized by Controller; this temporary adapter exists
+            # only on the worker thread for the lifetime of this generation.
+            desktop.execute = execute
+            try:
+                result = super().run(*run_args, **run_kwargs)
+            finally:
+                desktop.execute = original_execute
+
+        # Strip generated system context before finding the engine's new tail.
+        result = project_instructions.strip(project_context.strip(result))
+        fitted = project_instructions.strip(project_context.strip(inference_messages))
+        return context_budget.merge_generated(full_history, fitted, result)
 
 
 def validate_workspace_endpoint(endpoint: str) -> str:
@@ -196,6 +216,7 @@ class WorkspaceController(Controller):
         super().__init__(*args, **kwargs)
         self._usage = TokenUsageTracker(self.store)
         self._project_instructions_summary = project_instructions.summary(self._working_directory)
+        self._context_omitted_turns = 0
         # Draft text is cheap state worth surviving a restart, but attachments are
         # intentionally one-turn context and are never serialized here. Debounce
         # SQLite writes so typing does not become one transaction per keypress.
@@ -378,6 +399,18 @@ class WorkspaceController(Controller):
     @Property(str, notify=changed)
     def projectInstructionsSummary(self):
         return self._project_instructions_summary
+
+    @Property(int, notify=changed)
+    def contextOmittedTurns(self):
+        return int(self._context_omitted_turns)
+
+    @Property(str, notify=changed)
+    def contextCompactionLabel(self):
+        count = int(self._context_omitted_turns)
+        if not count:
+            return ""
+        return (f"{count} older turn{'s' if count != 1 else ''} omitted from this model request; "
+                "full history is still saved")
 
     def _refresh_project_instructions(self) -> None:
         fresh = project_instructions.summary(self._working_directory)
@@ -595,6 +628,7 @@ class WorkspaceController(Controller):
 
     def _start_run(self, history):
         self._refresh_project_instructions()
+        self._context_omitted_turns = 0
         self._busy = True
         self._clear_error()
         self._status = "Thinking"
@@ -651,6 +685,10 @@ class WorkspaceController(Controller):
 
     def _on_event(self, event):
         kind = event.get("type")
+        if kind == "context_compacted":
+            self._context_omitted_turns = max(0, int(event.get("omitted_turns", 0) or 0))
+            self.changed.emit()
+            return
         if kind == "tool_start" and event.get("name") == "update_plan":
             self._set_plan(event.get("args", {}).get("steps", []))
             explanation = str(event.get("args", {}).get("explanation", "")).strip()

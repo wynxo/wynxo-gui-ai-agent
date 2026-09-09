@@ -65,6 +65,31 @@ Item {
             }
         }
 
+        Item {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 34
+            visible: bridge && bridge.contextOmittedTurns > 0
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.s3
+                anchors.rightMargin: Theme.s3
+                spacing: Theme.s2
+                Icon {
+                    name: "info"
+                    ink: Theme.textMuted
+                    Layout.preferredWidth: 12; Layout.preferredHeight: 12
+                }
+                Text {
+                    Layout.fillWidth: true
+                    text: bridge ? bridge.contextCompactionLabel : ""
+                    color: Theme.textMuted
+                    font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+                    wrapMode: Text.Wrap
+                }
+            }
+        }
+
         ListView {
             id: list
             objectName: "contextGroups"
