@@ -85,11 +85,15 @@ def controller(tmp_path):
     )
 
 
-def test_workspace_learns_before_a_model_ever_calls_remember(tmp_path, monkeypatch):
-    bridge = controller(tmp_path)
+def ready(bridge, monkeypatch):
     bridge._online = True
     bridge._model_capabilities = ["completion"]  # deliberately no tool calling
     monkeypatch.setattr(bridge, "_start_run", lambda history: None)
+
+
+def test_workspace_learns_before_a_model_ever_calls_remember(tmp_path, monkeypatch):
+    bridge = controller(tmp_path)
+    ready(bridge, monkeypatch)
 
     bridge.send("Call me wynxo")
 
@@ -98,12 +102,24 @@ def test_workspace_learns_before_a_model_ever_calls_remember(tmp_path, monkeypat
     bridge.shutdown()
 
 
+def test_preferred_name_updates_instead_of_becoming_two_conflicting_memories(tmp_path, monkeypatch):
+    bridge = controller(tmp_path)
+    ready(bridge, monkeypatch)
+
+    bridge.send("Call me wynxo")
+    bridge._busy = False
+    bridge.send("My preferred name is nova")
+
+    names = [note for note in bridge.memory.notes("global")
+             if note.startswith(("User prefers to be called ", "User's preferred name is "))]
+    assert names == ["User's preferred name is nova."]
+    bridge.shutdown()
+
+
 def test_workspace_auto_learning_respects_memory_off(tmp_path, monkeypatch):
     bridge = controller(tmp_path)
-    bridge._online = True
-    bridge._model_capabilities = ["completion"]
+    ready(bridge, monkeypatch)
     bridge.setMemoryEnabled(False)
-    monkeypatch.setattr(bridge, "_start_run", lambda history: None)
 
     bridge.send("I prefer concise answers")
 
@@ -113,9 +129,7 @@ def test_workspace_auto_learning_respects_memory_off(tmp_path, monkeypatch):
 
 def test_workspace_project_memory_does_not_leak_into_another_repo(tmp_path, monkeypatch):
     bridge = controller(tmp_path)
-    bridge._online = True
-    bridge._model_capabilities = ["completion"]
-    monkeypatch.setattr(bridge, "_start_run", lambda history: None)
+    ready(bridge, monkeypatch)
     project = tmp_path / "app"
     project.mkdir()
     assert bridge._set_project(str(project)) is True
