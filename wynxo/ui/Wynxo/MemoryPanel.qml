@@ -212,6 +212,19 @@ Item {
             Layout.fillWidth: true
             Layout.leftMargin: Theme.s3
             Layout.rightMargin: Theme.s3
+            Layout.bottomMargin: Theme.s2
+            text: root.memoryOn
+                ? "Stable preferences can be learned automatically. Secrets and temporary details are skipped."
+                : "Automatic learning is paused while Memory is off."
+            color: Theme.textMuted
+            font.family: Theme.sansFamily; font.pixelSize: Theme.micro
+            wrapMode: Text.WordWrap
+        }
+
+        Text {
+            Layout.fillWidth: true
+            Layout.leftMargin: Theme.s3
+            Layout.rightMargin: Theme.s3
             Layout.bottomMargin: Theme.s3
             text: bridge ? bridge.memoryPath : ""
             color: Theme.textDisabled
