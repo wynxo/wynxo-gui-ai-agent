@@ -205,6 +205,7 @@ Item {
                             delegate: Rectangle {
                                 id: stat
                                 required property var modelData
+                                required property int index
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 76
                                 radius: Theme.r2
@@ -215,10 +216,40 @@ Item {
                                 HoverHandler { id: statHover }
 
                                 property var bucketData: root.bucket(modelData.key)
-                                property real animatedTotal: Number(bucketData.tokens || 0)
-                                Behavior on animatedTotal {
-                                    enabled: !Theme.reducedMotion
-                                    NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
+                                property real targetTotal: Number(bucketData.tokens || 0)
+                                property real displayedTotal: targetTotal
+
+                                function revealTotal() {
+                                    totalReveal.stop();
+                                    if (Theme.reducedMotion) {
+                                        displayedTotal = targetTotal;
+                                        return;
+                                    }
+                                    displayedTotal = 0;
+                                    totalReveal.start();
+                                }
+
+                                onTargetTotalChanged: {
+                                    if (usagePopover.opened) revealTotal();
+                                    else displayedTotal = targetTotal;
+                                }
+
+                                Connections {
+                                    target: usagePopover
+                                    function onOpened() { stat.revealTotal(); }
+                                }
+
+                                SequentialAnimation {
+                                    id: totalReveal
+                                    PauseAnimation { duration: stat.index * 45 }
+                                    NumberAnimation {
+                                        target: stat
+                                        property: "displayedTotal"
+                                        from: 0
+                                        to: stat.targetTotal
+                                        duration: Theme.slow
+                                        easing.type: Theme.easing
+                                    }
                                 }
 
                                 Column {
@@ -233,7 +264,7 @@ Item {
                                         font.weight: Font.DemiBold
                                     }
                                     Text {
-                                        text: root.formatCount(stat.animatedTotal)
+                                        text: root.formatCount(stat.displayedTotal)
                                         color: Theme.textPrimary
                                         font.family: Theme.monoFamily
                                         font.pixelSize: Theme.heading
