@@ -423,13 +423,21 @@ class WorkspaceController(Controller):
         num_ctx, temperature = self._num_ctx, self._temperature
         keep_alive, max_steps = self._keep_alive, self._max_steps
         project = self._working_directory
+        permission_snapshot = self._permission_mode
 
         # Permission mode is deliberately live. The user can tighten or relax
         # an active task from the UI; the engine re-reads this provider before
         # every action instead of retaining the mode that happened to be set
-        # when generation started.
+        # when generation started. A manual "allow all in this task" decision
+        # belongs to the old mode, so changing modes revokes it before the next
+        # action is evaluated.
         def permission_mode():
-            return self._permission_mode
+            nonlocal permission_snapshot
+            current = self._permission_mode
+            if current != permission_snapshot:
+                self._session_auto = False
+                permission_snapshot = current
+            return current
 
         self._run_job = self._job(
             lambda cancel, emit: engine.run(
