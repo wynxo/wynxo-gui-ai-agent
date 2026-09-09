@@ -1,0 +1,54 @@
+name: Apply automatic memory learning
+
+on:
+  push:
+    branches:
+      - work/finish-astra-gui-core
+    paths:
+      - .github/workflows/apply-auto-memory.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+      - name: Wire memory learner into accepted messages
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("wynxo/workspace.py")
+          text = path.read_text(encoding="utf-8")
+
+          def replace(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one workspace match, found {count}: {old[:100]!r}")
+              text = text.replace(old, new)
+
+          replace(
+              "from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics\nfrom .usage import TokenUsageTracker\n",
+              "from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics\nfrom .memory_learning import learnable_memories\nfrom .usage import TokenUsageTracker\n",
+          )
+
+          replace(
+          '''    @Slot(str)\n    def send(self, text):\n        was_new = not self._task_id\n        if was_new and not self._task_mode_locked:\n            self._task_mode = "chat"\n            self._task_mode_locked = True\n            self._emit_mode()\n        super().send(text)\n        if was_new and self._task_id:\n            self._persist_task_mode()\n            self._persist_plan()\n            self.modeChanged.emit()\n''',
+          '''    def _learn_user_memory(self, text: str) -> int:\n        """Quietly persist high-confidence durable facts from an accepted message.\n\n        This path is deliberately independent of model tool calling. A small or\n        tool-less local model should still remember a preferred name or a stable\n        repo convention. The Markdown memory file remains the source of truth,\n        and its normal dedupe/size/privacy rules still apply.\n        """\n        if not self._memory_enabled:\n            return 0\n        stored = 0\n        for candidate in learnable_memories(text, self._working_directory):\n            try:\n                result = self.memory.remember(\n                    candidate["note"], candidate["scope"], self._working_directory)\n            except (OSError, ValueError):\n                continue\n            stored += int(bool(result.get("stored")))\n        if stored:\n            self.memoryChanged.emit()\n        return stored\n\n    @Slot(str)\n    def send(self, text):\n        # Learn only messages the base controller would actually accept. Never\n        # turn an offline draft, an empty submit or a click while busy into\n        # durable profile data. Learning happens before the run starts so the\n        # same turn can benefit from the freshly updated memory if useful.\n        accepted_text = str(text).strip()\n        accepted = bool(accepted_text and not self._busy and not self._connecting and self._online)\n        if accepted:\n            self._learn_user_memory(accepted_text)\n\n        was_new = not self._task_id\n        if was_new and not self._task_mode_locked:\n            self._task_mode = "chat"\n            self._task_mode_locked = True\n            self._emit_mode()\n        super().send(text)\n        if was_new and self._task_id:\n            self._persist_task_mode()\n            self._persist_plan()\n            self.modeChanged.emit()\n''')
+
+          path.write_text(text, encoding="utf-8")
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          git config user.name "wynxo-ci"
+          git config user.email "318229878+wynxo@users.noreply.github.com"
+          git rm .github/workflows/apply-auto-memory.yml
+          git add wynxo/workspace.py
+          git diff --cached --check
+          git commit -m "Learn durable memory independently of the model"
+          git push origin HEAD:work/finish-astra-gui-core
