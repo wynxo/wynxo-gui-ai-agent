@@ -98,7 +98,7 @@ Item {
 
             Text {
                 visible: usageButton.displayedRate > 0 && !root.compact
-                text: usageButton.displayedRate.toFixed(1) + " tok/s"
+                text: usageButton.displayedRate.toFixed(1) + " tokens/s"
                 color: bridge && bridge.busy ? Theme.textSecondary : Theme.textMuted
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.micro
@@ -168,7 +168,7 @@ Item {
                                     enabled: !Theme.reducedMotion
                                     NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
                                 }
-                                text: animatedRate > 0 ? animatedRate.toFixed(1) + " tok/s" : "— tok/s"
+                                text: animatedRate > 0 ? animatedRate.toFixed(1) + " tokens/s" : "— tokens/s"
                                 color: bridge && bridge.busy ? Theme.accent : Theme.textSecondary
                                 font.family: Theme.monoFamily
                                 font.pixelSize: Theme.label
@@ -237,7 +237,7 @@ Item {
 
                                 ToolTip.visible: statHover.hovered
                                 ToolTip.text: (stat.bucketData.runs || 0) + " model run" + ((stat.bucketData.runs || 0) === 1 ? "" : "s")
-                                              + (stat.bucketData.averageRate > 0 ? " · avg " + Number(stat.bucketData.averageRate).toFixed(1) + " tok/s" : "")
+                                              + (stat.bucketData.averageRate > 0 ? " · avg " + Number(stat.bucketData.averageRate).toFixed(1) + " tokens/s" : "")
                             }
                         }
                     }
