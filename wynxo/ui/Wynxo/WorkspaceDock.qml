@@ -60,7 +60,10 @@ Item {
     function openFileNow(path) {
         if (!dock || !path) return;
         planSelected = false;
-        dock.openFile(path);
+        // The backend is the final data-loss boundary. A programmatic caller
+        // can make the buffer dirty between the UI check above and this call,
+        // so reveal/select only after it explicitly accepts the transition.
+        if (!dock.openFile(path)) return;
         dock.revealFile(path);
     }
 
