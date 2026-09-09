@@ -1,0 +1,40 @@
+name: Explain automatic memory
+
+on:
+  push:
+    branches:
+      - work/finish-astra-gui-core
+    paths:
+      - .github/workflows/apply-memory-panel-copy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+      - name: Make automatic memory transparent
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("wynxo/ui/Wynxo/MemoryPanel.qml")
+          text = path.read_text(encoding="utf-8")
+          old = '''        Text {\n            Layout.fillWidth: true\n            Layout.leftMargin: Theme.s3\n            Layout.rightMargin: Theme.s3\n            Layout.bottomMargin: Theme.s3\n            text: bridge ? bridge.memoryPath : ""\n            color: Theme.textDisabled\n            font.family: Theme.monoFamily; font.pixelSize: Theme.micro\n            elide: Text.ElideLeft\n        }\n'''
+          new = '''        Text {\n            Layout.fillWidth: true\n            Layout.leftMargin: Theme.s3\n            Layout.rightMargin: Theme.s3\n            Layout.bottomMargin: Theme.s2\n            text: root.memoryOn\n                ? "Stable preferences can be learned automatically. Secrets and temporary details are skipped."\n                : "Automatic learning is paused while Memory is off."\n            color: Theme.textMuted\n            font.family: Theme.sansFamily; font.pixelSize: Theme.micro\n            wrapMode: Text.WordWrap\n        }\n\n        Text {\n            Layout.fillWidth: true\n            Layout.leftMargin: Theme.s3\n            Layout.rightMargin: Theme.s3\n            Layout.bottomMargin: Theme.s3\n            text: bridge ? bridge.memoryPath : ""\n            color: Theme.textDisabled\n            font.family: Theme.monoFamily; font.pixelSize: Theme.micro\n            elide: Text.ElideLeft\n        }\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one memory path block, found {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          git config user.name "wynxo-ci"
+          git config user.email "318229878+wynxo@users.noreply.github.com"
+          git rm .github/workflows/apply-memory-panel-copy.yml
+          git add wynxo/ui/Wynxo/MemoryPanel.qml
+          git diff --cached --check
+          git commit -m "Explain automatic memory in the Memory panel"
+          git push origin HEAD:work/finish-astra-gui-core
