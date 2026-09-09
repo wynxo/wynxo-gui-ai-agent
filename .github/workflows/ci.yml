@@ -146,17 +146,21 @@ jobs:
         run: python -m pip install .
       - name: Render the interface
         run: python -m wynxo --snapshot artifacts/screenshots
-      - name: Render token usage detail
-        run: python tests/token_usage_snapshot.py artifacts/token-usage.png
+      - name: Render token usage states
+        run: |
+          python tests/token_usage_snapshot.py artifacts/token-usage-live.png live
+          python tests/token_usage_snapshot.py artifacts/token-usage-idle.png idle
       - name: Check every scene rendered
         run: |
           count=$(ls artifacts/screenshots/*.png | wc -l)
           expected=$(python -c "from wynxo.demo import SCENES; print(len(SCENES))")
           test "$count" -eq "$expected" || { echo "expected $expected screenshots, got $count"; exit 1; }
-          test -s artifacts/token-usage.png || { echo "token usage snapshot missing"; exit 1; }
+          test -s artifacts/token-usage-live.png || { echo "live token usage snapshot missing"; exit 1; }
+          test -s artifacts/token-usage-idle.png || { echo "idle token usage snapshot missing"; exit 1; }
       - uses: actions/upload-artifact@v4
         with:
           name: wynxo-screenshots
           path: |
             artifacts/screenshots
-            artifacts/token-usage.png
+            artifacts/token-usage-live.png
+            artifacts/token-usage-idle.png
