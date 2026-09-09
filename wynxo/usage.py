@@ -24,13 +24,34 @@ def _blank_metrics() -> dict:
     }
 
 
+def _blank_bucket() -> dict:
+    return {
+        "tokens": 0,
+        "outputTokens": 0,
+        "promptTokens": 0,
+        "cachedTokens": 0,
+        "runs": 0,
+        "averageRate": 0.0,
+    }
+
+
+def _blank_summary() -> dict:
+    return {name: _blank_bucket() for name in ("today", "week", "month", "allTime")}
+
+
 class TokenUsageTracker:
-    """One controller's live counter backed by a Store usage ledger."""
+    """One controller's live counter backed by a Store usage ledger.
+
+    Small controller/unit-test stores predate the usage ledger. Live accounting
+    is still useful with those stores, so persistence is feature-detected rather
+    than made a hard requirement of the controller's storage interface.
+    """
 
     def __init__(self, store, clock=None):
         self.store = store
         self._clock = clock or time.monotonic
-        self._summary = self.store.token_usage_summary()
+        summary = getattr(self.store, "token_usage_summary", None)
+        self._summary = summary() if callable(summary) else _blank_summary()
         self.reset()
 
     def reset(self) -> None:
@@ -113,9 +134,12 @@ class TokenUsageTracker:
         if self._recorded:
             return False
         self._recorded = True
-        stored = self.store.record_token_usage(
-            conversation_id, model, self._metrics, created_at=created_at
-        )
-        if stored:
-            self._summary = self.store.token_usage_summary()
+        record = getattr(self.store, "record_token_usage", None)
+        summary = getattr(self.store, "token_usage_summary", None)
+        if not callable(record):
+            return False
+        stored = bool(record(conversation_id, model, self._metrics,
+                             created_at=created_at))
+        if stored and callable(summary):
+            self._summary = summary()
         return stored
