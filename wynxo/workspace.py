@@ -216,6 +216,7 @@ class WorkspaceController(Controller):
         engine_module.validate_endpoint = validate_workspace_endpoint
         super().__init__(*args, **kwargs)
         self._usage = TokenUsageTracker(self.store)
+        self._workspace_shutdown = False
         self._project_instructions_summary = project_instructions.summary(self._working_directory)
         self._context_omitted_turns = 0
         # Draft text is cheap state worth surviving a restart, but attachments are
@@ -253,6 +254,7 @@ class WorkspaceController(Controller):
         """Restore passive UI state only; never resume a model/tool run."""
         task_id = str(self.store.get_setting(self.LAST_TASK_KEY, "") or "")
         if task_id and self.store.get_conversation(task_id):
+            self._recover_interrupted_plan(task_id)
             self.openTask(task_id)
             return
         if task_id:
@@ -307,9 +309,17 @@ class WorkspaceController(Controller):
         return result
 
     def _saved_plan(self, task_id: str) -> list[dict]:
-        plan = self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))
-        # A process restart cannot prove an old in-progress action completed.
-        # Reopen it as pending instead of presenting stale work as still running.
+        """Read persisted plan state without pretending a normal read is a restart."""
+        return self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))
+
+    def _recover_interrupted_plan(self, task_id: str) -> None:
+        """On process startup only, stale running steps become pending.
+
+        A restart cannot prove an in-progress action completed, but opening,
+        duplicating or inspecting a task during the same process must preserve
+        its live status exactly as stored.
+        """
+        plan = self._saved_plan(task_id)
         interrupted = False
         for step in plan:
             if step["status"] == "in_progress":
@@ -317,7 +327,6 @@ class WorkspaceController(Controller):
                 interrupted = True
         if interrupted:
             self.store.set_setting(self._plan_key(task_id), plan)
-        return plan
 
     def _persist_task_mode(self, task_id: str | None = None) -> None:
         target = str(task_id or self._task_id or "")
@@ -797,9 +806,18 @@ class WorkspaceController(Controller):
             self._persist_task_mode()
             self._emit_mode()
     def shutdown(self):
+        """Stop the workspace exactly once, even when a host calls twice.
+
+        Snapshot/demo controllers are rotated during rendering, so an older
+        controller may already have closed its store when process cleanup calls
+        shutdown again. Production close paths also benefit from idempotence.
+        """
+        if getattr(self, "_workspace_shutdown", False):
+            return
         if hasattr(self, "_draft_persist_timer"):
             self._draft_persist_timer.stop()
         self._persist_current_draft()
         self._set_last_task(self._task_id)
+        self._workspace_shutdown = True
         super().shutdown()
 
