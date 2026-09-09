@@ -80,6 +80,18 @@ def test_period_buckets_use_local_day_week_month_and_lifetime(tmp_path):
     store.close()
 
 
+def test_all_time_does_not_include_usage_from_the_future(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    now = datetime(2026, 9, 9, 12, 0, 0).timestamp()
+    store.record_token_usage("past", "model", metrics(10, 10), created_at=now - 60)
+    store.record_token_usage("future", "model", metrics(900, 100), created_at=now + 60)
+
+    summary = store.token_usage_summary(now=now)
+    assert summary["allTime"]["tokens"] == 20
+    assert summary["allTime"]["runs"] == 1
+    store.close()
+
+
 def test_finalize_persists_only_exact_metrics_once(tmp_path):
     store = Store(tmp_path / "history.sqlite3")
     tracker = TokenUsageTracker(store, clock=lambda: 100.0)
@@ -110,3 +122,16 @@ def test_usage_survives_conversation_deletion(tmp_path):
     assert store.get_conversation(conversation["id"]) is None
     assert store.token_usage_summary()["allTime"]["tokens"] == 20
     store.close()
+
+
+def test_minimal_store_keeps_live_usage_without_requiring_persistence():
+    class MinimalStore:
+        pass
+
+    tracker = TokenUsageTracker(MinimalStore(), clock=lambda: 10.0)
+    tracker.stream("This still gets a live counter without a database ledger.")
+    assert tracker.live_output_tokens > 0
+    assert tracker.summary["allTime"]["tokens"] == 0
+    tracker.exact_metrics(metrics(9, 11, rate=3.0))
+    assert tracker.live_output_tokens == 9
+    assert tracker.finalize("", "") is False
