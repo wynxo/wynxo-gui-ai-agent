@@ -14,6 +14,20 @@ jobs:
         run: cmake --build build/native --parallel 2
       - name: Test native core
         run: ctest --test-dir build/native --output-on-failure
+      - name: Test Python to C++ bridge
+        env:
+          WYNXO_NATIVE_CORE: ${{ github.workspace }}/build/native/libwynxo_native_core.so
+        run: |
+          python3 - <<'PY'
+          from wynxo.native_core import native_core
+          assert native_core.available, native_core.error
+          assert native_core.version == "0.1.0"
+          assert native_core.normalize_permission_mode("garbage") == "safe"
+          assert native_core.needs_confirmation("click", "safe")
+          assert not native_core.needs_confirmation("move_pointer", "safe")
+          assert native_core.command_is_destructive("git reset --hard HEAD~1")
+          print("python -> C++ native bridge: ok")
+          PY
 
   linux:
     runs-on: ubuntu-24.04
