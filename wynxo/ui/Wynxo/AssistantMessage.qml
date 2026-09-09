@@ -155,11 +155,10 @@ Item {
         Row {
             spacing: 0
             height: 26
-            // Keep the newest response's controls gently visible. Older turns
-            // stay content-first and reveal actions on hover. This removes the
-            // "hidden affordance" feel without creating a toolbar under every
-            // response in a long conversation.
-            opacity: root.streaming ? 0 : (hover.hovered ? 1 : root.latest ? 0.62 : 0)
+            // Keep the newest response's controls clearly discoverable without
+            // turning every historical answer into a permanent toolbar. Older
+            // turns stay content-first and reveal actions on hover.
+            opacity: root.streaming ? 0 : (hover.hovered ? 1 : root.latest ? 0.78 : 0)
             visible: !root.streaming && root.body.length > 0 && (root.latest || hover.hovered)
             Behavior on opacity { enabled: !Theme.reducedMotion; NumberAnimation { duration: Theme.fast } }
             IconButton {
@@ -182,7 +181,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 leftPadding: Theme.s2
                 visible: root.latest && bridge && bridge.runMetrics.hasData
-                text: bridge ? bridge.runMetrics.rate.toFixed(1) + " tok/s · "
+                text: bridge ? bridge.runMetrics.rate.toFixed(1) + " tokens/s · "
                              + bridge.runMetrics.tokens + " out · "
                              + bridge.runMetrics.totalSeconds.toFixed(1) + "s" : ""
                 color: Theme.textMuted
