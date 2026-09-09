@@ -13,6 +13,7 @@ import QtQuick.Layouts
 */
 Item {
     id: root
+    signal revealDirectory(string path)
     readonly property var dock: bridge ? bridge.workspaceDock : null
     readonly property bool live: !!(dock && dock.terminalRunning)
 
@@ -57,6 +58,13 @@ Item {
             detailFont: "mono"
             detailElide: Text.ElideLeft
 
+            IconButton {
+                width: 28; height: 28; iconSize: 12
+                iconName: "folderOpen"
+                tooltip: "Show this folder in Files"
+                enabled: !!(root.dock && root.dock.terminalDirectory)
+                onClicked: if (root.dock) root.revealDirectory(root.dock.terminalDirectory)
+            }
             IconButton {
                 width: 28; height: 28; iconSize: 12
                 iconName: "stop"
