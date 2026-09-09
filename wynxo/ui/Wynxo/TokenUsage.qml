@@ -113,17 +113,17 @@ Item {
         Popover {
             id: usagePopover
             width: 352
+            height: 324
             preferredEdge: "above"
             anchorX: usageButton.width - width
             title: "Token usage"
 
             Item {
-                width: 320
-                height: usageContent.implicitHeight
+                anchors.fill: parent
 
                 ColumnLayout {
                     id: usageContent
-                    width: parent.width
+                    anchors.fill: parent
                     spacing: Theme.s3
 
                     Rectangle {
@@ -201,8 +201,8 @@ Item {
                                 Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
                                 HoverHandler { id: statHover }
 
-                                property var data: root.bucket(modelData.key)
-                                property real animatedTotal: Number(data.tokens || 0)
+                                property var bucketData: root.bucket(modelData.key)
+                                property real animatedTotal: Number(bucketData.tokens || 0)
                                 Behavior on animatedTotal {
                                     enabled: !Theme.reducedMotion
                                     NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
@@ -227,8 +227,8 @@ Item {
                                         font.weight: Font.DemiBold
                                     }
                                     Text {
-                                        text: root.formatCount(stat.data.outputTokens || 0) + " out · "
-                                              + root.formatCount(stat.data.promptTokens || 0) + " in"
+                                        text: root.formatCount(stat.bucketData.outputTokens || 0) + " out · "
+                                              + root.formatCount(stat.bucketData.promptTokens || 0) + " in"
                                         color: Theme.textMuted
                                         font.family: Theme.monoFamily
                                         font.pixelSize: Theme.micro
@@ -236,8 +236,8 @@ Item {
                                 }
 
                                 ToolTip.visible: statHover.hovered
-                                ToolTip.text: (stat.data.runs || 0) + " model run" + ((stat.data.runs || 0) === 1 ? "" : "s")
-                                              + (stat.data.averageRate > 0 ? " · avg " + Number(stat.data.averageRate).toFixed(1) + " tok/s" : "")
+                                ToolTip.text: (stat.bucketData.runs || 0) + " model run" + ((stat.bucketData.runs || 0) === 1 ? "" : "s")
+                                              + (stat.bucketData.averageRate > 0 ? " · avg " + Number(stat.bucketData.averageRate).toFixed(1) + " tok/s" : "")
                             }
                         }
                     }
