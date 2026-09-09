@@ -126,6 +126,7 @@ Item {
             preferredEdge: "above"
             anchorX: usageButton.width - width
             title: "Token usage"
+            onAboutToShow: if (bridge) bridge.refreshTokenUsage()
 
             Item {
                 anchors.fill: parent
