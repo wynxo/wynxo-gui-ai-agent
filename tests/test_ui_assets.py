@@ -236,6 +236,16 @@ def test_anchored_overlays_position_themselves_repeatably():
         assert "anchorX:" in text, f"{name} positions an overlay without anchorX"
 
 
+def test_explicitly_sized_popovers_place_using_their_rendered_height():
+    """An explicit `height` may be much larger than implicitHeight. Edge
+    placement must move the complete rendered popup, not only its implicit
+    content estimate, or bottom-anchored detail surfaces get clipped."""
+    text = (MODULE / "Popover.qml").read_text(encoding="utf-8")
+    assert "var popupHeight = Math.max(Number(height) || 0, Number(implicitHeight) || 0);" in text
+    assert "-popupHeight - gap" in text
+    assert "below.y + popupHeight" in text
+
+
 def test_the_composer_keeps_drag_and_drop_and_keyboard_send():
     text = (MODULE / "Composer.qml").read_text(encoding="utf-8")
     for feature in ("DropArea", "attachPath", "Keys.onReturnPressed",
