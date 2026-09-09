@@ -184,31 +184,95 @@ class Memory:
                 "path": str(self.path),
                 "exists": self.exists()}
 
-    def prompt(self, project: str = "") -> str:
-        """The block injected into a run's system prompt, or "" when empty.
+    def prompt(self, project: str = "", query: str = "") -> str:
+        """Build the bounded long-term-memory block for one model turn.
 
-        Only the global section and the current project's section are included.
-        Notes from other projects stay out: they are the most common source of
-        a model confidently applying the wrong repository's conventions.
+        Small memories are returned exactly as before. Once the notes no longer
+        fit comfortably, the budget is spent deliberately: identity facts stay,
+        the current project's notes are strongly preferred, lexical overlap with
+        the user's current request matters, and recent notes break ties. Notes
+        from other projects never enter the candidate set.
         """
         document = self.document()
         wanted = [GLOBAL_SECTION]
         if str(project or "").strip():
             wanted.append(PROJECT_PREFIX + str(project).strip())
-        blocks, used = [], 0
+
+        sections = []
+        total_chars = 0
         for title in wanted:
             section = document.section(title)
-            notes = section.notes if section else []
-            if not notes:
+            notes = list(section.notes) if section else []
+            if notes:
+                sections.append((title, notes))
+                total_chars += sum(len(note) + 3 for note in notes)
+        if not sections:
+            return ""
+
+        selected: dict[str, set[int]] = {title: set(range(len(notes))) for title, notes in sections}
+        omitted = False
+
+        if total_chars > PROMPT_BUDGET:
+            omitted = True
+            # Unicode word tokens keep Russian/German/user identifiers useful
+            # without pulling in a heavyweight embedding dependency. Very common
+            # glue words are ignored so one meaningful overlap outranks noise.
+            stop = {
+                "the", "and", "for", "with", "this", "that", "from", "your", "user",
+                "use", "uses", "using", "into", "about", "what", "when", "where",
+                "как", "что", "это", "для", "или", "при", "его", "она", "они",
+                "der", "die", "das", "und", "mit", "für", "von", "ist", "ein", "eine",
+            }
+
+            def terms(value: str) -> set[str]:
+                return {word for word in re.findall(r"\w{3,}", str(value).casefold(), re.UNICODE)
+                        if word not in stop}
+
+            query_terms = terms(query)
+            identity_prefixes = (
+                "user prefers to be called ", "user's preferred name is ",
+                "user's name is ",
+            )
+            candidates = []
+            for section_order, (title, notes) in enumerate(sections):
+                is_project = title.startswith(PROJECT_PREFIX)
+                count = max(1, len(notes))
+                for index, note in enumerate(notes):
+                    note_terms = terms(note)
+                    overlap = len(query_terms & note_terms)
+                    score = overlap * 80.0
+                    if note.casefold().startswith(identity_prefixes):
+                        score += 1000.0
+                    if is_project:
+                        score += 320.0
+                    # Newer facts win otherwise-equal ties without overpowering
+                    # actual relevance or current-project scope.
+                    score += (index + 1) / count * 8.0
+                    candidates.append((score, section_order, index, title, note))
+
+            candidates.sort(key=lambda item: (-item[0], -item[2], item[1]))
+            selected = {title: set() for title, _ in sections}
+            used = 0
+            for _score, _section_order, index, title, note in candidates:
+                cost = len(note) + 3
+                if used + cost > PROMPT_BUDGET:
+                    continue
+                selected[title].add(index)
+                used += cost
+
+        blocks = []
+        for title, notes in sections:
+            chosen = selected.get(title, set())
+            if not chosen:
                 continue
-            lines = [f"### {section.title}"]
-            for note in notes:
-                if used + len(note) > PROMPT_BUDGET:
-                    lines.append("- (older notes omitted; memory.md is full)")
-                    break
-                used += len(note)
-                lines.append(f"- {note}")
+            lines = [f"### {title}"]
+            for index, note in enumerate(notes):
+                if index in chosen:
+                    lines.append(f"- {note}")
             blocks.append("\n".join(lines))
+
+        if omitted and blocks:
+            blocks.append("(Other stored memories were omitted because they were less relevant to this turn.)")
         if not blocks:
             return ""
         return ("Long-term memory. These notes were saved in earlier tasks and are "

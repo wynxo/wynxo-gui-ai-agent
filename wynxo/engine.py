@@ -725,7 +725,13 @@ class AgentEngine:
                            "mention are relative to it." +
                            (" run_command defaults to this working directory." if tools_enabled else ""))
             if self.memory is not None:
-                remembered = self.memory.prompt(project)
+                # Recall against the latest actual user request, not an older
+                # tool result or screenshot. Memory itself still guarantees that
+                # only global + current-project notes are eligible.
+                memory_query = next((str(item.get("content", "")) for item in reversed(history)
+                                     if item.get("role") == "user"
+                                     and not str(item.get("content", "")).startswith("Current desktop screenshot (")), "")
+                remembered = self.memory.prompt(project, memory_query)
                 if remembered:
                     system += "\n\n" + remembered
             if not tools_allowed:
