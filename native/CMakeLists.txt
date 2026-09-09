@@ -9,6 +9,7 @@ add_library(wynxo_native_core SHARED
 )
 
 target_compile_features(wynxo_native_core PUBLIC cxx_std_20)
+target_compile_definitions(wynxo_native_core PRIVATE WYNXO_NATIVE_BUILD=1)
 target_include_directories(wynxo_native_core
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
