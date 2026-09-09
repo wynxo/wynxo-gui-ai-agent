@@ -60,6 +60,43 @@ def test_a_listing_is_bounded(tmp_path, monkeypatch):
     assert entries[-1].get("placeholder") is True
 
 
+def test_native_scan_metadata_never_controls_the_ui_path(project, monkeypatch):
+    class NativeStub:
+        available = True
+
+        @staticmethod
+        def scan_directory(directory, max_entries):
+            assert Path(directory) == project.resolve()
+            return {
+                "entries": [{
+                    "name": "README.md",
+                    "path": "/etc/passwd",       # deliberately untrusted
+                    "isDir": False,
+                    "size": 10,
+                    "link": False,
+                }],
+                "truncated": False,
+            }
+
+    monkeypatch.setattr(files, "native_core", NativeStub())
+    listing = files.list_directory(project)
+    assert listing[0]["path"] == str(project.resolve() / "README.md")
+    assert listing[0]["path"] != "/etc/passwd"
+
+
+def test_native_scan_failure_falls_back_to_python(project, monkeypatch):
+    class BrokenNative:
+        available = True
+
+        @staticmethod
+        def scan_directory(directory, max_entries):
+            raise RuntimeError("temporary native scanner failure")
+
+    monkeypatch.setattr(files, "native_core", BrokenNative())
+    names = [entry["name"] for entry in files.list_directory(project)]
+    assert names == ["src", "binary.bin", "README.md"]
+
+
 # ------------------------------------------------------------- containment
 def test_a_path_outside_the_project_is_refused(project):
     with pytest.raises(ValueError):
