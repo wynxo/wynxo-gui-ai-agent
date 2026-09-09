@@ -1,0 +1,121 @@
+"""Live token animation state plus exact persisted usage accounting.
+
+Ollama reports exact token counts at the end of each model pass. The UI wants
+feedback while text is still streaming, so the tracker estimates only the
+currently-open pass from visible text, then reconciles to Ollama's exact count
+as soon as metrics arrive. Only exact metrics are ever written to history.
+"""
+from __future__ import annotations
+
+import copy
+import time
+
+from . import context as ctx
+
+
+def _blank_metrics() -> dict:
+    return {
+        "tokens": 0,
+        "prompt_tokens": 0,
+        "cached_prompt_tokens": 0,
+        "load_ms": 0.0,
+        "total_ms": 0.0,
+        "tokens_per_second": 0.0,
+    }
+
+
+class TokenUsageTracker:
+    """One controller's live counter backed by a Store usage ledger."""
+
+    def __init__(self, store, clock=None):
+        self.store = store
+        self._clock = clock or time.monotonic
+        self._summary = self.store.token_usage_summary()
+        self.reset()
+
+    def reset(self) -> None:
+        self.live_output_tokens = 0
+        self.live_rate = 0.0
+        self._segment_text = ""
+        self._segment_started = 0.0
+        self._exact_base = 0
+        self._weighted_rate = 0.0
+        self._metrics = _blank_metrics()
+        self._recorded = False
+
+    @property
+    def metrics(self) -> dict:
+        return dict(self._metrics)
+
+    @property
+    def summary(self) -> dict:
+        return copy.deepcopy(self._summary)
+
+    def stream(self, text: str) -> bool:
+        """Advance the provisional count from text that became visible.
+
+        ``estimate_tokens`` is deliberately kept out of persistence. Chunk
+        boundaries are transport details and can split a model token; measuring
+        the full open segment avoids accumulating a rounding error per chunk.
+        """
+        text = str(text or "")
+        if not text:
+            return False
+        now = float(self._clock())
+        if not self._segment_started:
+            self._segment_started = now
+        before_tokens = self.live_output_tokens
+        before_rate = self.live_rate
+        self._segment_text += text
+        estimate = max(0, int(ctx.estimate_tokens(self._segment_text)))
+        self.live_output_tokens = self._exact_base + estimate
+        elapsed = max(0.0, now - self._segment_started)
+        if estimate and elapsed >= 0.12:
+            self.live_rate = estimate / elapsed
+        return (before_tokens != self.live_output_tokens
+                or abs(before_rate - self.live_rate) >= 0.05)
+
+    def exact_metrics(self, event: dict) -> bool:
+        """Reconcile the current pass to Ollama's exact final metrics."""
+        output = max(0, int(event.get("tokens", 0) or 0))
+        prompt = max(0, int(event.get("prompt_tokens", 0) or 0))
+        cached = max(0, int(event.get("cached_prompt_tokens", 0) or 0))
+        load_ms = max(0.0, float(event.get("load_ms", 0.0) or 0.0))
+        total_ms = max(0.0, float(event.get("total_ms", 0.0) or 0.0))
+        raw_rate = event.get("tokens_per_second", 0.0)
+        rate = max(0.0, float(raw_rate)) if isinstance(raw_rate, (int, float)) else 0.0
+
+        self._metrics["tokens"] += output
+        self._metrics["prompt_tokens"] += prompt
+        self._metrics["cached_prompt_tokens"] += cached
+        self._metrics["load_ms"] += load_ms
+        self._metrics["total_ms"] += total_ms
+        if output and rate:
+            self._weighted_rate += rate * output
+        total_output = int(self._metrics["tokens"])
+        self._metrics["tokens_per_second"] = (
+            self._weighted_rate / total_output if total_output else rate
+        )
+
+        before_tokens = self.live_output_tokens
+        before_rate = self.live_rate
+        self._exact_base = total_output
+        self.live_output_tokens = total_output
+        self.live_rate = rate or self._metrics["tokens_per_second"]
+        self._segment_text = ""
+        self._segment_started = 0.0
+        return (before_tokens != self.live_output_tokens
+                or abs(before_rate - self.live_rate) >= 0.05)
+
+    def finalize(self, conversation_id: str, model: str,
+                 created_at: float | None = None) -> bool:
+        """Write this run once, then refresh every period shown by the UI."""
+        if self._recorded:
+            return False
+        self._recorded = True
+        stored = self.store.record_token_usage(
+            conversation_id, model, self._metrics, created_at=created_at
+        )
+        if stored:
+            self._summary = self.store.token_usage_summary()
+        return stored
