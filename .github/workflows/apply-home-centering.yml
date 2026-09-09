@@ -1,0 +1,59 @@
+name: Apply explicit homescreen centering
+
+on:
+  push:
+    branches:
+      - work/finish-astra-gui-core
+    paths:
+      - .github/workflows/apply-home-centering.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+      - name: Replace layout hints with explicit centering lanes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("wynxo/ui/Main.qml")
+          text = path.read_text(encoding="utf-8")
+
+          def replace(old, new):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one Main.qml block, found {count}: {old[:80]!r}")
+              text = text.replace(old, new)
+
+          replace(
+          '''                TaskStart {\n                    Layout.fillWidth: false\n                    Layout.preferredWidth: contentColumn.centredReadingWidth\n                    Layout.alignment: Qt.AlignHCenter\n                    Layout.bottomMargin: Theme.s2\n                    visible: window.homeMode\n                }\n''',
+          '''                Item {\n                    Layout.fillWidth: true\n                    Layout.preferredHeight: visible ? homeIntro.implicitHeight + Theme.s2 : 0\n                    visible: window.homeMode\n\n                    TaskStart {\n                        id: homeIntro\n                        width: Math.min(Theme.readingWidth, parent.width)\n                        anchors.horizontalCenter: parent.horizontalCenter\n                    }\n                }\n''')
+
+          replace(
+          '''                Composer {\n                    id: composer\n                    objectName: "mainComposer"\n                    Layout.fillWidth: false\n                    Layout.preferredWidth: contentColumn.centredReadingWidth\n                    Layout.alignment: Qt.AlignHCenter\n                    onSubmitted: function(text) { if (bridge) bridge.send(text); }\n                    onOpenModelManager: models.open()\n                }\n''',
+          '''                Item {\n                    id: composerLane\n                    Layout.fillWidth: true\n                    Layout.preferredHeight: composer.implicitHeight\n\n                    Composer {\n                        id: composer\n                        objectName: "mainComposer"\n                        width: Math.min(Theme.readingWidth, parent.width)\n                        anchors.horizontalCenter: parent.horizontalCenter\n                        onSubmitted: function(text) { if (bridge) bridge.send(text); }\n                        onOpenModelManager: models.open()\n                    }\n                }\n''')
+
+          replace(
+          '''                TaskStarters {\n                    Layout.fillWidth: false\n                    Layout.preferredWidth: contentColumn.centredReadingWidth\n                    Layout.alignment: Qt.AlignHCenter\n                    Layout.topMargin: Theme.s1\n                    visible: window.homeMode\n                    onStarterChosen: function(prompt) { composer.insert(prompt); }\n                    onCommandInvoked: function(action) { window.runCommand(action); }\n                    onModeRequested: function(mode) {\n                        if (bridge && !bridge.connecting) bridge.setTaskMode(mode);\n                    }\n                }\n''',
+          '''                Item {\n                    Layout.fillWidth: true\n                    Layout.preferredHeight: visible ? homeStarters.implicitHeight + Theme.s1 : 0\n                    visible: window.homeMode\n\n                    TaskStarters {\n                        id: homeStarters\n                        width: Math.min(Theme.readingWidth, parent.width)\n                        anchors.horizontalCenter: parent.horizontalCenter\n                        anchors.top: parent.top\n                        anchors.topMargin: Theme.s1\n                        onStarterChosen: function(prompt) { composer.insert(prompt); }\n                        onCommandInvoked: function(action) { window.runCommand(action); }\n                        onModeRequested: function(mode) {\n                            if (bridge && !bridge.connecting) bridge.setTaskMode(mode);\n                        }\n                    }\n                }\n''')
+
+          path.write_text(text, encoding="utf-8")
+
+          test = Path("tests/test_home_layout.py")
+          test.write_text('''"""The fresh-task reading block must stay truly centred."""\nfrom pathlib import Path\n\n\nMAIN = Path(__file__).resolve().parents[1] / "wynxo" / "ui" / "Main.qml"\n\n\ndef test_home_primary_surfaces_use_explicit_centering_lanes():\n    text = MAIN.read_text(encoding="utf-8")\n\n    # Qt Quick Layouts may clamp a preferred-width child yet still place its\n    # layout cell at the left edge. The rendered homescreen exposed exactly\n    # that failure. The primary surfaces therefore live in full-width lanes and\n    # centre themselves with anchors, outside Layout's horizontal placement.\n    for identifier in ("homeIntro", "composer", "homeStarters"):\n        marker = f"id: {identifier}"\n        assert marker in text, identifier\n        block = text.split(marker, 1)[1].split("}", 1)[0]\n        assert "anchors.horizontalCenter: parent.horizontalCenter" in block, identifier\n        assert "width: Math.min(Theme.readingWidth, parent.width)" in block, identifier\n\n    assert "id: composerLane" in text\n    lane = text.split("id: composerLane", 1)[1].split("Composer {", 1)[0]\n    assert "Layout.fillWidth: true" in lane\n\n\ndef test_composer_does_not_rely_on_layout_alignment_for_centering():\n    text = MAIN.read_text(encoding="utf-8")\n    composer = text.split("id: composer", 1)[1].split("onSubmitted:", 1)[0]\n    assert "Layout.alignment: Qt.AlignHCenter" not in composer\n    assert "Layout.preferredWidth" not in composer\n    assert "Layout.maximumWidth" not in composer\n    assert "anchors.horizontalCenter: parent.horizontalCenter" in composer\n''', encoding="utf-8")
+          PY
+      - name: Commit explicit centering
+        run: |
+          git config user.name "wynxo-ci"
+          git config user.email "318229878+wynxo@users.noreply.github.com"
+          git add wynxo/ui/Main.qml tests/test_home_layout.py
+          git diff --cached --check
+          git commit -m "Center the homescreen composer explicitly"
+          git push origin HEAD:work/finish-astra-gui-core
