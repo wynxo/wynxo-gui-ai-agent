@@ -1,0 +1,103 @@
+name: Apply on-demand Work screen policy
+
+on:
+  push:
+    branches:
+      - work/finish-astra-gui-core
+    paths:
+      - .github/workflows/apply-work-screen-policy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+      - name: Apply Work screen policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              seen = text.count(old)
+              if seen != count:
+                  raise SystemExit(f"{path}: expected {count} matches, found {seen}: {old[:80]!r}")
+              target.write_text(text.replace(old, new), encoding="utf-8")
+
+          # Work is a local-tool mode. Screen control remains a separate opt-in
+          # capability; selecting or reopening Work must never request it.
+          replace(
+              "wynxo/workspace.py",
+              '''        self._task_mode = mode\n        self._task_mode_locked = True\n        self._emit_mode()\n        if mode == "work" and not self.desktopEnabled:\n            self.toggleDesktop()\n        return True\n''',
+              '''        self._task_mode = mode\n        self._task_mode_locked = True\n        self._emit_mode()\n        return True\n''')
+          replace(
+              "wynxo/workspace.py",
+              '''        self._set_plan(self._saved_plan(task_id), persist=False)\n        self._emit_mode()\n        if self._task_mode == "work" and not self.desktopEnabled and not self._connecting:\n            self.toggleDesktop()\n''',
+              '''        self._set_plan(self._saved_plan(task_id), persist=False)\n        self._emit_mode()\n''')
+
+          # Even when screen control is already connected, expose visual tools
+          # without eagerly reading the screen. The model asks for a screenshot
+          # only when the task actually depends on current visual state.
+          replace(
+              "wynxo/engine.py",
+              '''When local tools are available, launch applications and run commands without screen control.\nFor "open/run kcalc", use list_apps then open_app. For command-line work use run_command.\n''',
+              '''When local tools are available, launch applications and run commands without screen control.\nScreen control being available is not a reason to inspect the screen. Prefer commands and\nnonvisual tools, and call screenshot only when the current task genuinely depends on visual state.\nFor "open/run kcalc", use list_apps then open_app. For command-line work use run_command.\n''')
+          replace(
+              "wynxo/engine.py",
+              '''            if visual:\n                result = tool_result("screenshot", {}, allowed)\n                if not result.get("ok", True) or not result.get("image"):\n                    # A screenless copilot must not guess where to click.\n                    allowed = (_NONVISUAL - MEMORY_TOOLS) | memory_tools\n                    system += "\\nScreen capture failed. Visual tools are disabled; explain the screen capture error."\n                else:\n                    append_screen(result)\n''',
+              '''''')
+          replace(
+              "wynxo/engine.py",
+              '''            elif tools_enabled and not visual:\n                event("status", text="Local commands and app launching are ready. Screen control requires a connected desktop and a vision model.")\n''',
+              '''            elif tools_enabled and not visual:\n                event("status", text="Local commands and app launching are ready. Screen control requires a connected desktop and a vision model.")\n            elif visual:\n                event("status", text="Local tools are ready. Screen control is available on demand.")\n''')
+
+          # Old engine tests encoded eager capture as desired behavior. Replace
+          # those assertions and add an explicit on-demand screenshot roundtrip.
+          replace(
+              "tests/test_engine.py",
+              '''    assert desktop.calls == [("screenshot", {}), ("open_app", {"app": "paint.desktop"})]\n''',
+              '''    assert desktop.calls == [("open_app", {"app": "paint.desktop"})]\n''')
+          replace(
+              "tests/test_engine.py",
+              '''    assert any(m.get("images") == ["fakepng"] for m in second["messages"])\n''',
+              '''    assert not any(m.get("images") for m in second["messages"])\n''')
+          replace(
+              "tests/test_engine.py",
+              '''def test_screenshot_failure_removes_visual_tools():\n    client = FakeClient([response("Screen capture failed.")])\n    _, events, desktop = run(client, FakeDesktop("screenshot"))\n    assert desktop.calls == [("screenshot", {})]\n    assert "click" not in {t["function"]["name"] for t in client.requests[0]["tools"]}\n    assert next(e for e in events if e["type"] == "tool_end")["result"]["ok"] is False\n\n\n''',
+              '''def test_screen_access_is_offered_without_eager_capture():\n    client = FakeClient([response("No screen needed.")])\n    _, events, desktop = run(client)\n    offered = {t["function"]["name"] for t in client.requests[0]["tools"]}\n    assert {"screenshot", "click", "run_command"} <= offered\n    assert desktop.calls == []\n    assert not any(e.get("type") == "tool_start" and e.get("name") == "screenshot" for e in events)\n\n\ndef test_screenshot_is_captured_only_when_the_model_requests_it():\n    client = FakeClient([response(calls=[("screenshot", {})]), response("I can see it now.")])\n    _, _, desktop = run(client)\n    assert desktop.calls == [("screenshot", {})]\n    assert any(m.get("images") == ["fakepng"] for m in client.requests[1]["messages"])\n\n\n''')
+          replace(
+              "tests/test_engine.py",
+              '''    assert desktop.calls == [("screenshot", {})]\n    assert json.loads(next(m for m in client.requests[1]["messages"] if m["role"] == "tool")["content"])["ok"] is False\n''',
+              '''    assert desktop.calls == []\n    assert json.loads(next(m for m in client.requests[1]["messages"] if m["role"] == "tool")["content"])["ok"] is False\n''')
+
+          # Controller-level regressions: Work itself must never connect screen
+          # control, including when reopening a saved Work task.
+          replace(
+              "tests/test_workspace_modes.py",
+              '''    bridge.shutdown()\n\n\n# ------------------------------------------------------- chat is only chat\n''',
+              '''    bridge.shutdown()\n\n\ndef test_choosing_work_does_not_enable_screen_control(tmp_path):\n    bridge = controller(tmp_path, connected=False)\n    assert bridge.desktopEnabled is False\n    assert bridge.setTaskMode("work") is True\n    assert bridge.taskMode == "work"\n    assert bridge.desktopEnabled is False\n    assert bridge.desktop.connected is False\n    bridge.shutdown()\n\n\ndef test_reopening_work_does_not_enable_screen_control(tmp_path):\n    bridge = controller(tmp_path, connected=False)\n    task = bridge.store.create_conversation("Work task", "qwen3:8b")\n    bridge.store.set_messages(task["id"], [{"role": "user", "content": "run tests"}])\n    bridge.store.set_setting(f"task_mode:{task['id']}", "work")\n    bridge.openTask(task["id"])\n    assert bridge.taskMode == "work"\n    assert bridge.desktopEnabled is False\n    assert bridge.desktop.connected is False\n    bridge.shutdown()\n\n\n# ------------------------------------------------------- chat is only chat\n''')
+          replace(
+              "tests/test_workspace_modes.py",
+              '''    # A fresh Wynxo task never inherits Work merely because the desktop portal\n    # is still connected; visual control is enabled only by the task mode.\n''',
+              '''    # A fresh Wynxo task never inherits Work merely because screen control\n    # happens to remain connected; Work and screen access are separate state.\n''')
+
+          # Tell the user the truth on the fresh Work screen.
+          replace(
+              "wynxo/ui/Wynxo/TaskStart.qml",
+              '''        : mode === "codex" && !hasProject\n            ? "Open a project to read, edit, run, and test code in its workspace."\n            : mode === "work" && !(bridge && bridge.desktopEnabled)\n                ? "Commands are available now. Screen control is requested only when the task needs it."\n                : hasProject\n                    ? "Working in " + (bridge ? bridge.projectLabel : "")\n                    : ""\n''',
+              '''        : mode === "codex" && !hasProject\n            ? "Open a project to read, edit, run, and test code in its workspace."\n            : mode === "work"\n                ? (bridge && bridge.desktopEnabled\n                    ? "Commands are available. Screen control is on and used only when the task needs visual context."\n                    : "Commands are available. Screen control is optional and stays off until you enable it.")\n                : hasProject\n                    ? "Working in " + (bridge ? bridge.projectLabel : "")\n                    : ""\n''')
+          PY
+      - name: Commit policy change
+        run: |
+          git config user.name "wynxo-ci"
+          git config user.email "318229878+wynxo@users.noreply.github.com"
+          git add wynxo/engine.py wynxo/workspace.py wynxo/ui/Wynxo/TaskStart.qml tests/test_engine.py tests/test_workspace_modes.py
+          git diff --cached --check
+          git commit -m "Make Work screen access optional and on-demand"
+          git push origin HEAD:work/finish-astra-gui-core
