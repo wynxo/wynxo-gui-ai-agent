@@ -396,7 +396,7 @@ class WorkspaceController(Controller):
         completed = sum(step["status"] in {"completed", "skipped"} for step in self._plan_steps)
         return f"{completed} of {len(self._plan_steps)} complete"
 
-    @Property(str, notify=changed)
+    @Property(str, notify=Controller.changed)
     def projectInstructionsSummary(self):
         return self._project_instructions_summary
 
@@ -404,7 +404,7 @@ class WorkspaceController(Controller):
     def contextOmittedTurns(self):
         return int(self._context_omitted_turns)
 
-    @Property(str, notify=changed)
+    @Property(str, notify=Controller.changed)
     def contextCompactionLabel(self):
         count = int(self._context_omitted_turns)
         if not count:
