@@ -10,6 +10,7 @@ import base64
 import mimetypes
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 import uuid
 
 FILE = "file"
@@ -140,8 +141,30 @@ def load_text_file(path: str | Path) -> dict:
                 mime="text/plain", subtitle=f"{lines} {unit} · {_human_size(size)}")
 
 
+def _attachment_path(path: str | Path) -> Path:
+    """Resolve a picker path or QML ``file:`` URL without corrupting `%` names.
+
+    QML DropArea serializes URLs, so spaces, ``#`` and non-ASCII bytes commonly
+    arrive percent-encoded. Older controller code also strips the ``file://``
+    prefix before reaching here. Decode only when necessary: a literal path
+    wins when it already exists, so a real file named ``notes%20old.txt`` is
+    never silently redirected to ``notes old.txt``.
+    """
+    raw = os.fspath(path)
+    if raw.startswith("file:"):
+        parsed = urlsplit(raw)
+        if parsed.scheme != "file" or parsed.netloc not in ("", "localhost"):
+            raise ContextError("Only local files can be attached.")
+        raw = unquote(parsed.path)
+    target = Path(raw).expanduser()
+    if target.exists() or "%" not in raw:
+        return target
+    decoded = Path(unquote(raw)).expanduser()
+    return decoded if decoded.exists() else target
+
+
 def load_path(path: str | Path) -> dict:
-    target = Path(path).expanduser()
+    target = _attachment_path(path)
     if target.is_dir():
         return load_folder(target)
     if not target.exists():
