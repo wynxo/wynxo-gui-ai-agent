@@ -35,3 +35,41 @@ def test_find_updates_after_editing_and_navigation_wraps():
     assert "if (position < 0) position = haystack.indexOf(query);" in qml
     assert "if (position < 0) position = haystack.lastIndexOf(query);" in qml
     assert "enabled: root.findCount > 0" in qml
+
+
+def test_go_to_line_validates_moves_and_reveals_the_destination():
+    qml = source()
+    for feature in (
+        'sequences: ["Ctrl+G"]',
+        "function positionForLine(value)",
+        "function goToLine()",
+        "editor.cursorPosition = position",
+        "editor.cursorRectangle.y - flick.height * 0.33",
+        "flick.contentY = Math.min(maximum, desired)",
+        "flick.contentX = 0",
+        "validator: IntValidator",
+    ):
+        assert feature in qml
+
+
+def test_secondary_file_actions_live_in_one_overflow():
+    qml = source()
+    assert 'iconName: "moreVertical"' in qml
+    for action in (
+        'label: "Go to line…"',
+        'label: "Copy whole file"',
+        'label: "Attach to conversation"',
+        'label: "Terminal in containing folder"',
+        'label: "Reveal outside Wynxo"',
+    ):
+        assert action in qml
+    assert "bridge.attachPath(root.record.path)" in qml
+    assert "dock.runInTerminal(" in qml
+
+
+def test_find_and_go_to_line_do_not_stack_transient_toolbars():
+    qml = source()
+    open_find = qml[qml.index("function openFind()"):qml.index("function closeFind()")]
+    open_line = qml[qml.index("function openGoLine()"):qml.index("function closeGoLine()")]
+    assert "goLineOpen = false" in open_find
+    assert "findOpen = false" in open_line
