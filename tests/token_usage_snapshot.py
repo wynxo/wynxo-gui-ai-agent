@@ -1,0 +1,106 @@
+"""Render the token-usage popover with deterministic, realistic usage data."""
+from __future__ import annotations
+
+import sys
+import time
+from pathlib import Path
+
+from PySide6.QtCore import QMetaObject, QObject, QTimer, QUrl, Qt
+from PySide6.QtGui import QFont
+from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+from PySide6.QtWidgets import QApplication
+
+from wynxo.__main__ import UI, _load_fonts
+from wynxo.demo import DemoController
+
+
+def metric(tokens: int, prompt: int, rate: float) -> dict:
+    return {
+        "tokens": tokens,
+        "prompt_tokens": prompt,
+        "cached_prompt_tokens": prompt // 3,
+        "load_ms": 120.0,
+        "total_ms": max(1000.0, tokens / max(rate, 0.1) * 1000.0),
+        "tokens_per_second": rate,
+    }
+
+
+def main(target: str) -> int:
+    QQuickStyle.setStyle("Basic")
+    app = QApplication(sys.argv[:1])
+    app.setApplicationName("Wynxo token usage snapshot")
+    _load_fonts(app)
+    app.setFont(QFont("Inter", 10))
+
+    controller = DemoController("conversation")
+    now = time.time()
+    # Multiple periods deliberately have different totals so visual regressions
+    # cannot hide behind four identical zero cards.
+    for offset, output, prompt, rate in (
+        (90, 780, 4_120, 18.4),
+        (3_600, 1_140, 6_340, 17.1),
+        (86_400, 2_320, 11_800, 20.2),
+        (6 * 86_400, 4_400, 24_500, 16.8),
+        (35 * 86_400, 9_800, 58_200, 14.9),
+    ):
+        controller.store.record_token_usage(
+            "preview", "qwen2.5vl:7b", metric(output, prompt, rate),
+            created_at=now - offset,
+        )
+    controller._usage.refresh()
+    # The composer itself demonstrates the exact requested live shape:
+    # "45 tokens · 2.5 tokens/s" while the persisted cards remain exact
+    # completed-run accounting.
+    controller._usage.exact_metrics(metric(45, 120, 2.5))
+    controller._busy = True
+    controller._status = "Writing"
+    controller.usageChanged.emit()
+    controller.changed.emit()
+
+    engine = QQmlApplicationEngine()
+    engine.addImportPath(str(UI))
+    engine.rootContext().setContextProperty("bridge", controller)
+    engine.load(QUrl.fromLocalFile(str(UI / "Main.qml")))
+    if not engine.rootObjects():
+        controller.shutdown()
+        return 1
+
+    root = engine.rootObjects()[0]
+    root.setWidth(1440)
+    root.setHeight(920)
+    output = Path(target)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    result = {"ok": False}
+
+    def open_usage():
+        item = root.findChild(QObject, "tokenUsage")
+        if item is None:
+            print("tokenUsage object not found", file=sys.stderr)
+            app.exit(2)
+            return
+        if not QMetaObject.invokeMethod(item, "showUsage", Qt.DirectConnection):
+            print("could not invoke token usage popover", file=sys.stderr)
+            app.exit(3)
+            return
+        QTimer.singleShot(650, capture)
+
+    def capture():
+        result["ok"] = root.grabWindow().save(str(output))
+        if result["ok"]:
+            print(f"saved {output}")
+        else:
+            print(f"could not save {output}", file=sys.stderr)
+        root.close()
+        QTimer.singleShot(0, app.quit)
+
+    QTimer.singleShot(900, open_usage)
+    code = app.exec()
+    controller.shutdown()
+    return code if code else (0 if result["ok"] else 4)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: token_usage_snapshot.py OUTPUT.png")
+    raise SystemExit(main(sys.argv[1]))
