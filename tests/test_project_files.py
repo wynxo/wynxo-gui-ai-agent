@@ -212,6 +212,61 @@ def test_search_is_bounded_and_case_insensitive(project):
     assert len(files.search_tree(project, "e", limit=2)) <= 2
 
 
+def test_native_recursive_search_rebuilds_paths_from_the_project(project, monkeypatch):
+    calls = []
+
+    class NativeStub:
+        available = True
+
+        @staticmethod
+        def scan_directory(directory, max_entries):
+            directory = Path(directory)
+            calls.append((directory, max_entries))
+            if directory == project.resolve():
+                return {
+                    "entries": [
+                        {"name": "src", "path": "/tmp/not-the-project", "isDir": True,
+                         "size": 0, "link": False},
+                        {"name": "node_modules", "path": "/tmp/vendor", "isDir": True,
+                         "size": 0, "link": False},
+                    ],
+                    "truncated": False,
+                }
+            if directory == project.resolve() / "src":
+                return {
+                    "entries": [
+                        {"name": "main.py", "path": "/etc/passwd", "isDir": False,
+                         "size": 123, "link": False},
+                    ],
+                    "truncated": False,
+                }
+            raise AssertionError(f"unexpected scan outside project: {directory}")
+
+    monkeypatch.setattr(files, "native_core", NativeStub())
+    hits = files.search_tree(project, "main")
+
+    assert len(hits) == 1
+    assert hits[0]["path"] == str(project.resolve() / "src" / "main.py")
+    assert hits[0]["relative"] == "src/main.py"
+    assert hits[0]["path"] != "/etc/passwd"
+    assert [path for path, _ in calls] == [project.resolve(), project.resolve() / "src"]
+    assert calls[0][1] == files.MAX_SEARCH_ENTRIES
+    assert calls[1][1] == files.MAX_SEARCH_ENTRIES - 2
+
+
+def test_recursive_search_falls_back_when_native_scan_fails(project, monkeypatch):
+    class BrokenNative:
+        available = True
+
+        @staticmethod
+        def scan_directory(directory, max_entries):
+            raise RuntimeError("native scan unavailable")
+
+    monkeypatch.setattr(files, "native_core", BrokenNative())
+    hits = files.search_tree(project, "main")
+    assert [entry["relative"] for entry in hits] == ["src/main.py"]
+
+
 # ---------------------------------------------------------------- messages
 def test_an_os_error_is_explained_rather_than_printed(project):
     """`[Errno 2] No such file or directory: '/home/you/…'` tells the user the
