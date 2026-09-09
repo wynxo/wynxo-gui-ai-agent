@@ -80,6 +80,24 @@ def test_period_buckets_use_local_day_week_month_and_lifetime(tmp_path):
     store.close()
 
 
+def test_period_speed_is_weighted_by_generated_tokens(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    now = datetime(2026, 9, 9, 12, 0, 0).timestamp()
+
+    # The tiny fast response must not count as much as the thousand-token run.
+    store.record_token_usage("large", "model", metrics(1000, 100, rate=10.0),
+                             created_at=now - 120)
+    store.record_token_usage("tiny", "model", metrics(10, 10, rate=100.0),
+                             created_at=now - 60)
+
+    summary = store.token_usage_summary(now=now)
+    expected = round((1000 * 10.0 + 10 * 100.0) / 1010, 1)
+    assert expected == 10.9
+    assert summary["today"]["averageRate"] == expected
+    assert summary["allTime"]["averageRate"] == expected
+    store.close()
+
+
 def test_all_time_does_not_include_usage_from_the_future(tmp_path):
     store = Store(tmp_path / "history.sqlite3")
     now = datetime(2026, 9, 9, 12, 0, 0).timestamp()
