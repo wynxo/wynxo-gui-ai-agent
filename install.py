@@ -166,10 +166,17 @@ def _restore(snapshots: dict) -> None:
 
 def _copy_source(source: Path, destination: Path) -> None:
     destination.mkdir()
-    for name in ("pyproject.toml", "README.md", "LICENSE", "install.py", "uninstall.py"):
+    # setup.py builds the C++ core into the wheel. Keep every build input in
+    # the isolated release copy so `python3 install.py` behaves like a normal
+    # `pip install .` instead of silently falling back to Python-only policy.
+    for name in (
+        "pyproject.toml", "setup.py", "MANIFEST.in", "README.md", "LICENSE",
+        "install.py", "uninstall.py",
+    ):
         shutil.copy2(source / name, destination / name)
-    for name in ("wynxo", "assets"):
-        shutil.copytree(source / name, destination / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for name in ("wynxo", "assets", "native"):
+        shutil.copytree(source / name, destination / name,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
 
 def _is_nixos() -> bool:
