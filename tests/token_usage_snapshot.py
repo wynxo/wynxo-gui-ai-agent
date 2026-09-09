@@ -1,4 +1,4 @@
-"""Render the token-usage popover with deterministic, realistic usage data."""
+"""Render deterministic live and idle token-usage states for visual QA."""
 from __future__ import annotations
 
 import sys
@@ -26,17 +26,21 @@ def metric(tokens: int, prompt: int, rate: float) -> dict:
     }
 
 
-def main(target: str) -> int:
+def main(target: str, state: str = "live") -> int:
+    if state not in {"live", "idle"}:
+        raise ValueError("state must be 'live' or 'idle'")
+
     QQuickStyle.setStyle("Basic")
     app = QApplication(sys.argv[:1])
-    app.setApplicationName("Wynxo token usage snapshot")
+    app.setApplicationName(f"Wynxo token usage {state} snapshot")
     _load_fonts(app)
     app.setFont(QFont("Inter", 10))
 
     controller = DemoController("conversation")
     now = time.time()
     # Multiple periods deliberately have different totals so visual regressions
-    # cannot hide behind four identical zero cards.
+    # cannot hide behind four identical zero cards. These rows also drive the
+    # composer's idle "… today" state when no generation is active.
     for offset, output, prompt, rate in (
         (90, 780, 4_120, 18.4),
         (3_600, 1_140, 6_340, 17.1),
@@ -49,12 +53,18 @@ def main(target: str) -> int:
             created_at=now - offset,
         )
     controller._usage.refresh()
-    # The composer itself demonstrates the exact requested live shape:
-    # "45 tokens · 2.5 tokens/s" while the persisted cards remain exact
-    # completed-run accounting.
-    controller._usage.exact_metrics(metric(45, 120, 2.5))
-    controller._busy = True
-    controller._status = "Writing"
+
+    if state == "live":
+        # Demonstrates the exact requested live shape: "45 tokens · 2.5 tokens/s"
+        # while the persisted cards remain exact completed-run accounting.
+        controller._usage.exact_metrics(metric(45, 120, 2.5))
+        controller._busy = True
+        controller._status = "Writing"
+    else:
+        # No provisional generation state: the composer must fall back to the
+        # exact persisted period total, while the popover says LATEST RUN.
+        controller._busy = False
+        controller._status = "Ready"
     controller.usageChanged.emit()
     controller.changed.emit()
 
@@ -88,7 +98,7 @@ def main(target: str) -> int:
     def capture():
         result["ok"] = root.grabWindow().save(str(output))
         if result["ok"]:
-            print(f"saved {output}")
+            print(f"saved {state} token usage to {output}")
         else:
             print(f"could not save {output}", file=sys.stderr)
         root.close()
@@ -101,6 +111,6 @@ def main(target: str) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: token_usage_snapshot.py OUTPUT.png")
-    raise SystemExit(main(sys.argv[1]))
+    if len(sys.argv) not in {2, 3}:
+        raise SystemExit("usage: token_usage_snapshot.py OUTPUT.png [live|idle]")
+    raise SystemExit(main(sys.argv[1], sys.argv[2] if len(sys.argv) == 3 else "live"))
