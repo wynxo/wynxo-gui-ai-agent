@@ -66,6 +66,33 @@ def test_last_open_task_mode_plan_and_draft_restore_without_resuming(tmp_path):
     close_controller(second)
 
 
+def test_normal_plan_reads_preserve_live_in_progress_state(tmp_path):
+    database = tmp_path / "history.sqlite3"
+    bridge = make_controller(database)
+    task = bridge.store.create_conversation("Live plan", "test-model")
+    plan = [
+        {"id": "inspect", "title": "Inspect", "status": "completed"},
+        {"id": "edit", "title": "Edit", "status": "in_progress"},
+    ]
+    bridge.store.set_setting(bridge._plan_key(task["id"]), plan)
+
+    assert bridge._saved_plan(task["id"]) == plan
+    assert bridge.store.get_setting(bridge._plan_key(task["id"])) == plan
+    close_controller(bridge)
+
+
+def test_shutdown_is_idempotent_even_after_store_is_closed(tmp_path):
+    bridge = make_controller(tmp_path / "history.sqlite3")
+    bridge.setDraft("keep me")
+
+    bridge.shutdown()
+    bridge.store.close()
+
+    # Snapshot/demo teardown and defensive host cleanup may call shutdown again.
+    # The second call must not try to write to the closed SQLite connection.
+    bridge.shutdown()
+
+
 def test_sending_clears_persisted_draft_and_tracks_new_task(tmp_path, monkeypatch):
     database = tmp_path / "history.sqlite3"
     bridge = make_controller(database)
