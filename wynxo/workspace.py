@@ -24,6 +24,7 @@ from PySide6.QtCore import Property, Signal, Slot
 
 from . import engine as engine_module
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
+from .usage import TokenUsageTracker
 
 
 PLAN_STATES = {"pending", "in_progress", "completed", "failed", "skipped"}
@@ -159,6 +160,7 @@ class WorkspaceController(Controller):
     modeChanged = Signal()
     endpointChanged = Signal()
     planChanged = Signal()
+    usageChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
 
     def __init__(self, *args, **kwargs):
@@ -171,6 +173,7 @@ class WorkspaceController(Controller):
         # the transport itself.
         engine_module.validate_endpoint = validate_workspace_endpoint
         super().__init__(*args, **kwargs)
+        self._usage = TokenUsageTracker(self.store)
 
     def _emit_mode(self) -> None:
         self.modeChanged.emit()
@@ -288,6 +291,18 @@ class WorkspaceController(Controller):
             return ""
         completed = sum(step["status"] in {"completed", "skipped"} for step in self._plan_steps)
         return f"{completed} of {len(self._plan_steps)} complete"
+
+    @Property(int, notify=usageChanged)
+    def liveOutputTokens(self):
+        return int(self._usage.live_output_tokens)
+
+    @Property(float, notify=usageChanged)
+    def liveTokenRate(self):
+        return round(float(self._usage.live_rate), 1)
+
+    @Property("QVariantMap", notify=usageChanged)
+    def tokenUsage(self):
+        return self._usage.summary
 
     @Property(str, notify=endpointChanged)
     def endpointScope(self):
@@ -408,6 +423,8 @@ class WorkspaceController(Controller):
         self._session_auto = False
         self._run_started = time.monotonic()
         self._run_metrics = _blank_metrics()
+        self._usage.reset()
+        self.usageChanged.emit()
         self.dock.begin_turn(self._task_title if self._task_title != "New task" else "Turn")
         self.activityChanged.emit()
         self._refresh_tasks()
@@ -450,25 +467,43 @@ class WorkspaceController(Controller):
         )
 
     def _on_event(self, event):
-        if event.get("type") == "tool_start" and event.get("name") == "update_plan":
+        kind = event.get("type")
+        if kind == "tool_start" and event.get("name") == "update_plan":
             self._set_plan(event.get("args", {}).get("steps", []))
             explanation = str(event.get("args", {}).get("explanation", "")).strip()
             self._status = explanation[:120] or "Planning"
             self.changed.emit()
             return
-        if event.get("type") == "tool_end" and event.get("name") == "update_plan":
+        if kind == "tool_end" and event.get("name") == "update_plan":
             return
+
+        usage_dirty = False
+        if kind in ("token", "thinking"):
+            usage_dirty = self._usage.stream(event.get("text", ""))
+            if self._usage.live_rate > 0:
+                self._token_rate = f"{self._usage.live_rate:.1f} tok/s"
+        elif kind == "metrics":
+            usage_dirty = self._usage.exact_metrics(event)
+
         super()._on_event(event)
+        if usage_dirty:
+            self.usageChanged.emit()
 
     def _run_done(self, history):
         stopped = self._run_job is not None and self._run_job.cancel.is_set()
         outcome = "cancelled" if stopped else ("failed" if self._error else "completed")
+        usage_recorded = self._usage.finalize(self._task_id, self._model)
         super()._run_done(self._strip_plan_history(history))
         self._settle_plan(outcome)
+        if usage_recorded:
+            self.usageChanged.emit()
 
     def _run_failed(self, message):
+        usage_recorded = self._usage.finalize(self._task_id, self._model)
         super()._run_failed(message)
         self._settle_plan("failed")
+        if usage_recorded:
+            self.usageChanged.emit()
 
     @Slot()
     def clearTask(self):
