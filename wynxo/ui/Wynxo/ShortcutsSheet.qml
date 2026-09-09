@@ -49,6 +49,11 @@ Sheet {
             { keys: "Ctrl+Shift+U", label: "Preview" },
             { keys: "Ctrl+L", label: "Focus the address bar — Browser only" },
         ]},
+        { title: "File editor", rows: [
+            { keys: "Ctrl+F", label: "Find in the open text file" },
+            { keys: "Ctrl+G", label: "Go to line in the open text file" },
+            { keys: "Ctrl+S", label: "Save the open file" },
+        ]},
         { title: "While a run is on", rows: [
             { keys: "Esc", label: "Stop, from the Wynxo window" },
             { keys: "Desktop", label: "Stop from any window — see Settings → Agent" },
