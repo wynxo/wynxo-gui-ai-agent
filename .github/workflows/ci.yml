@@ -8,6 +8,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
       - name: Configure native core
         run: cmake -S native -B build/native -DCMAKE_BUILD_TYPE=Release
       - name: Build native core
@@ -27,6 +31,29 @@ jobs:
           assert not native_core.needs_confirmation("move_pointer", "safe")
           assert native_core.command_is_destructive("git reset --hard HEAD~1")
           print("python -> C++ native bridge: ok")
+          PY
+      - name: Build native wheel from installer release snapshot
+        env:
+          WYNXO_REQUIRE_NATIVE: "1"
+        run: |
+          rm -rf /tmp/wynxo-release-source /tmp/wynxo-wheel
+          python3 - <<'PY'
+          from pathlib import Path
+          import install
+          install._copy_source(Path.cwd(), Path("/tmp/wynxo-release-source"))
+          for required in ("setup.py", "MANIFEST.in", "native/CMakeLists.txt"):
+              assert (Path("/tmp/wynxo-release-source") / required).is_file(), required
+          PY
+          python3 -m pip wheel --no-deps --wheel-dir /tmp/wynxo-wheel /tmp/wynxo-release-source
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          wheel = next(Path("/tmp/wynxo-wheel").glob("wynxo-*.whl"))
+          with zipfile.ZipFile(wheel) as archive:
+              names = archive.namelist()
+          expected = "wynxo/native/libwynxo_native_core.so"
+          assert expected in names, f"{expected} missing from {wheel.name}"
+          print("installer release snapshot native wheel:", wheel.name)
           PY
 
   linux:
