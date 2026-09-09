@@ -5,6 +5,7 @@ Screen images are transient: history preserves text and tool evidence, not scree
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,19 @@ class Store:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS token_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                conversation_id TEXT NOT NULL DEFAULT '',
+                model TEXT NOT NULL DEFAULT '',
+                output_tokens INTEGER NOT NULL DEFAULT 0,
+                prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                cached_prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                duration_ms REAL NOT NULL DEFAULT 0,
+                tokens_per_second REAL NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS token_usage_created_at
+                ON token_usage(created_at);
         """)
         self._db.commit()
         columns = {row["name"] for row in self._db.execute("PRAGMA table_info(conversations)")}
@@ -173,6 +187,71 @@ class Store:
                 self._db.execute("UPDATE conversations SET updated_at=? WHERE id=?", (time.time(), conversation_id))
             else:
                 self._db.execute("UPDATE conversations SET updated_at=?,model=? WHERE id=?", (time.time(), model, conversation_id))
+
+    def record_token_usage(self, conversation_id: str, model: str, metrics: dict,
+                           created_at: float | None = None) -> bool:
+        """Persist one completed model run's exact Ollama token accounting.
+
+        Usage is intentionally independent from conversation rows. Deleting a
+        chat should not rewrite the all-time/month/week counters, just as
+        deleting a terminal transcript does not undo work the model performed.
+        """
+        output = max(0, int(metrics.get("tokens", 0) or 0))
+        prompt = max(0, int(metrics.get("prompt_tokens", 0) or 0))
+        cached = max(0, int(metrics.get("cached_prompt_tokens", 0) or 0))
+        if not output and not prompt:
+            return False
+        duration = max(0.0, float(metrics.get("total_ms", 0.0) or 0.0))
+        rate = max(0.0, float(metrics.get("tokens_per_second", 0.0) or 0.0))
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO token_usage "
+                "(created_at,conversation_id,model,output_tokens,prompt_tokens,cached_prompt_tokens,duration_ms,tokens_per_second) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (time.time() if created_at is None else float(created_at),
+                 str(conversation_id or ""), str(model or ""), output, prompt,
+                 cached, duration, rate),
+            )
+        return True
+
+    @staticmethod
+    def _usage_boundaries(now: float) -> dict[str, float | None]:
+        local = datetime.fromtimestamp(float(now))
+        today = local.replace(hour=0, minute=0, second=0, microsecond=0)
+        week = today - timedelta(days=today.weekday())
+        month = today.replace(day=1)
+        return {
+            "today": today.timestamp(),
+            "week": week.timestamp(),
+            "month": month.timestamp(),
+            "allTime": None,
+        }
+
+    def token_usage_summary(self, now: float | None = None) -> dict[str, dict]:
+        """Aggregate exact usage in local-day, Monday-week, month and lifetime buckets."""
+        now = time.time() if now is None else float(now)
+        summary: dict[str, dict] = {}
+        with self._lock:
+            for key, start in self._usage_boundaries(now).items():
+                where, params = ("", ()) if start is None else ("WHERE created_at >= ? AND created_at <= ?", (start, now))
+                row = self._db.execute(
+                    "SELECT COALESCE(SUM(output_tokens),0) output_tokens, "
+                    "COALESCE(SUM(prompt_tokens),0) prompt_tokens, "
+                    "COALESCE(SUM(cached_prompt_tokens),0) cached_prompt_tokens, "
+                    "COUNT(*) runs, COALESCE(AVG(tokens_per_second),0) avg_rate "
+                    f"FROM token_usage {where}", params,
+                ).fetchone()
+                output = int(row["output_tokens"] or 0)
+                prompt = int(row["prompt_tokens"] or 0)
+                summary[key] = {
+                    "tokens": output + prompt,
+                    "outputTokens": output,
+                    "promptTokens": prompt,
+                    "cachedTokens": int(row["cached_prompt_tokens"] or 0),
+                    "runs": int(row["runs"] or 0),
+                    "averageRate": round(float(row["avg_rate"] or 0.0), 1),
+                }
+        return summary
 
     def get_setting(self, key: str, default: Any = None) -> Any:
         with self._lock:
