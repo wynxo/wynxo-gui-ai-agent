@@ -422,7 +422,15 @@ class WorkspaceController(Controller):
         think = self._think
         num_ctx, temperature = self._num_ctx, self._temperature
         keep_alive, max_steps = self._keep_alive, self._max_steps
-        permission_mode, project = self._permission_mode, self._working_directory
+        project = self._working_directory
+
+        # Permission mode is deliberately live. The user can tighten or relax
+        # an active task from the UI; the engine re-reads this provider before
+        # every action instead of retaining the mode that happened to be set
+        # when generation started.
+        def permission_mode():
+            return self._permission_mode
+
         self._run_job = self._job(
             lambda cancel, emit: engine.run(
                 list(history), model, enabled, cancel, emit, think=think,
