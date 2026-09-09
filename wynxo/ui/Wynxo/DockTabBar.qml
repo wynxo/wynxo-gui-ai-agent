@@ -27,16 +27,16 @@ Item {
 
     readonly property var entries: bridge && bridge.workspaceDock ? bridge.workspaceDock.tabs : []
 
-    GlassSurface {
+    // The rail is permanent workspace chrome, so it stays opaque. Individual
+    // tabs still use glass for hover/press/focus because those are transient
+    // interactions rather than another always-on translucent layer.
+    Rectangle {
         anchors.fill: parent
-        tint: Theme.backgroundSoft
-        fillOpacity: 0.82
-        outlineVisible: false
-        sheen: true
+        color: Theme.backgroundSoft
         Rectangle {
             anchors { left: parent.left; top: parent.top; bottom: parent.bottom }
             width: 1
-            color: Theme.glassEdge
+            color: Theme.borderSubtle
         }
     }
 
