@@ -1,0 +1,47 @@
+name: Apply project context
+
+on:
+  push:
+    branches: [work/finish-astra-gui-core]
+    paths:
+      - '.github/workflows/apply-project-context.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+          fetch-depth: 0
+      - name: Inject ephemeral project snapshot into Work and Wynxi
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('wynxo/workspace.py')
+          text = path.read_text()
+          text = text.replace(
+              'from . import engine as engine_module\n',
+              'from . import engine as engine_module\nfrom . import project_context\n',
+              1,
+          )
+
+          old = '''    def run(self, *args, **kwargs):\n        desktop = self.desktop\n        if desktop is None or not kwargs.get("tools_allowed", True):\n            return super().run(*args, **kwargs)\n        original_execute = desktop.execute\n\n        def execute(name, arguments, cancel=None):\n            if name == "update_plan":\n                return {"ok": True, "steps": len(arguments.get("steps", []))}\n            return original_execute(name, arguments, cancel)\n\n        # Runs are serialized by Controller; this temporary adapter exists only\n        # on the worker thread for the lifetime of this generation.\n        desktop.execute = execute\n        try:\n            return super().run(*args, **kwargs)\n        finally:\n            desktop.execute = original_execute\n'''
+          new = '''    def run(self, *args, **kwargs):\n        desktop = self.desktop\n        if desktop is None or not kwargs.get("tools_allowed", True):\n            return super().run(*args, **kwargs)\n\n        # Work/Wynxi get a small locally generated repo map before inference.\n        # It is metadata only, generated on this worker thread, and stripped\n        # from the returned history so it never becomes chat or memory.\n        project = str(kwargs.get("project", "") or "")\n        if project:\n            if args:\n                args = (project_context.inject(list(args[0]), project),) + args[1:]\n            else:\n                kwargs["messages"] = project_context.inject(list(kwargs.get("messages", [])), project)\n\n        original_execute = desktop.execute\n\n        def execute(name, arguments, cancel=None):\n            if name == "update_plan":\n                return {"ok": True, "steps": len(arguments.get("steps", []))}\n            return original_execute(name, arguments, cancel)\n\n        # Runs are serialized by Controller; this temporary adapter exists only\n        # on the worker thread for the lifetime of this generation.\n        desktop.execute = execute\n        try:\n            return project_context.strip(super().run(*args, **kwargs))\n        finally:\n            desktop.execute = original_execute\n'''
+          if old not in text:
+              raise SystemExit('PlanningAgentEngine anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/apply-project-context.yml
+          git config user.name wynxo-ci
+          git config user.email 318229878+wynxo@users.noreply.github.com
+          git add wynxo/workspace.py wynxo/project_context.py tests/test_project_context.py .github/workflows/apply-project-context.yml
+          git commit -m "Give Work and Wynxi bounded project awareness"
+          git push origin HEAD:work/finish-astra-gui-core
