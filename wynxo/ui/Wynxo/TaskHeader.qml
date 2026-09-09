@@ -342,6 +342,17 @@ Item {
             ToolTip.text: bridge ? "Permission mode: " + bridge.permissionModeLabel : ""
         }
 
+        Chip {
+            visible: !root.homeMode && bridge && bridge.projectName
+                     && root.resolvedMode !== "chat" && bridge.projectInstructionsSummary && root.roomy
+            text: "Project rules"
+            iconName: "code"
+            ToolTip.visible: hovered
+            ToolTip.delay: 450
+            ToolTip.text: bridge ? "Active repository guidance: " + bridge.projectInstructionsSummary
+                                  + ". These files guide coding conventions but never grant permissions." : ""
+        }
+
         // A Chat task cannot run anything. Saying so on the task itself is the
         // difference between "it refused" and "it was never able to".
         Chip {

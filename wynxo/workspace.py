@@ -25,6 +25,7 @@ from PySide6.QtCore import Property, QTimer, Signal, Slot
 from . import context as ctx
 from . import engine as engine_module
 from . import project_context
+from . import project_instructions
 from .controller import Controller, AgentEngine, OllamaClient, _blank_metrics
 from .memory_learning import learnable_memories
 from .usage import TokenUsageTracker
@@ -92,9 +93,12 @@ class PlanningAgentEngine(AgentEngine):
         project = str(kwargs.get("project", "") or "")
         if project:
             if args:
-                args = (project_context.inject(list(args[0]), project),) + args[1:]
+                messages = project_context.inject(list(args[0]), project)
+                messages = project_instructions.inject(messages, project)
+                args = (messages,) + args[1:]
             else:
-                kwargs["messages"] = project_context.inject(list(kwargs.get("messages", [])), project)
+                messages = project_context.inject(list(kwargs.get("messages", [])), project)
+                kwargs["messages"] = project_instructions.inject(messages, project)
 
         original_execute = desktop.execute
 
@@ -107,7 +111,8 @@ class PlanningAgentEngine(AgentEngine):
         # on the worker thread for the lifetime of this generation.
         desktop.execute = execute
         try:
-            return project_context.strip(super().run(*args, **kwargs))
+            result = super().run(*args, **kwargs)
+            return project_context.strip(project_instructions.strip(result))
         finally:
             desktop.execute = original_execute
 
@@ -190,6 +195,7 @@ class WorkspaceController(Controller):
         engine_module.validate_endpoint = validate_workspace_endpoint
         super().__init__(*args, **kwargs)
         self._usage = TokenUsageTracker(self.store)
+        self._project_instructions_summary = project_instructions.summary(self._working_directory)
         # Draft text is cheap state worth surviving a restart, but attachments are
         # intentionally one-turn context and are never serialized here. Debounce
         # SQLite writes so typing does not become one transaction per keypress.
@@ -369,6 +375,16 @@ class WorkspaceController(Controller):
         completed = sum(step["status"] in {"completed", "skipped"} for step in self._plan_steps)
         return f"{completed} of {len(self._plan_steps)} complete"
 
+    @Property(str, notify=changed)
+    def projectInstructionsSummary(self):
+        return self._project_instructions_summary
+
+    def _refresh_project_instructions(self) -> None:
+        fresh = project_instructions.summary(self._working_directory)
+        if fresh != self._project_instructions_summary:
+            self._project_instructions_summary = fresh
+            self.changed.emit()
+
     @Property(int, notify=usageChanged)
     def liveOutputTokens(self):
         return int(self._usage.live_output_tokens)
@@ -432,6 +448,7 @@ class WorkspaceController(Controller):
             return False
         self._working_directory = path
         self.store.set_setting("working_directory", path)
+        self._project_instructions_summary = project_instructions.summary(path)
         if path:
             self._recent_projects = [path] + [p for p in self._recent_projects if p != path]
             del self._recent_projects[self.RECENT_PROJECT_LIMIT:]
@@ -577,6 +594,7 @@ class WorkspaceController(Controller):
             self.modeChanged.emit()
 
     def _start_run(self, history):
+        self._refresh_project_instructions()
         self._busy = True
         self._clear_error()
         self._status = "Thinking"
