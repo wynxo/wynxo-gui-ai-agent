@@ -130,7 +130,7 @@ def test_low_risk_actions_never_reach_the_confirmation_callback():
     run([{"message": {"tool_calls": [call("scroll", dx=0, dy=3)]}, "done": True},
          {"message": {"content": "ok"}, "done": True}],
         ASK, lambda name, args, risk: asked.append(name) or True)
-    # The opening screenshot and the scroll are both observation-only.
+    # Scroll is observation-only and never reaches the confirmation callback.
     assert asked == []
 
 
@@ -151,7 +151,7 @@ def test_tool_start_announces_that_a_prompt_is_coming():
         ASK, lambda name, args, risk: True)
     starts = {event["name"]: event for event in events if event["type"] == "tool_start"}
     assert starts["type_text"]["confirming"] is True
-    assert starts["screenshot"]["confirming"] is False
+    assert "screenshot" not in starts
     assert starts["type_text"]["summary"] == "Type “x”"
 
 
