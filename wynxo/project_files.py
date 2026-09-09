@@ -14,6 +14,9 @@ from .native_core import native_core
 
 # A directory listing is cheap, but a node_modules with 40 000 entries is not.
 MAX_ENTRIES = 4000
+# Recursive search has a larger global budget, shared across every visited
+# directory. It is still bounded so a generated/vendor tree cannot lock the UI.
+MAX_SEARCH_ENTRIES = 20000
 # The viewer is a viewer, not an editor for a 400 MB core dump.
 MAX_TEXT_BYTES = 1_500_000
 MAX_IMAGE_BYTES = 12_000_000
@@ -129,17 +132,6 @@ def resolve_within(root, candidate) -> Path:
     return target
 
 
-def _sort_key(entry: os.DirEntry) -> tuple:
-    # Directories first, then case-insensitive name. Dotfiles sink within
-    # their own group so the interesting files are at the top.
-    try:
-        is_dir = entry.is_dir(follow_symlinks=False)
-    except OSError:
-        is_dir = False
-    name = entry.name
-    return (0 if is_dir else 1, 0 if not name.startswith(".") else 1, name.casefold())
-
-
 def _record_sort_key(entry: dict) -> tuple:
     name = str(entry.get("name", ""))
     return (0 if entry.get("isDir") else 1,
@@ -147,13 +139,14 @@ def _record_sort_key(entry: dict) -> tuple:
             name.casefold())
 
 
-def _python_directory_records(target: Path) -> tuple[list[dict], bool]:
+def _python_directory_records(target: Path, max_entries: int = MAX_ENTRIES) -> tuple[list[dict], bool]:
     """The compatibility scanner used when the native core is unavailable."""
     found: list[dict] = []
     truncated = False
+    cap = max(0, int(max_entries))
     with os.scandir(target) as scan:
         for entry in scan:
-            if len(found) >= MAX_ENTRIES:
+            if len(found) >= cap:
                 truncated = True
                 break
             try:
@@ -175,17 +168,26 @@ def _python_directory_records(target: Path) -> tuple[list[dict], bool]:
     return found, truncated
 
 
-def _directory_records(target: Path) -> tuple[list[dict], bool]:
+def _directory_records(target: Path, max_entries: int = MAX_ENTRIES) -> tuple[list[dict], bool]:
+    cap = max(0, int(max_entries))
     if native_core.available:
         try:
-            payload = native_core.scan_directory(target, MAX_ENTRIES)
+            payload = native_core.scan_directory(target, cap)
             return payload["entries"], payload["truncated"]
         except (OSError, RuntimeError, ValueError):
             # Keep source checkouts and unusual filesystems usable. The Python
             # fallback below also preserves the pre-native exception behavior
             # if the directory itself genuinely cannot be read.
             pass
-    return _python_directory_records(target)
+    return _python_directory_records(target, cap)
+
+
+def _valid_record_name(record: dict) -> str | None:
+    """Return a simple filesystem entry name, never a transport-provided path."""
+    name = record.get("name")
+    if not isinstance(name, str) or not name or Path(name).name != name or name in {".", ".."}:
+        return None
+    return name
 
 
 def list_directory(root, directory=None, show_hidden: bool = False) -> list[dict]:
@@ -203,8 +205,8 @@ def list_directory(root, directory=None, show_hidden: bool = False) -> list[dict
     found, truncated = _directory_records(target)
     entries: list[dict] = []
     for record in sorted(found, key=_record_sort_key):
-        name = record.get("name")
-        if not isinstance(name, str) or not name or Path(name).name != name or name in {".", ".."}:
+        name = _valid_record_name(record)
+        if name is None:
             # A filesystem directory entry cannot legitimately contain a path
             # separator. Treat anything else as a malformed native record.
             continue
@@ -237,7 +239,13 @@ def list_directory(root, directory=None, show_hidden: bool = False) -> list[dict
 
 
 def search_tree(root, needle: str, limit: int = 200, show_hidden: bool = False) -> list[dict]:
-    """Find files by name anywhere in the project, breadth-first and bounded."""
+    """Find files by name anywhere in the project, breadth-first and bounded.
+
+    Directory enumeration uses the same optional native C++ scanner as the file
+    tree. Python deliberately retains traversal order, filtering, path
+    reconstruction and the global search budget, so native metadata can never
+    move the search outside the project the user selected.
+    """
     needle = str(needle or "").strip().casefold()
     if not needle:
         return []
@@ -245,37 +253,40 @@ def search_tree(root, needle: str, limit: int = 200, show_hidden: bool = False) 
     results: list[dict] = []
     queue: list[Path] = [base]
     visited = 0
-    while queue and len(results) < limit and visited < 20000:
+    while queue and len(results) < limit and visited < MAX_SEARCH_ENTRIES:
         current = queue.pop(0)
+        remaining = MAX_SEARCH_ENTRIES - visited
         try:
-            with os.scandir(current) as scan:
-                children = list(scan)
+            children, _ = _directory_records(current, remaining)
         except OSError:
             continue
-        for entry in sorted(children, key=_sort_key):
+        for record in sorted(children, key=_record_sort_key):
             visited += 1
-            if visited > 20000:
+            if visited > MAX_SEARCH_ENTRIES:
                 break
-            name = entry.name
+            name = _valid_record_name(record)
+            if name is None:
+                continue
             if not show_hidden and name.startswith("."):
                 continue
-            try:
-                is_dir = entry.is_dir(follow_symlinks=False)
-            except OSError:
-                continue
+            is_dir = bool(record.get("isDir"))
+            path = current / name
             if is_dir:
                 if name not in NOISE_DIRECTORIES:
-                    queue.append(Path(entry.path))
+                    queue.append(path)
                 continue
             if needle in name.casefold():
                 try:
-                    size = entry.stat(follow_symlinks=False).st_size
-                except OSError:
+                    size = max(0, int(record.get("size", 0)))
+                except (TypeError, ValueError):
                     size = 0
                 results.append({
                     "name": name,
-                    "path": entry.path,
-                    "relative": str(Path(entry.path).relative_to(base)),
+                    # The native scanner's `path` field is intentionally
+                    # ignored. Every path is rebuilt from a contained parent +
+                    # a validated simple entry name.
+                    "path": str(path),
+                    "relative": str(path.relative_to(base)),
                     "isDir": False,
                     "kind": kind_for(name),
                     "size": int(size),
