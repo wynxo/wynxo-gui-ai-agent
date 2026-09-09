@@ -21,12 +21,17 @@ Popup {
     property real anchorX: 0
     function place() {
         if (!parent || !Overlay.overlay) return;
+        // `implicitHeight` can stay tiny when a caller intentionally gives a
+        // popover an explicit height. Placement must use the rendered extent,
+        // otherwise an "above" popup only moves up by that tiny implicit value
+        // and is clipped against the bottom of the window.
+        var popupHeight = Math.max(Number(height) || 0, Number(implicitHeight) || 0);
         var below = parent.mapToItem(Overlay.overlay, 0, parent.height + gap);
-        var above = parent.mapToItem(Overlay.overlay, 0, -implicitHeight - gap);
+        var above = parent.mapToItem(Overlay.overlay, 0, -popupHeight - gap);
         var wantAbove = preferredEdge === "above";
-        if (wantAbove && above.y < 0 && below.y + implicitHeight <= Overlay.overlay.height) wantAbove = false;
-        else if (!wantAbove && below.y + implicitHeight > Overlay.overlay.height && above.y >= 0) wantAbove = true;
-        y = wantAbove ? -implicitHeight - gap : parent.height + gap;
+        if (wantAbove && above.y < 0 && below.y + popupHeight <= Overlay.overlay.height) wantAbove = false;
+        else if (!wantAbove && below.y + popupHeight > Overlay.overlay.height && above.y >= 0) wantAbove = true;
+        y = wantAbove ? -popupHeight - gap : parent.height + gap;
 
         var left = parent.mapToItem(Overlay.overlay, 0, 0).x;
         var wanted = anchorX;
