@@ -139,11 +139,11 @@ def _record_sort_key(entry: dict) -> tuple:
             name.casefold())
 
 
-def _python_directory_records(target: Path, max_entries: int = MAX_ENTRIES) -> tuple[list[dict], bool]:
+def _python_directory_records(target: Path, max_entries: int | None = None) -> tuple[list[dict], bool]:
     """The compatibility scanner used when the native core is unavailable."""
     found: list[dict] = []
     truncated = False
-    cap = max(0, int(max_entries))
+    cap = MAX_ENTRIES if max_entries is None else max(0, int(max_entries))
     with os.scandir(target) as scan:
         for entry in scan:
             if len(found) >= cap:
@@ -168,8 +168,11 @@ def _python_directory_records(target: Path, max_entries: int = MAX_ENTRIES) -> t
     return found, truncated
 
 
-def _directory_records(target: Path, max_entries: int = MAX_ENTRIES) -> tuple[list[dict], bool]:
-    cap = max(0, int(max_entries))
+def _directory_records(target: Path, max_entries: int | None = None) -> tuple[list[dict], bool]:
+    # Resolve the module-level default at call time. Tests and future runtime
+    # tuning intentionally change MAX_ENTRIES; a function-default expression
+    # would freeze the old value when this module is first imported.
+    cap = MAX_ENTRIES if max_entries is None else max(0, int(max_entries))
     if native_core.available:
         try:
             payload = native_core.scan_directory(target, cap)
