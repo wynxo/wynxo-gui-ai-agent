@@ -90,9 +90,11 @@ _PROJECT_PATTERNS: tuple[tuple[re.Pattern, str], ...] = (
      "In this project, {value}."),
 )
 
+# Put the longer forms first: regex alternation is left-biased, so ``remember``
+# before ``remember that`` would incorrectly keep the word "that" in the note.
 _EXPLICIT = re.compile(
-    r"(?i)^\s*(?:please\s+)?(?:remember|remember that|keep in mind|note that)\s*[:,-]?\s*(.+?)\s*$|"
-    r"^\s*(?:запомни|запомни,?\s+что)\s*[:,-]?\s*(.+?)\s*$|"
+    r"(?i)^\s*(?:please\s+)?(?:remember\s+that|keep\s+in\s+mind|note\s+that|remember)\s*[:,-]?\s*(.+?)\s*$|"
+    r"^\s*(?:запомни,?\s+что|запомни)\s*[:,-]?\s*(.+?)\s*$|"
     r"^\s*(?:merk\s+dir|merke\s+dir)\s*[:,-]?\s*(.+?)\s*$"
 )
 _PROJECT_HINT = re.compile(
