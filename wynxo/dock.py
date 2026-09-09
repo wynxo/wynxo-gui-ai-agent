@@ -566,15 +566,26 @@ class DockController(QObject):
     def projectName(self):
         return Path(self._project).name if self._project else ""
 
-    def set_project(self, path: str) -> None:
+    def _block_dirty_transition(self, action: str) -> bool:
+        """Refuse any transition that would replace an unsaved editor buffer."""
+        if not self._viewer_dirty:
+            return False
+        name = str(self._viewer.get("name") or "the open file")
+        self.toast.emit(f"Save or discard edits in {name} before {action}.")
+        return True
+
+    def set_project(self, path: str) -> bool:
         path = str(path or "")
         if path == self._project:
-            return
+            return True
+        if self._block_dirty_transition("switching projects"):
+            return False
         self._project = path
         self.tree.set_root(path)
         self._file_filter = ""
         self._search_results = []
         self._viewer = {}
+        self._viewer_buffer = ""
         self._viewer_dirty = False
         self._change_path = ""
         self._diff = {"rows": [], "error": "", "path": "", "binary": False}
@@ -589,6 +600,7 @@ class DockController(QObject):
         self.contextChanged.emit()
         if path:
             self.refreshChanges()
+        return True
 
     # ---------------------------------------------------------------- files
     @Property(QObject, constant=True)
@@ -665,19 +677,32 @@ class DockController(QObject):
     def fileModified(self):
         return self._viewer_dirty
 
-    @Slot(str)
+    @Slot(str, result=bool)
     def openFile(self, path):
         if not self._project or not path:
-            return
+            return False
+        try:
+            target = str(files.resolve_within(self._project, str(path)))
+        except (OSError, ValueError):
+            target = str(path)
+        if self._viewer_dirty:
+            # Reopening the same file must never reload its on-disk copy over
+            # the user's buffer. Another file is a destructive transition and
+            # is refused until the caller explicitly saves or discards first.
+            if target == str(self._viewer.get("path", "")):
+                return True
+            if self._block_dirty_transition("opening another file"):
+                return False
         try:
             record = files.read_file(self._project, str(path))
         except (OSError, ValueError) as exc:
             name = Path(str(path)).name
             self._viewer = {"path": str(path), "name": name, "lines": 0, "text": "",
                             "error": files.explain(exc, f"“{name}”")}
+            self._viewer_buffer = ""
             self._viewer_dirty = False
             self.viewerChanged.emit()
-            return
+            return False
         base = Path(self._project).resolve()
         try:
             record["relative"] = str(Path(record["path"]).relative_to(base))
@@ -692,14 +717,18 @@ class DockController(QObject):
             self._preview = {"kind": "image", "title": record["name"],
                              "image": record["image"], "path": record["path"]}
             self.previewChanged.emit()
+        return True
 
-    @Slot()
+    @Slot(result=bool)
     def closeFile(self):
+        if self._block_dirty_transition("closing the file"):
+            return False
         self._viewer = {}
         self._viewer_buffer = ""
         self._viewer_dirty = False
         self.tree.set_selected("")
         self.viewerChanged.emit()
+        return True
 
     @Slot(str)
     def setFileBuffer(self, text):
