@@ -193,7 +193,7 @@ Item {
                             : "Open a project, then describe the coding task…")
                         : root.workMode
                             ? "Describe what you want done on the desktop…"
-                            : "Ask, build, debug, automate…"
+                            : "Ask a question, explain, or brainstorm…"
                     placeholderTextColor: Theme.textMuted
                     color: Theme.textPrimary
                     selectionColor: Theme.accent
