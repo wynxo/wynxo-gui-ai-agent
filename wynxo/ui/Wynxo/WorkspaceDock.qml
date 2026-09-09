@@ -73,6 +73,24 @@ Item {
         dock.closeFile();
     }
 
+    function revealDirectoryInFiles(path) {
+        if (!dock || !path) return;
+        // This transition was explicitly requested by the user from Terminal,
+        // so Files becomes their chosen workspace surface rather than an
+        // automatic suggestion the app may later move away from.
+        userSelectedWorkspaceTab = true;
+        planSelected = false;
+        dock.setTab("files");
+        if (!dock.visible) dock.setVisible(true);
+        // A stale file search would hide the tree we are about to reveal.
+        // Clearing through FileExplorer keeps both its visible field and the
+        // backend filter in sync, then reveal the real shell directory.
+        Qt.callLater(function () {
+            if (filesLoader.item) filesLoader.item.clearFilter();
+            dock.revealFile(path);
+        });
+    }
+
     function pickWorkspaceTab(id) {
         userSelectedWorkspaceTab = true;
         if (!dock) return;
@@ -137,7 +155,7 @@ Item {
             Rectangle {
                 anchors.centerIn: parent
                 width: 1; height: parent.height
-                color: resizer.dragging || edge.hovered ? Theme.glassEdgeStrong : Theme.glassEdge
+                color: resizer.dragging || edge.hovered ? Theme.glassEdgeStrong : Theme.borderSubtle
                 Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
             }
             HoverHandler { id: edge; cursorShape: Qt.SizeHorCursor }
@@ -167,12 +185,12 @@ Item {
             visible: root.panelOpen
             clip: true
 
-            GlassSurface {
+            // The workspace is a permanent productivity surface. Keep it fully
+            // opaque at rest; glass belongs to hover/focus/drag feedback inside
+            // the tools, not to the panel behind them.
+            Rectangle {
                 anchors.fill: parent
-                tint: Theme.background
-                fillOpacity: 0.86
-                outlineVisible: false
-                sheen: true
+                color: Theme.background
             }
 
             Loader {
@@ -195,7 +213,7 @@ Item {
                         anchors.centerIn: parent
                         width: parent.width; height: 1
                         color: SplitHandle.pressed || SplitHandle.hovered
-                               ? Theme.glassEdgeStrong : Theme.glassEdge
+                               ? Theme.glassEdgeStrong : Theme.borderSubtle
                     }
                 }
 
@@ -224,7 +242,9 @@ Item {
                 anchors.fill: parent
                 visible: !root.planSelected && root.tab === "terminal"
                 active: visible || item !== null
-                sourceComponent: TerminalPanel {}
+                sourceComponent: TerminalPanel {
+                    onRevealDirectory: function(path) { root.revealDirectoryInFiles(path); }
+                }
             }
 
             Loader {
