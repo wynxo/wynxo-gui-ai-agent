@@ -28,6 +28,16 @@ Item {
         if (code === "U") return Theme.warning;
         return Theme.info;
     }
+    function parentFolder(path) {
+        var value = String(path || "");
+        var slash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
+        return slash > 0 ? value.slice(0, slash) : value;
+    }
+    function terminalFor(relativePath) {
+        if (!root.dock || !relativePath) return;
+        var absolute = root.dock.absolutePath(relativePath);
+        root.dock.runInTerminal("cd " + JSON.stringify(root.parentFolder(absolute)));
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -103,6 +113,7 @@ Item {
                 height: Theme.rowHeight
                 hoverEnabled: true
                 readonly property bool current: !!(root.dock && root.dock.diffPath === modelData.path)
+                readonly property bool existsInWorktree: modelData.status !== "D"
                 Accessible.role: Accessible.ListItem
                 Accessible.name: modelData.statusLabel + " " + modelData.path
                         + ", " + modelData.added + " added, " + modelData.removed + " removed"
@@ -200,20 +211,30 @@ Item {
                     WMenu {
                         id: changeMenu
                         anchorX: -menuWidth + more.width
-                        menuWidth: 208
+                        menuWidth: 244
                         items: [
                             { id: "open", label: "Open file", icon: "file",
-                              disabled: change.modelData.status === "D" },
+                              disabled: !change.existsInWorktree },
                             { id: "diff", label: change.current ? "Hide diff" : "Show diff", icon: "branch" },
-                            { id: "copy", label: "Copy path", icon: "copy" },
+                            { separator: true },
+                            { id: "copyRelative", label: "Copy relative path", icon: "copy" },
+                            { id: "reveal", label: "Reveal in file manager", icon: "launch",
+                              disabled: !change.existsInWorktree },
+                            { id: "terminal", label: "Terminal in containing folder", icon: "terminal" },
+                            { id: "attach", label: "Attach to conversation", icon: "paperclip",
+                              disabled: !change.existsInWorktree },
                             { separator: true },
                             { id: "revert", label: "Discard changes", icon: "revert", danger: true },
                         ]
                         onPicked: function(id) {
                             if (!root.dock) return;
-                            if (id === "open") root.openRequested(root.dock.absolutePath(change.modelData.path));
+                            var absolute = root.dock.absolutePath(change.modelData.path);
+                            if (id === "open") root.openRequested(absolute);
                             else if (id === "diff") change.clicked();
-                            else if (id === "copy" && bridge) bridge.copyText(root.dock.absolutePath(change.modelData.path));
+                            else if (id === "copyRelative" && bridge) bridge.copyText(change.modelData.path);
+                            else if (id === "reveal" && bridge) bridge.revealPath(absolute);
+                            else if (id === "terminal") root.terminalFor(change.modelData.path);
+                            else if (id === "attach" && bridge) bridge.attachPath(absolute);
                             else if (id === "revert") root.revertRequested(change.modelData.path, change.modelData.name);
                         }
                     }
