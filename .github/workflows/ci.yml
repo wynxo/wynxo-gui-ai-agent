@@ -37,6 +37,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
+      WYNXO_REQUIRE_NATIVE: "1"
       # Runs the QML load and interaction checks, which need a platform plugin.
       WYNXO_QML_SMOKE: "1"
     steps:
@@ -52,6 +53,16 @@ jobs:
             libnss3 libxcomposite1 libxdamage1 libxrandr2 libasound2t64
       - name: Install package and test tools
         run: python -m pip install . pytest
+      - name: Verify installed package contains C++ core
+        run: |
+          cd /tmp
+          python - <<'PY'
+          from wynxo.native_core import native_core
+          assert native_core.available, native_core.error
+          assert native_core.version == "0.1.0"
+          assert native_core.needs_confirmation("click", "safe")
+          print("packaged native core:", native_core.path)
+          PY
       - name: Test core suite
         # The dock's tests run a real shell and a real Git repository, so both
         # have to be present; runners have them, but say so. The live streaming
@@ -63,7 +74,7 @@ jobs:
       - name: Test live Qt streaming
         run: python -m pytest -q tests/test_live_stream.py
       - name: Validate Python sources
-        run: python -m compileall -q wynxo install.py uninstall.py
+        run: python -m compileall -q wynxo install.py uninstall.py setup.py
       - name: Load native GUI
         run: python -m wynxo --smoke-test
 
@@ -73,6 +84,7 @@ jobs:
     env:
       QT_QPA_PLATFORM: offscreen
       QT_QUICK_BACKEND: software
+      WYNXO_REQUIRE_NATIVE: "1"
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
