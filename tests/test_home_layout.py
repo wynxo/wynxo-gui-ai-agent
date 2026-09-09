@@ -31,3 +31,20 @@ def test_composer_does_not_rely_on_layout_alignment_for_centering():
     assert "Layout.preferredWidth" not in composer
     assert "Layout.maximumWidth" not in composer
     assert "anchors.horizontalCenter: parent.horizontalCenter" in composer
+
+
+def test_transient_surfaces_use_the_same_explicit_centering_lane():
+    text = MAIN.read_text(encoding="utf-8")
+    for lane_id, child_id in (("warningLane", "warningCard"), ("errorLane", "errorBanner")):
+        assert f"id: {lane_id}\n" in text
+        child = text.split(f"id: {child_id}\n", 1)[1].split("}", 1)[0]
+        assert "width: Math.min(Theme.readingWidth, parent.width)" in child
+        assert "anchors.horizontalCenter: parent.horizontalCenter" in child
+
+
+def test_chat_mode_does_not_render_dead_workspace_chrome():
+    text = MAIN.read_text(encoding="utf-8")
+    assert 'readonly property bool workspaceAvailable: !!(bridge && bridge.taskMode !== "chat")' in text
+    assert "dockAvailable: window.workspaceAvailable" in text
+    assert "visible: window.roomForDock && window.workspaceAvailable" in text
+    assert "if (!window.workspaceAvailable) return;" in text
