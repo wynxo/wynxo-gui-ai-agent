@@ -345,6 +345,12 @@ Item {
 
                 Item { Layout.fillWidth: true }
 
+                TokenUsage {
+                    id: tokenUsage
+                    Layout.preferredHeight: 30
+                    compact: root.tight
+                }
+
                 ModelPicker {
                     id: modelButton
                     compact: true
