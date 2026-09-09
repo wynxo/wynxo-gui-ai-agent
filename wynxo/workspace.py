@@ -20,7 +20,7 @@ import ipaddress
 import time
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import Property, Signal, Slot
+from PySide6.QtCore import Property, QTimer, Signal, Slot
 
 from . import context as ctx
 from . import engine as engine_module
@@ -164,6 +164,8 @@ class WorkspaceController(Controller):
     planChanged = Signal()
     usageChanged = Signal()
     VALID_TASK_MODES = {"chat", "work", "codex"}
+    LAST_TASK_KEY = "workspace:last_task"
+    DRAFT_KEY_PREFIX = "workspace:draft:"
 
     def __init__(self, *args, **kwargs):
         self._task_mode = "chat"
@@ -176,6 +178,14 @@ class WorkspaceController(Controller):
         engine_module.validate_endpoint = validate_workspace_endpoint
         super().__init__(*args, **kwargs)
         self._usage = TokenUsageTracker(self.store)
+        # Draft text is cheap state worth surviving a restart, but attachments are
+        # intentionally one-turn context and are never serialized here. Debounce
+        # SQLite writes so typing does not become one transaction per keypress.
+        self._draft_persist_timer = QTimer(self)
+        self._draft_persist_timer.setSingleShot(True)
+        self._draft_persist_timer.setInterval(400)
+        self._draft_persist_timer.timeout.connect(self._persist_current_draft)
+        self._restore_workspace_session()
 
     def _emit_mode(self) -> None:
         self.modeChanged.emit()
@@ -188,6 +198,49 @@ class WorkspaceController(Controller):
     @staticmethod
     def _plan_key(task_id: str) -> str:
         return f"task_plan:{task_id}"
+
+    @classmethod
+    def _draft_key(cls, task_id: str) -> str:
+        return cls.DRAFT_KEY_PREFIX + (str(task_id or "") or "__new__")
+
+    def _set_last_task(self, task_id: str) -> None:
+        self.store.set_setting(self.LAST_TASK_KEY, str(task_id or ""))
+
+    def _persist_current_draft(self) -> None:
+        self.store.set_setting(self._draft_key(self._task_id), str(self._draft_text or ""))
+
+    def _restore_workspace_session(self) -> None:
+        """Restore passive UI state only; never resume a model/tool run."""
+        task_id = str(self.store.get_setting(self.LAST_TASK_KEY, "") or "")
+        if task_id and self.store.get_conversation(task_id):
+            self.openTask(task_id)
+            return
+        if task_id:
+            self._set_last_task("")
+        # Controller starts on a blank task but does not normally restore a
+        # draft until a task switch. Do that once for restart continuity.
+        self._restore_draft()
+
+    def _save_draft(self):
+        super()._save_draft()
+        if hasattr(self, "_draft_persist_timer"):
+            self._draft_persist_timer.stop()
+        self._persist_current_draft()
+
+    def _restore_draft(self):
+        super()._restore_draft()
+        if self._draft_text:
+            return
+        saved = self.store.get_setting(self._draft_key(self._task_id), "")
+        if isinstance(saved, str) and saved:
+            self._draft_text = saved
+            self.draftChanged.emit()
+
+    @Slot(str)
+    def setDraft(self, text):
+        super().setDraft(text)
+        if hasattr(self, "_draft_persist_timer"):
+            self._draft_persist_timer.start()
 
     def _saved_mode(self, task_id: str) -> str:
         mode = str(self.store.get_setting(self._mode_key(task_id), "chat") or "chat")
@@ -214,7 +267,17 @@ class WorkspaceController(Controller):
         return result
 
     def _saved_plan(self, task_id: str) -> list[dict]:
-        return self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))
+        plan = self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))
+        # A process restart cannot prove an old in-progress action completed.
+        # Reopen it as pending instead of presenting stale work as still running.
+        interrupted = False
+        for step in plan:
+            if step["status"] == "in_progress":
+                step["status"] = "pending"
+                interrupted = True
+        if interrupted:
+            self.store.set_setting(self._plan_key(task_id), plan)
+        return plan
 
     def _persist_task_mode(self, task_id: str | None = None) -> None:
         target = str(task_id or self._task_id or "")
@@ -392,6 +455,7 @@ class WorkspaceController(Controller):
         if mode not in self.VALID_TASK_MODES or self._busy:
             return
         super().newTask()
+        self._set_last_task("")
         self._set_plan([], persist=False)
         if self._task_id or self._busy:
             return
@@ -408,6 +472,7 @@ class WorkspaceController(Controller):
             super().newTask()
             return
         super().newTask()
+        self._set_last_task("")
         self._set_plan([], persist=False)
         if not self._task_id:
             self._task_mode = "chat"
@@ -427,6 +492,7 @@ class WorkspaceController(Controller):
         super().openTask(task_id)
         if self._task_id != task_id:
             return
+        self._set_last_task(task_id)
         self._task_mode = self._saved_mode(task_id)
         self._task_mode_locked = True
         self._set_plan(self._saved_plan(task_id), persist=False)
@@ -467,6 +533,8 @@ class WorkspaceController(Controller):
 
     @Slot(str)
     def send(self, text):
+        previous_task = self._task_id
+        before_messages = len(self._history)
         # Learn only messages the base controller would actually accept. Never
         # turn an offline draft, an empty submit or a click while busy into
         # durable profile data. Learning happens before the run starts so the
@@ -482,6 +550,15 @@ class WorkspaceController(Controller):
             self._task_mode_locked = True
             self._emit_mode()
         super().send(text)
+        sent = len(self._history) > before_messages
+        if sent:
+            self._draft_persist_timer.stop()
+            # A newly created task changes the draft key mid-send, so clear both
+            # the source slot and the final task slot. The submitted text now
+            # belongs to conversation history, not the composer.
+            self.store.set_setting(self._draft_key(previous_task), "")
+            self.store.set_setting(self._draft_key(self._task_id), "")
+            self._set_last_task(self._task_id)
         if was_new and self._task_id:
             self._persist_task_mode()
             self._persist_plan()
@@ -581,6 +658,15 @@ class WorkspaceController(Controller):
         if usage_recorded:
             self.usageChanged.emit()
 
+    @Slot(str)
+    def deleteTask(self, task_id):
+        task_id = str(task_id or "")
+        if task_id:
+            self.store.set_setting(self._draft_key(task_id), "")
+            if str(self.store.get_setting(self.LAST_TASK_KEY, "") or "") == task_id:
+                self._set_last_task("")
+        super().deleteTask(task_id)
+
     @Slot()
     def clearTask(self):
         task_id = self._task_id
@@ -632,3 +718,10 @@ class WorkspaceController(Controller):
             self._set_plan(plan)
             self._persist_task_mode()
             self._emit_mode()
+    def shutdown(self):
+        if hasattr(self, "_draft_persist_timer"):
+            self._draft_persist_timer.stop()
+        self._persist_current_draft()
+        self._set_last_task(self._task_id)
+        super().shutdown()
+
