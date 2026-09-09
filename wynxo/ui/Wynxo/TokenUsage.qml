@@ -37,7 +37,9 @@ Item {
         Accessible.name: "Token usage"
         Accessible.description: bridge && bridge.liveOutputTokens > 0
             ? Math.round(displayedTokens) + " generated tokens at " + displayedRate.toFixed(1) + " tokens per second"
-            : "Open token usage statistics"
+            : root.bucket("today").tokens > 0
+                ? root.bucket("today").tokens + " tokens used today; open usage statistics"
+                : "Open token usage statistics"
         onClicked: usagePopover.opened ? usagePopover.close() : usagePopover.open()
 
         background: GlassSurface {
@@ -55,11 +57,16 @@ Item {
 
         property real displayedTokens: bridge ? bridge.liveOutputTokens : 0
         property real displayedRate: bridge ? bridge.liveTokenRate : 0
+        property real displayedToday: Number(root.bucket("today").tokens || 0)
         Behavior on displayedTokens {
             enabled: !Theme.reducedMotion
             NumberAnimation { duration: Theme.base; easing.type: Theme.easing }
         }
         Behavior on displayedRate {
+            enabled: !Theme.reducedMotion
+            NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
+        }
+        Behavior on displayedToday {
             enabled: !Theme.reducedMotion
             NumberAnimation { duration: Theme.slow; easing.type: Theme.easing }
         }
@@ -80,10 +87,12 @@ Item {
                 Text {
                     text: usageButton.displayedTokens > 0
                         ? root.formatCount(usageButton.displayedTokens) + (root.compact ? "" : " tokens")
-                        : "Usage"
+                        : usageButton.displayedToday > 0
+                            ? root.formatCount(usageButton.displayedToday) + (root.compact ? "" : " today")
+                            : "Usage"
                     color: bridge && bridge.busy ? Theme.textPrimary : Theme.textSecondary
                     font.family: Theme.monoFamily
-                    font.pixelSize: Theme.micro
+                    font.pixelSize: Theme.caption
                     font.weight: bridge && bridge.busy ? Font.DemiBold : Font.Medium
                     anchors.verticalCenter: parent.verticalCenter
                 }
@@ -101,7 +110,7 @@ Item {
                 text: usageButton.displayedRate.toFixed(1) + " tokens/s"
                 color: bridge && bridge.busy ? Theme.textSecondary : Theme.textMuted
                 font.family: Theme.monoFamily
-                font.pixelSize: Theme.micro
+                font.pixelSize: Theme.caption
                 anchors.verticalCenter: parent.verticalCenter
             }
         }
