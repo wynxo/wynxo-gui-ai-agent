@@ -400,7 +400,7 @@ class WorkspaceController(Controller):
     def projectInstructionsSummary(self):
         return self._project_instructions_summary
 
-    @Property(int, notify=changed)
+    @Property(int, notify=Controller.changed)
     def contextOmittedTurns(self):
         return int(self._context_omitted_turns)
 
