@@ -7,7 +7,8 @@ import QtQuick.Layouts
 
     Compact text actions, not cards. Each one either fills the composer with a
     prompt or opens the tool it names — nothing here is decorative, and nothing
-    is offered that this machine cannot do.
+    is offered that this machine cannot do. Idle actions stay readable; glass
+    appears only as interaction feedback.
 */
 Item {
     id: root
@@ -59,9 +60,10 @@ Item {
             delegate: AbstractButton {
                 id: starter
                 required property var modelData
-                implicitHeight: 28
+                implicitHeight: 30
                 implicitWidth: starterRow.implicitWidth + Theme.s3 * 2
                 hoverEnabled: true
+                focusPolicy: Qt.StrongFocus
                 Accessible.role: Accessible.Button
                 Accessible.name: modelData.label
                 onClicked: {
@@ -72,13 +74,20 @@ Item {
                     if (modelData.command) root.commandInvoked(modelData.command);
                     else root.starterChosen(modelData.prompt);
                 }
-                background: Rectangle {
+                background: GlassSurface {
                     radius: Theme.r2
-                    color: starter.down ? Theme.surfacePressed
-                         : starter.hovered ? Theme.surfaceHover : "transparent"
-                    border.width: starter.visualFocus ? 1 : 0
-                    border.color: Theme.accentEdge
-                    Behavior on color { enabled: !Theme.reducedMotion; ColorAnimation { duration: Theme.fast } }
+                    solid: false
+                    autoGlass: false
+                    glassEnabled: starter.hovered || starter.down || starter.visualFocus
+                    tint: starter.down ? Theme.glassTintStrong : Theme.glassTintHover
+                    fillOpacity: starter.down ? 0.58
+                               : starter.hovered ? 0.34
+                               : starter.visualFocus ? 0.22 : 0.0
+                    outlineVisible: starter.hovered || starter.down || starter.visualFocus
+                    strongEdge: starter.hovered || starter.down
+                    active: starter.visualFocus
+                    sheen: starter.hovered || starter.down
+                    edgeColor: starter.visualFocus ? Theme.accentEdge : Theme.glassEdge
                 }
                 contentItem: Row {
                     id: starterRow
@@ -86,15 +95,18 @@ Item {
                     spacing: Theme.s2
                     Icon {
                         name: starter.modelData.icon
-                        ink: starter.hovered ? Theme.textSecondary : Theme.textDisabled
+                        ink: starter.hovered || starter.visualFocus
+                             ? Theme.textPrimary : Theme.textMuted
                         width: 13; height: 13
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
                         text: starter.modelData.label
-                        color: starter.hovered ? Theme.textPrimary : Theme.textMuted
+                        color: starter.hovered || starter.visualFocus
+                               ? Theme.textPrimary : Theme.textSecondary
                         font.family: Theme.sansFamily
                         font.pixelSize: Theme.caption
+                        font.weight: starter.hovered || starter.visualFocus ? Font.Medium : Font.Normal
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
