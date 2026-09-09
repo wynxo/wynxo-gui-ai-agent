@@ -10,9 +10,12 @@ import QtQuick.Layouts
 */
 Item {
     id: root
+    objectName: "tokenUsage"
     property bool compact: false
     implicitWidth: usageButton.implicitWidth
     implicitHeight: 30
+
+    function showUsage() { usagePopover.open(); }
 
     function formatCount(value) {
         var count = Math.max(0, Math.round(Number(value) || 0));
