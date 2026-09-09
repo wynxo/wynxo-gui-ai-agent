@@ -383,8 +383,6 @@ class WorkspaceController(Controller):
         self._task_mode = mode
         self._task_mode_locked = True
         self._emit_mode()
-        if mode == "work" and not self.desktopEnabled:
-            self.toggleDesktop()
         return True
 
     @Slot(str)
@@ -432,8 +430,6 @@ class WorkspaceController(Controller):
         self._task_mode_locked = True
         self._set_plan(self._saved_plan(task_id), persist=False)
         self._emit_mode()
-        if self._task_mode == "work" and not self.desktopEnabled and not self._connecting:
-            self.toggleDesktop()
 
     @Slot(str)
     def send(self, text):

@@ -171,13 +171,13 @@ def test_tool_roundtrip_preserves_thinking_calls_and_image():
     client = FakeClient([response("Opening the app.", [("open_app", {"app": "paint.desktop"})], "Need paint"),
                          response("Paint launched.")])
     history, events, desktop = run(client, think=True)
-    assert desktop.calls == [("screenshot", {}), ("open_app", {"app": "paint.desktop"})]
+    assert desktop.calls == [("open_app", {"app": "paint.desktop"})]
     second = client.requests[1]
     prior = next(m for m in second["messages"] if m["role"] == "assistant")
     assert prior["thinking"] == "Need paint"
     assert prior["tool_calls"][0]["function"]["name"] == "open_app"
     assert next(m for m in second["messages"] if m["role"] == "tool")["tool_name"] == "open_app"
-    assert any(m.get("images") == ["fakepng"] for m in second["messages"])
+    assert not any(m.get("images") for m in second["messages"])
     assert second["think"] is True
     assert history[-1]["content"] == "Paint launched."
     assert all(m["role"] != "system" for m in history)
@@ -200,12 +200,20 @@ def test_nonvision_model_can_only_launch_apps():
     assert {t["function"]["name"] for t in client.requests[0]["tools"]} == {"open_app", "list_apps", "wait", "run_command"}
 
 
-def test_screenshot_failure_removes_visual_tools():
-    client = FakeClient([response("Screen capture failed.")])
-    _, events, desktop = run(client, FakeDesktop("screenshot"))
+def test_screen_access_is_offered_without_eager_capture():
+    client = FakeClient([response("No screen needed.")])
+    _, events, desktop = run(client)
+    offered = {t["function"]["name"] for t in client.requests[0]["tools"]}
+    assert {"screenshot", "click", "run_command"} <= offered
+    assert desktop.calls == []
+    assert not any(e.get("type") == "tool_start" and e.get("name") == "screenshot" for e in events)
+
+
+def test_screenshot_is_captured_only_when_the_model_requests_it():
+    client = FakeClient([response(calls=[("screenshot", {})]), response("I can see it now.")])
+    _, _, desktop = run(client)
     assert desktop.calls == [("screenshot", {})]
-    assert "click" not in {t["function"]["name"] for t in client.requests[0]["tools"]}
-    assert next(e for e in events if e["type"] == "tool_end")["result"]["ok"] is False
+    assert any(m.get("images") == ["fakepng"] for m in client.requests[1]["messages"])
 
 
 def test_tool_errors_return_evidence_to_model():
@@ -228,7 +236,7 @@ def test_tool_arguments_are_checked(name, args):
 def test_bad_tool_arguments_never_reach_desktop():
     client = FakeClient([response(calls=[("click", {"x": -1, "y": 3})]), response("Invalid click.")])
     _, _, desktop = run(client)
-    assert desktop.calls == [("screenshot", {})]
+    assert desktop.calls == []
     assert json.loads(next(m for m in client.requests[1]["messages"] if m["role"] == "tool")["content"])["ok"] is False
 
 

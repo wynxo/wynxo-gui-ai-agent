@@ -98,11 +98,33 @@ def test_work_mode_is_task_scoped(tmp_path):
     assert bridge.taskMode == "work"
     assert bridge.taskModeLocked is True
 
-    # A fresh Wynxo task never inherits Work merely because the desktop portal
-    # is still connected; visual control is enabled only by the task mode.
+    # A fresh Wynxo task never inherits Work merely because screen control
+    # happens to remain connected; Work and screen access are separate state.
     bridge.newTask()
     assert bridge.taskMode == "chat"
     assert bridge.taskModeLocked is False
+    bridge.shutdown()
+
+
+def test_choosing_work_does_not_enable_screen_control(tmp_path):
+    bridge = controller(tmp_path, connected=False)
+    assert bridge.desktopEnabled is False
+    assert bridge.setTaskMode("work") is True
+    assert bridge.taskMode == "work"
+    assert bridge.desktopEnabled is False
+    assert bridge.desktop.connected is False
+    bridge.shutdown()
+
+
+def test_reopening_work_does_not_enable_screen_control(tmp_path):
+    bridge = controller(tmp_path, connected=False)
+    task = bridge.store.create_conversation("Work task", "qwen3:8b")
+    bridge.store.set_messages(task["id"], [{"role": "user", "content": "run tests"}])
+    bridge.store.set_setting(f"task_mode:{task['id']}", "work")
+    bridge.openTask(task["id"])
+    assert bridge.taskMode == "work"
+    assert bridge.desktopEnabled is False
+    assert bridge.desktop.connected is False
     bridge.shutdown()
 
 

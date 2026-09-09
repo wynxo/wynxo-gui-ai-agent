@@ -22,8 +22,10 @@ Item {
         ? "Conversation only — no commands, files, or desktop actions."
         : mode === "codex" && !hasProject
             ? "Open a project to read, edit, run, and test code in its workspace."
-            : mode === "work" && !(bridge && bridge.desktopEnabled)
-                ? "Commands are available now. Screen control is requested only when the task needs it."
+            : mode === "work"
+                ? (bridge && bridge.desktopEnabled
+                    ? "Commands are available. Screen control is on and used only when the task needs visual context."
+                    : "Commands are available. Screen control is optional and stays off until you enable it.")
                 : hasProject
                     ? "Working in " + (bridge ? bridge.projectLabel : "")
                     : ""

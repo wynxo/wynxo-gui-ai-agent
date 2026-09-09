@@ -526,6 +526,8 @@ _SYSTEM = """You are Wynxo, a concise, useful local AI copilot for Linux.
 Use the user's chosen language. Be accurate about your capabilities and results.
 Act on requests using your tools instead of telling the user to do the work themselves.
 When local tools are available, launch applications and run commands without screen control.
+Screen control being available is not a reason to inspect the screen. Prefer commands and
+nonvisual tools, and call screenshot only when the current task genuinely depends on visual state.
 For "open/run kcalc", use list_apps then open_app. For command-line work use run_command.
 Use command output to inspect files, diagnose errors, edit code and verify your work.
 Commands run as the user, with no interactive input. Do not attempt sudo password prompts.
@@ -733,14 +735,8 @@ class AgentEngine:
                 event("status", text=reason + " Chat remains available.")
             elif tools_enabled and not visual:
                 event("status", text="Local commands and app launching are ready. Screen control requires a connected desktop and a vision model.")
-            if visual:
-                result = tool_result("screenshot", {}, allowed)
-                if not result.get("ok", True) or not result.get("image"):
-                    # A screenless copilot must not guess where to click.
-                    allowed = (_NONVISUAL - MEMORY_TOOLS) | memory_tools
-                    system += "\nScreen capture failed. Visual tools are disabled; explain the screen capture error."
-                else:
-                    append_screen(result)
+            elif visual:
+                event("status", text="Local tools are ready. Screen control is available on demand.")
             steps = 0
             if tools_enabled:
                 event("session", permission_mode=initial_permission_mode, visual=visual, max_steps=max_steps)
