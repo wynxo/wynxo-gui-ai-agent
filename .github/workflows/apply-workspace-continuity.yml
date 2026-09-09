@@ -1,0 +1,119 @@
+name: Apply workspace continuity
+
+on:
+  push:
+    branches: [work/finish-astra-gui-core]
+    paths:
+      - '.github/workflows/apply-workspace-continuity.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: work/finish-astra-gui-core
+          fetch-depth: 0
+      - name: Add restart-safe continuity
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('wynxo/workspace.py')
+          text = path.read_text()
+
+          text = text.replace(
+              'from PySide6.QtCore import Property, Signal, Slot',
+              'from PySide6.QtCore import Property, QTimer, Signal, Slot',
+          )
+
+          text = text.replace(
+              '    VALID_TASK_MODES = {"chat", "work", "codex"}\n\n    def __init__(self, *args, **kwargs):',
+              '    VALID_TASK_MODES = {"chat", "work", "codex"}\n'
+              '    LAST_TASK_KEY = "workspace:last_task"\n'
+              '    DRAFT_KEY_PREFIX = "workspace:draft:"\n\n'
+              '    def __init__(self, *args, **kwargs):',
+          )
+
+          text = text.replace(
+              '        super().__init__(*args, **kwargs)\n        self._usage = TokenUsageTracker(self.store)\n',
+              '        super().__init__(*args, **kwargs)\n'
+              '        self._usage = TokenUsageTracker(self.store)\n'
+              '        # Draft text is cheap state worth surviving a restart, but attachments are\n'
+              '        # intentionally one-turn context and are never serialized here. Debounce\n'
+              '        # SQLite writes so typing does not become one transaction per keypress.\n'
+              '        self._draft_persist_timer = QTimer(self)\n'
+              '        self._draft_persist_timer.setSingleShot(True)\n'
+              '        self._draft_persist_timer.setInterval(400)\n'
+              '        self._draft_persist_timer.timeout.connect(self._persist_current_draft)\n'
+              '        self._restore_workspace_session()\n',
+          )
+
+          anchor = '''    @staticmethod\n    def _plan_key(task_id: str) -> str:\n        return f"task_plan:{task_id}"\n\n'''
+          addition = '''    @classmethod\n    def _draft_key(cls, task_id: str) -> str:\n        return cls.DRAFT_KEY_PREFIX + (str(task_id or "") or "__new__")\n\n    def _set_last_task(self, task_id: str) -> None:\n        self.store.set_setting(self.LAST_TASK_KEY, str(task_id or ""))\n\n    def _persist_current_draft(self) -> None:\n        self.store.set_setting(self._draft_key(self._task_id), str(self._draft_text or ""))\n\n    def _restore_workspace_session(self) -> None:\n        """Restore passive UI state only; never resume a model/tool run."""\n        task_id = str(self.store.get_setting(self.LAST_TASK_KEY, "") or "")\n        if task_id and self.store.get_conversation(task_id):\n            self.openTask(task_id)\n            return\n        if task_id:\n            self._set_last_task("")\n        # Controller starts on a blank task but does not normally restore a\n        # draft until a task switch. Do that once for restart continuity.\n        self._restore_draft()\n\n    def _save_draft(self):\n        super()._save_draft()\n        if hasattr(self, "_draft_persist_timer"):\n            self._draft_persist_timer.stop()\n        self._persist_current_draft()\n\n    def _restore_draft(self):\n        super()._restore_draft()\n        if self._draft_text:\n            return\n        saved = self.store.get_setting(self._draft_key(self._task_id), "")\n        if isinstance(saved, str) and saved:\n            self._draft_text = saved\n            self.draftChanged.emit()\n\n    @Slot(str)\n    def setDraft(self, text):\n        super().setDraft(text)\n        if hasattr(self, "_draft_persist_timer"):\n            self._draft_persist_timer.start()\n\n'''
+          if anchor not in text:
+              raise SystemExit('plan key anchor not found')
+          text = text.replace(anchor, anchor + addition, 1)
+
+          old_saved_plan = '''    def _saved_plan(self, task_id: str) -> list[dict]:\n        return self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))\n'''
+          new_saved_plan = '''    def _saved_plan(self, task_id: str) -> list[dict]:\n        plan = self._normalise_plan(self.store.get_setting(self._plan_key(task_id), []))\n        # A process restart cannot prove an old in-progress action completed.\n        # Reopen it as pending instead of presenting stale work as still running.\n        interrupted = False\n        for step in plan:\n            if step["status"] == "in_progress":\n                step["status"] = "pending"\n                interrupted = True\n        if interrupted:\n            self.store.set_setting(self._plan_key(task_id), plan)\n        return plan\n'''
+          if old_saved_plan not in text:
+              raise SystemExit('saved plan anchor not found')
+          text = text.replace(old_saved_plan, new_saved_plan, 1)
+
+          text = text.replace(
+              '        super().newTask()\n        self._set_plan([], persist=False)\n        if self._task_id or self._busy:\n            return\n',
+              '        super().newTask()\n        self._set_last_task("")\n        self._set_plan([], persist=False)\n        if self._task_id or self._busy:\n            return\n',
+              1,
+          )
+
+          # Replace the second newTask body separately so both paths clear the\n          # last-task pointer when the user intentionally opens a blank task.
+          old_new_task = '''    @Slot()\n    def newTask(self):\n        if self._busy:\n            super().newTask()\n            return\n        super().newTask()\n        self._set_plan([], persist=False)\n'''
+          new_new_task = '''    @Slot()\n    def newTask(self):\n        if self._busy:\n            super().newTask()\n            return\n        super().newTask()\n        self._set_last_task("")\n        self._set_plan([], persist=False)\n'''
+          if old_new_task not in text:
+              raise SystemExit('new task anchor not found')
+          text = text.replace(old_new_task, new_new_task, 1)
+
+          old_open = '''    @Slot(str)\n    def openTask(self, task_id):\n        super().openTask(task_id)\n        if self._task_id != task_id:\n            return\n        self._task_mode = self._saved_mode(task_id)\n'''
+          new_open = '''    @Slot(str)\n    def openTask(self, task_id):\n        super().openTask(task_id)\n        if self._task_id != task_id:\n            return\n        self._set_last_task(task_id)\n        self._task_mode = self._saved_mode(task_id)\n'''
+          if old_open not in text:
+              raise SystemExit('open task anchor not found')
+          text = text.replace(old_open, new_open, 1)
+
+          old_send_start = '''    @Slot(str)\n    def send(self, text):\n        # Learn only messages the base controller would actually accept. Never\n'''
+          new_send_start = '''    @Slot(str)\n    def send(self, text):\n        previous_task = self._task_id\n        before_messages = len(self._history)\n        # Learn only messages the base controller would actually accept. Never\n'''
+          if old_send_start not in text:
+              raise SystemExit('send start anchor not found')
+          text = text.replace(old_send_start, new_send_start, 1)
+
+          old_send_end = '''        super().send(text)\n        if was_new and self._task_id:\n            self._persist_task_mode()\n            self._persist_plan()\n            self.modeChanged.emit()\n'''
+          new_send_end = '''        super().send(text)\n        sent = len(self._history) > before_messages\n        if sent:\n            self._draft_persist_timer.stop()\n            # A newly created task changes the draft key mid-send, so clear both\n            # the source slot and the final task slot. The submitted text now\n            # belongs to conversation history, not the composer.\n            self.store.set_setting(self._draft_key(previous_task), "")\n            self.store.set_setting(self._draft_key(self._task_id), "")\n            self._set_last_task(self._task_id)\n        if was_new and self._task_id:\n            self._persist_task_mode()\n            self._persist_plan()\n            self.modeChanged.emit()\n'''
+          if old_send_end not in text:
+              raise SystemExit('send end anchor not found')
+          text = text.replace(old_send_end, new_send_end, 1)
+
+          tail_anchor = '''    @Slot()\n    def clearTask(self):\n        task_id = self._task_id\n'''
+          delete_method = '''    @Slot(str)\n    def deleteTask(self, task_id):\n        task_id = str(task_id or "")\n        if task_id:\n            self.store.set_setting(self._draft_key(task_id), "")\n            if str(self.store.get_setting(self.LAST_TASK_KEY, "") or "") == task_id:\n                self._set_last_task("")\n        super().deleteTask(task_id)\n\n'''
+          if tail_anchor not in text:
+              raise SystemExit('clear task anchor not found')
+          text = text.replace(tail_anchor, delete_method + tail_anchor, 1)
+
+          shutdown = '''\n    def shutdown(self):\n        if hasattr(self, "_draft_persist_timer"):\n            self._draft_persist_timer.stop()\n        self._persist_current_draft()\n        self._set_last_task(self._task_id)\n        super().shutdown()\n'''
+          if text.rstrip().endswith('self._emit_mode()'):
+              text = text.rstrip() + shutdown + '\n'
+          else:
+              raise SystemExit('workspace tail anchor not found')
+
+          path.write_text(text)
+          PY
+      - name: Remove one-shot workflow and commit
+        run: |
+          rm .github/workflows/apply-workspace-continuity.yml
+          git config user.name wynxo-ci
+          git config user.email 318229878+wynxo@users.noreply.github.com
+          git add wynxo/workspace.py tests/test_workspace_continuity.py .github/workflows/apply-workspace-continuity.yml
+          git commit -m "Persist workspace continuity without resuming actions"
+          git push origin HEAD:work/finish-astra-gui-core
