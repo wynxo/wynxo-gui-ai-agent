@@ -1,0 +1,112 @@
+"""Token counters must feel live without corrupting exact historical totals."""
+from datetime import datetime
+
+from wynxo.storage import Store
+from wynxo.usage import TokenUsageTracker
+
+
+def metrics(tokens, prompt, rate=2.5, cached=0, total_ms=1000):
+    return {
+        "tokens": tokens,
+        "prompt_tokens": prompt,
+        "cached_prompt_tokens": cached,
+        "load_ms": 20,
+        "total_ms": total_ms,
+        "tokens_per_second": rate,
+    }
+
+
+def test_streamed_estimate_moves_then_exact_metrics_reconcile(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    now = [100.0]
+    tracker = TokenUsageTracker(store, clock=lambda: now[0])
+
+    tracker.stream("A short streamed answer starts here. ")
+    first = tracker.live_output_tokens
+    assert first > 0
+
+    now[0] += 1.0
+    tracker.stream("Then several more words arrive from the model in another chunk.")
+    assert tracker.live_output_tokens > first
+    assert tracker.live_rate > 0
+
+    tracker.exact_metrics(metrics(45, 120, rate=2.5))
+    assert tracker.live_output_tokens == 45
+    assert tracker.live_rate == 2.5
+    assert tracker.metrics["tokens"] == 45
+    assert tracker.metrics["prompt_tokens"] == 120
+    store.close()
+
+
+def test_multiple_model_passes_accumulate_exact_usage(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    tracker = TokenUsageTracker(store)
+
+    tracker.exact_metrics(metrics(40, 100, rate=2.0, cached=25))
+    tracker.exact_metrics(metrics(5, 60, rate=6.0, cached=10))
+
+    assert tracker.live_output_tokens == 45
+    assert tracker.metrics["tokens"] == 45
+    assert tracker.metrics["prompt_tokens"] == 160
+    assert tracker.metrics["cached_prompt_tokens"] == 35
+    # Weighted by generated tokens rather than averaging a 40-token pass and a
+    # tiny 5-token pass as if they represented the same amount of work.
+    assert round(tracker.metrics["tokens_per_second"], 2) == 2.44
+    store.close()
+
+
+def test_period_buckets_use_local_day_week_month_and_lifetime(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    noon = datetime(2026, 9, 9, 12, 0, 0).timestamp()  # Wednesday
+
+    store.record_token_usage("today", "model", metrics(10, 90),
+                             datetime(2026, 9, 9, 8, 0, 0).timestamp())
+    store.record_token_usage("week", "model", metrics(20, 80),
+                             datetime(2026, 9, 7, 8, 0, 0).timestamp())
+    store.record_token_usage("month", "model", metrics(30, 70),
+                             datetime(2026, 9, 1, 8, 0, 0).timestamp())
+    store.record_token_usage("older", "model", metrics(40, 60),
+                             datetime(2026, 8, 31, 8, 0, 0).timestamp())
+
+    summary = store.token_usage_summary(now=noon)
+    assert summary["today"]["tokens"] == 100
+    assert summary["today"]["runs"] == 1
+    assert summary["week"]["tokens"] == 200
+    assert summary["week"]["runs"] == 2
+    assert summary["month"]["tokens"] == 300
+    assert summary["month"]["runs"] == 3
+    assert summary["allTime"]["tokens"] == 400
+    assert summary["allTime"]["runs"] == 4
+    store.close()
+
+
+def test_finalize_persists_only_exact_metrics_once(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    tracker = TokenUsageTracker(store, clock=lambda: 100.0)
+
+    # A live estimate is useful to animate but must never become accounting.
+    tracker.stream("This provisional answer is deliberately much longer than one token.")
+    provisional = tracker.live_output_tokens
+    assert provisional > 0
+
+    tracker.exact_metrics(metrics(7, 13, rate=3.5))
+    assert tracker.finalize("chat-id", "test-model") is True
+    assert tracker.finalize("chat-id", "test-model") is False
+
+    all_time = tracker.summary["allTime"]
+    assert all_time["outputTokens"] == 7
+    assert all_time["promptTokens"] == 13
+    assert all_time["tokens"] == 20
+    assert all_time["runs"] == 1
+    store.close()
+
+
+def test_usage_survives_conversation_deletion(tmp_path):
+    store = Store(tmp_path / "history.sqlite3")
+    conversation = store.create_conversation("temporary", "model")
+    store.record_token_usage(conversation["id"], "model", metrics(5, 15))
+    store.delete_conversation(conversation["id"])
+
+    assert store.get_conversation(conversation["id"]) is None
+    assert store.token_usage_summary()["allTime"]["tokens"] == 20
+    store.close()
