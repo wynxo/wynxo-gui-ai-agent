@@ -23,13 +23,23 @@ jobs:
           WYNXO_NATIVE_CORE: ${{ github.workspace }}/build/native/libwynxo_native_core.so
         run: |
           python3 - <<'PY'
+          from pathlib import Path
+          import tempfile
           from wynxo.native_core import native_core
           assert native_core.available, native_core.error
-          assert native_core.version == "0.1.0"
+          assert native_core.version == "0.2.0"
           assert native_core.normalize_permission_mode("garbage") == "safe"
           assert native_core.needs_confirmation("click", "safe")
           assert not native_core.needs_confirmation("move_pointer", "safe")
           assert native_core.command_is_destructive("git reset --hard HEAD~1")
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              (root / "src").mkdir()
+              (root / "README.md").write_text("# scanner\n")
+              scan = native_core.scan_directory(root, 10)
+              names = {entry["name"] for entry in scan["entries"]}
+              assert {"src", "README.md"} <= names
+              assert scan["truncated"] is False
           print("python -> C++ native bridge: ok")
           PY
       - name: Build native wheel from installer release snapshot
@@ -84,10 +94,17 @@ jobs:
         run: |
           cd /tmp
           python - <<'PY'
+          from pathlib import Path
+          import tempfile
           from wynxo.native_core import native_core
           assert native_core.available, native_core.error
-          assert native_core.version == "0.1.0"
+          assert native_core.version == "0.2.0"
           assert native_core.needs_confirmation("click", "safe")
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              (root / "native.txt").write_text("ok")
+              scan = native_core.scan_directory(root, 8)
+              assert [entry["name"] for entry in scan["entries"]] == ["native.txt"]
           print("packaged native core:", native_core.path)
           PY
       - name: Test core suite
