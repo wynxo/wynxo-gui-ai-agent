@@ -233,7 +233,10 @@ class Store:
         summary: dict[str, dict] = {}
         with self._lock:
             for key, start in self._usage_boundaries(now).items():
-                where, params = ("", ()) if start is None else ("WHERE created_at >= ? AND created_at <= ?", (start, now))
+                if start is None:
+                    where, params = "WHERE created_at <= ?", (now,)
+                else:
+                    where, params = "WHERE created_at >= ? AND created_at <= ?", (start, now)
                 row = self._db.execute(
                     "SELECT COALESCE(SUM(output_tokens),0) output_tokens, "
                     "COALESCE(SUM(prompt_tokens),0) prompt_tokens, "
