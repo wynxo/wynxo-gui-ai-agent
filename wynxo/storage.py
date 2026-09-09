@@ -241,18 +241,22 @@ class Store:
                     "SELECT COALESCE(SUM(output_tokens),0) output_tokens, "
                     "COALESCE(SUM(prompt_tokens),0) prompt_tokens, "
                     "COALESCE(SUM(cached_prompt_tokens),0) cached_prompt_tokens, "
-                    "COUNT(*) runs, COALESCE(AVG(tokens_per_second),0) avg_rate "
+                    "COUNT(*) runs, "
+                    "COALESCE(SUM(CASE WHEN tokens_per_second > 0 THEN tokens_per_second * output_tokens ELSE 0 END),0) rate_weighted, "
+                    "COALESCE(SUM(CASE WHEN tokens_per_second > 0 THEN output_tokens ELSE 0 END),0) rate_tokens "
                     f"FROM token_usage {where}", params,
                 ).fetchone()
                 output = int(row["output_tokens"] or 0)
                 prompt = int(row["prompt_tokens"] or 0)
+                rate_tokens = int(row["rate_tokens"] or 0)
+                average_rate = (float(row["rate_weighted"] or 0.0) / rate_tokens) if rate_tokens else 0.0
                 summary[key] = {
                     "tokens": output + prompt,
                     "outputTokens": output,
                     "promptTokens": prompt,
                     "cachedTokens": int(row["cached_prompt_tokens"] or 0),
                     "runs": int(row["runs"] or 0),
-                    "averageRate": round(float(row["avg_rate"] or 0.0), 1),
+                    "averageRate": round(average_rate, 1),
                 }
         return summary
 
