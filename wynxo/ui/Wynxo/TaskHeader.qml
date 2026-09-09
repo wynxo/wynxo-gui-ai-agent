@@ -303,7 +303,7 @@ Item {
                 }
                 Text {
                     visible: bridge && bridge.tokenRate !== "—" && root.width > 1080
-                    text: bridge ? bridge.tokenRate : ""
+                    text: bridge ? String(bridge.tokenRate).replace(" tok/s", " tokens/s") : ""
                     color: Theme.textMuted
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.micro
