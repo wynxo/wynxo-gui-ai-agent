@@ -42,9 +42,9 @@ def test_transient_surfaces_use_the_same_explicit_centering_lane():
         assert "anchors.horizontalCenter: parent.horizontalCenter" in child
 
 
-def test_chat_mode_does_not_render_dead_workspace_chrome():
+def test_chat_mode_only_exposes_workspace_for_a_presentable_plan():
     text = MAIN.read_text(encoding="utf-8")
-    assert 'readonly property bool workspaceAvailable: !!(bridge && bridge.taskMode !== "chat")' in text
+    assert 'readonly property bool workspaceAvailable: !!(bridge && (bridge.taskMode !== "chat" || hasPresentablePlan))' in text
     assert "dockAvailable: window.workspaceAvailable" in text
     assert "visible: window.roomForDock && window.workspaceAvailable" in text
     assert "if (!window.workspaceAvailable) return;" in text

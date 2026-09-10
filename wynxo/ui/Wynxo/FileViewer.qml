@@ -30,10 +30,12 @@ Item {
     property bool findCountCapped: false
     readonly property int maxFindMatches: 10000
 
-    // Built once per file rather than on every repaint. Wrapping hides the
+    readonly property int bufferLines: readable ? editor.text.split("\n").length : 0
+
+    // Derived from the live buffer. Wrapping hides the
     // gutter, because a wrapped line no longer matches a numbered row.
     readonly property string numbers: {
-        var total = root.readable ? Math.min(root.record.lines || 0, 50000) : 0;
+        var total = root.readable ? Math.min(root.bufferLines, 50000) : 0;
         if (!total) return "";
         var out = [];
         for (var line = 1; line <= total; line++) out.push(line);
@@ -61,12 +63,13 @@ Item {
     function parentFolder(path) {
         var value = String(path || "");
         var slash = Math.max(value.lastIndexOf("/"), value.lastIndexOf("\\"));
-        return slash > 0 ? value.slice(0, slash) : value;
+        return slash === 0 ? value.slice(0, 1) : slash > 0 ? value.slice(0, slash) : value;
     }
     function terminalInFileFolder() {
         if (!dock || !root.hasFile) return;
         var directory = root.parentFolder(root.record.path);
-        dock.runInTerminal("cd " + JSON.stringify(directory));
+        // POSIX single quoting keeps dollar signs, backticks and newlines literal.
+        dock.runInTerminal("cd -- '" + directory.replace(/'/g, "'\"'\"'") + "'");
     }
     function openFind() {
         if (!readable) return;
@@ -98,7 +101,7 @@ Item {
     }
     function positionForLine(value) {
         var wanted = Math.round(Number(value) || 0);
-        var total = Math.max(1, Number(root.record.lines || 1));
+        var total = Math.max(1, Number(root.bufferLines || 1));
         if (wanted < 1 || wanted > total) return -1;
         if (wanted === 1) return 0;
         var position = 0;
@@ -125,6 +128,20 @@ Item {
             flick.contentY = Math.min(maximum, desired);
             flick.contentX = 0;
         });
+    }
+    function revealCursor() {
+        if (!root.readable) return;
+        var cursor = editor.cursorRectangle;
+        var left = editor.x + cursor.x;
+        var top = editor.y + cursor.y;
+        if (top < flick.contentY) flick.contentY = top;
+        else if (top + cursor.height > flick.contentY + flick.height)
+            flick.contentY = top + cursor.height - flick.height;
+        if (left < flick.contentX) flick.contentX = left;
+        else if (left + cursor.width > flick.contentX + flick.width)
+            flick.contentX = left + cursor.width - flick.width;
+        flick.contentY = Math.max(0, Math.min(flick.contentY, flick.contentHeight - flick.height));
+        flick.contentX = Math.max(0, Math.min(flick.contentX, flick.contentWidth - flick.width));
     }
     function recountFindMatches() {
         var query = findInput.text.toLowerCase();
@@ -186,7 +203,7 @@ Item {
         findOrdinal = root.ordinalFor(haystack, query, position);
         if (position >= 0) {
             editor.select(position, position + query.length);
-            editor.cursorPosition = position + query.length;
+            Qt.callLater(root.revealCursor);
         } else {
             editor.deselect();
         }
@@ -309,10 +326,12 @@ Item {
 
                 Field {
                     id: findInput
+                    objectName: "fileFindInput"
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.controlSmall
                     iconName: "search"
                     placeholderText: "Find in file"
+
                     onTextChanged: {
                         root.findPosition = -1;
                         root.recountFindMatches();
@@ -379,13 +398,13 @@ Item {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Theme.controlSmall
                     iconName: "code"
-                    placeholderText: "Line 1–" + Math.max(1, root.record.lines || 1)
-                    validator: IntValidator { bottom: 1; top: Math.max(1, root.record.lines || 1) }
+                    placeholderText: "Line 1–" + Math.max(1, root.bufferLines || 1)
+                    validator: IntValidator { bottom: 1; top: Math.max(1, root.bufferLines || 1) }
                     Keys.onReturnPressed: function(event) { root.goToLine(); event.accepted = true; }
                     Keys.onEscapePressed: function(event) { root.closeGoLine(); event.accepted = true; }
                 }
                 Text {
-                    text: (root.record.lines || 0) + " lines"
+                    text: (root.bufferLines) + " lines"
                     color: Theme.textMuted
                     font.family: Theme.monoFamily; font.pixelSize: Theme.micro
                 }
@@ -414,6 +433,7 @@ Item {
 
             Flickable {
                 id: flick
+                objectName: "fileViewport"
                 anchors.fill: parent
                 visible: root.readable
                 contentWidth: Math.max(width, editor.x + editor.contentWidth + Theme.s4)
@@ -451,7 +471,7 @@ Item {
                     id: numberMetrics
                     font.family: Theme.monoFamily
                     font.pixelSize: Theme.code
-                    text: String(Math.max(1000, root.record.lines || 1000))
+                    text: String(Math.max(1000, root.bufferLines || 1000))
                 }
 
                 TextEdit {
@@ -473,6 +493,8 @@ Item {
                     persistentSelection: true
                     Accessible.role: root.editable ? Accessible.EditableText : Accessible.StaticText
                     Accessible.name: root.hasFile ? root.record.name : "File contents"
+
+                    onCursorRectangleChanged: Qt.callLater(root.revealCursor)
 
                     onTextChanged: {
                         if (root.dock && root.loadedPath && root.editable) root.dock.setFileBuffer(text);

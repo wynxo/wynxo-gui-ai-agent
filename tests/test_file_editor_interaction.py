@@ -1,0 +1,20 @@
+"""Regressions for live editor geometry and literal folder commands."""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+import pytest
+
+
+@pytest.mark.skipif(not os.environ.get('WYNXO_QML_SMOKE'), reason='needs a Qt platform plugin')
+def test_live_buffer_and_cursor_visibility():
+    result = subprocess.run(
+        [sys.executable, str(Path(__file__).with_name('file_editor_probe.py'))],
+        env={**os.environ, 'QT_QPA_PLATFORM': 'offscreen', 'QT_QUICK_BACKEND': 'software'},
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert '"ok": true' in result.stdout
+    assert 'Binding loop' not in result.stderr
+    assert 'ReferenceError' not in result.stderr
