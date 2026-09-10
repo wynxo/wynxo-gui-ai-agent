@@ -18,6 +18,9 @@ Rectangle {
     property bool glassEnabled: false
     property bool autoGlass: true
     property bool backdropBlur: false
+    // Only accept an explicit scene that excludes this surface. Sampling the
+    // window content also samples its popups, creating a feedback loop.
+    property Item backdropItem: null
     property real blurAmount: 0.72
     property bool elevated: false
     property bool active: false
@@ -38,14 +41,16 @@ Rectangle {
         clampedFill >= 0.66
         || (tint === Theme.glassTint && clampedFill >= Theme.glassThinOpacity)
     )
-    readonly property bool liveBlurOn: materialOn && backdropBlur && surface.Window.window !== null
-    readonly property var hostContent: surface.Window.window ? surface.Window.window.contentItem : null
+    readonly property bool liveBlurOn: materialOn && backdropBlur && backdropItem !== null
+        && GraphicsInfo.api !== GraphicsInfo.Software
+    readonly property var hostContent: liveBlurOn ? backdropItem : null
     readonly property point backdropOrigin: hostContent
         ? surface.mapToItem(hostContent, 0, 0)
         : Qt.point(0, 0)
 
     antialiasing: true
     color: liveBlurOn ? "transparent"
+         : solid && elevated ? tint
          : materialOn ? Theme.alpha(tint, clampedFill)
          : opaqueIdle ? tint : Theme.alpha(tint, clampedFill)
     border.width: outlineVisible ? 1 : 0
@@ -87,14 +92,14 @@ Rectangle {
         brightness: 0.035
     }
 
-    // Neutral veil over the blurred scene. Keeping the opacity modest allows
-    // colour and shape from the underlying workspace to remain legible.
+    // Keep text legible even above high-contrast content. Optical details stay
+    // in the edges; background text should never compete with popup controls.
     Rectangle {
         anchors.fill: parent
         z: -3
         radius: surface.radius
         visible: surface.liveBlurOn
-        color: Theme.alpha(surface.tint, Math.min(0.46, Math.max(0.18, surface.clampedFill * 0.48)))
+        color: Theme.alpha(surface.tint, Math.max(0.92, surface.clampedFill))
     }
 
     Rectangle {

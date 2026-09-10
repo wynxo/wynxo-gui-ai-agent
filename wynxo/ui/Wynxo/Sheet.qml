@@ -46,11 +46,11 @@ Popup {
 
     enter: Transition {
         ParallelAnimation {
-            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.base; easing.type: Theme.easing }
-            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.base; easing.type: Theme.easing }
+            NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Theme.reducedMotion ? 0 : Theme.base; easing.type: Theme.easing }
+            NumberAnimation { property: "scale"; from: 0.98; to: 1; duration: Theme.reducedMotion ? 0 : Theme.base; easing.type: Theme.easing }
         }
     }
-    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.fast } }
+    exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Theme.reducedMotion ? 0 : Theme.fast } }
 
     contentItem: Item {
         implicitWidth: holder.implicitWidth
