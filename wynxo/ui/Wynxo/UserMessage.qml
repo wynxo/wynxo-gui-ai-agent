@@ -14,6 +14,11 @@ Item {
 
     implicitHeight: card.height
     property bool editing: false
+    function resetTransientState() {
+        editing = false;
+        editor.text = "";
+        text.deselect();
+    }
     Accessible.role: Accessible.StaticText
     Accessible.name: "You said: " + root.body
 

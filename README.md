@@ -476,6 +476,19 @@ installer uses only the standard library, so it runs before dependencies exist.
 QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software .venv/bin/python -m wynxo --smoke-test
 ```
 
+The conversation interaction checks drive the real scrollbar, keyboard copy,
+message recycling, and a 560 × 520 window with a long draft and 12 attachments:
+
+```bash
+WYNXO_QML_SMOKE=1 .venv/bin/python -m pytest -q tests/test_conversation_stability.py
+```
+
+The [constrained composer](docs/screenshots/constrained-composer.png) and
+[long-command review](docs/screenshots/permission-review.png) captures show these
+states. To refresh them, run `tests/conversation_stability_probe.py` with
+`QT_QPA_PLATFORM=offscreen`, `QT_QUICK_BACKEND=software`, and
+`WYNXO_STABILITY_SCREENSHOTS=docs/screenshots`.
+
 To see the interface without any real history, Ollama, or desktop access:
 
 ```bash
@@ -498,7 +511,7 @@ To see the interface without any real history, Ollama, or desktop access:
 The dock scenes point at this checkout, so Files, Changes and Terminal show a
 real tree, a real diff and a real shell rather than invented rows.
 
-To regenerate every screenshot in `docs/screenshots/` — real captures of the
+To regenerate the demo scenes in `docs/screenshots/` — real captures of the
 real renderer, never mock-ups:
 
 ```bash

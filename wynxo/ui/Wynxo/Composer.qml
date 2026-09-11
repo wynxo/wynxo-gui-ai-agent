@@ -17,6 +17,8 @@ Item {
 
     property alias text: input.text
     property int maxHeight: 220
+    readonly property real chromeHeight: Theme.s3 * 2 + toolbar.implicitHeight + content.spacing
+        + (hasAttachments ? attachmentScroll.Layout.preferredHeight + content.spacing : 0)
     implicitHeight: shell.height
 
     function focusInput() { input.forceActiveFocus(); }
@@ -51,7 +53,7 @@ Item {
     GlassSurface {
         id: shell
         width: parent.width
-        height: content.implicitHeight + Theme.s3 + Theme.s2
+        height: content.implicitHeight + Theme.s3 * 2
         radius: Theme.r4
         tint: input.activeFocus ? Theme.glassTintStrong : Theme.surfaceRaised
         fillOpacity: input.activeFocus ? Theme.glassStrongOpacity : 1.0
@@ -70,90 +72,45 @@ Item {
             anchors.margins: Theme.s3
             spacing: Theme.s2
 
-            Flow {
+            ScrollView {
+                id: attachmentScroll
+                objectName: "composerAttachments"
                 Layout.fillWidth: true
+                Layout.preferredHeight: Math.min(88, attachmentFlow.implicitHeight)
                 visible: root.hasAttachments
-                spacing: Theme.s2
+                contentWidth: availableWidth
+                contentHeight: attachmentFlow.implicitHeight
+                clip: true
+                ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+                ScrollBar.vertical.policy: ScrollBar.AsNeeded
 
-                Repeater {
-                    model: bridge ? bridge.attachments : []
-                    delegate: Item {
-                        id: attachment
-                        required property var modelData
-                        readonly property bool isImage: !!modelData.image
-                        width: isImage ? 70 : Math.min(fileChip.implicitWidth, root.width - Theme.s5)
-                        height: isImage ? 70 : fileChip.implicitHeight
+                Flow {
+                    id: attachmentFlow
+                    width: attachmentScroll.availableWidth
+                    spacing: Theme.s2
 
-                        Chip {
-                            id: fileChip
-                            visible: !attachment.isImage
-                            width: parent.width
-                            text: modelData.title
-                            subtitle: modelData.subtitle
-                            iconName: ContextKinds.icon(modelData.kind)
-                            removable: true
-                            onRemoved: if (bridge) bridge.removeAttachment(modelData.id)
-                        }
+                    Repeater {
+                        model: bridge ? bridge.attachments : []
+                        delegate: Item {
+                            id: attachment
+                            required property var modelData
+                            readonly property bool isImage: !!modelData.image
+                            width: isImage ? 70 : Math.min(fileChip.implicitWidth, attachmentFlow.width)
+                            height: isImage ? 70 : fileChip.implicitHeight
 
-                        Rectangle {
-                            visible: attachment.isImage
-                            anchors.fill: parent
-                            radius: Theme.r2
-                            color: Theme.surfaceSunken
-                            border.width: 1
-                            border.color: Theme.borderSubtle
-                            clip: true
-                            Image {
-                                anchors.fill: parent
-                                anchors.margins: 1
-                                source: attachment.isImage ? "data:image/png;base64," + modelData.image : ""
-                                fillMode: Image.PreserveAspectCrop
-                                asynchronous: true
-                                smooth: true
+                            Chip {
+                                id: fileChip
+                                visible: !attachment.isImage
+                                width: parent.width
+                                text: modelData.title
+                                subtitle: modelData.subtitle
+                                iconName: ContextKinds.icon(modelData.kind)
+                                removable: true
+                                onRemoved: if (bridge) bridge.removeAttachment(modelData.id)
                             }
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: preview.open()
-                            }
-                        }
 
-                        AbstractButton {
-                            id: removeImage
-                            visible: attachment.isImage
-                            z: 4
-                            width: 18; height: 18
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            anchors.margins: 4
-                            hoverEnabled: true
-                            Accessible.name: "Remove " + modelData.title
-                            onClicked: if (bridge) bridge.removeAttachment(modelData.id)
-                            background: GlassSurface {
-                                radius: Theme.rPill
-                                tint: removeImage.hovered ? Theme.textPrimary : Theme.glassTintStrong
-                                fillOpacity: removeImage.hovered ? 0.94 : 0.82
-                                strongEdge: true
-                            }
-                            contentItem: Text {
-                                text: "×"
-                                color: removeImage.hovered ? Theme.textInverse : Theme.textPrimary
-                                font.family: Theme.sansFamily
-                                font.pixelSize: 13
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                            MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
-                        }
-
-                        Popover {
-                            id: preview
-                            width: 320
-                            height: 238
-                            preferredEdge: "above"
-                            title: modelData.subtitle || modelData.title
                             Rectangle {
+                                visible: attachment.isImage
                                 anchors.fill: parent
                                 radius: Theme.r2
                                 color: Theme.surfaceSunken
@@ -164,9 +121,67 @@ Item {
                                     anchors.fill: parent
                                     anchors.margins: 1
                                     source: attachment.isImage ? "data:image/png;base64," + modelData.image : ""
-                                    fillMode: Image.PreserveAspectFit
+                                    fillMode: Image.PreserveAspectCrop
                                     asynchronous: true
                                     smooth: true
+                                }
+                                MouseArea {
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: preview.open()
+                                }
+                            }
+
+                            AbstractButton {
+                                id: removeImage
+                                visible: attachment.isImage
+                                z: 4
+                                width: 18; height: 18
+                                anchors.top: parent.top
+                                anchors.right: parent.right
+                                anchors.margins: 4
+                                hoverEnabled: true
+                                Accessible.name: "Remove " + modelData.title
+                                onClicked: if (bridge) bridge.removeAttachment(modelData.id)
+                                background: GlassSurface {
+                                    radius: Theme.rPill
+                                    tint: removeImage.hovered ? Theme.textPrimary : Theme.glassTintStrong
+                                    fillOpacity: removeImage.hovered ? 0.94 : 0.82
+                                    strongEdge: true
+                                }
+                                contentItem: Text {
+                                    text: "×"
+                                    color: removeImage.hovered ? Theme.textInverse : Theme.textPrimary
+                                    font.family: Theme.sansFamily
+                                    font.pixelSize: 13
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                                MouseArea { anchors.fill: parent; acceptedButtons: Qt.NoButton; cursorShape: Qt.PointingHandCursor }
+                            }
+
+                            Popover {
+                                id: preview
+                                width: 320
+                                height: 238
+                                preferredEdge: "above"
+                                title: modelData.subtitle || modelData.title
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: Theme.r2
+                                    color: Theme.surfaceSunken
+                                    border.width: 1
+                                    border.color: Theme.borderSubtle
+                                    clip: true
+                                    Image {
+                                        anchors.fill: parent
+                                        anchors.margins: 1
+                                        source: attachment.isImage ? "data:image/png;base64," + modelData.image : ""
+                                        fillMode: Image.PreserveAspectFit
+                                        asynchronous: true
+                                        smooth: true
+                                    }
                                 }
                             }
                         }
@@ -198,6 +213,7 @@ Item {
                     color: Theme.textPrimary
                     selectionColor: Theme.accent
                     selectedTextColor: Theme.onAccent
+                    selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     font.family: Theme.sansFamily
                     font.pixelSize: Theme.body
@@ -229,6 +245,7 @@ Item {
             }
 
             RowLayout {
+                id: toolbar
                 Layout.fillWidth: true
                 spacing: Theme.s1
 

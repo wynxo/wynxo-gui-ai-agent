@@ -336,6 +336,16 @@ ApplicationWindow {
                         objectName: "mainComposer"
                         width: Math.min(Theme.readingWidth, parent.width)
                         anchors.horizontalCenter: parent.horizontalCenter
+                        // Leave room for the header, context and fresh-task
+                        // starters in a short window. Use the window's budget;
+                        // a layout can expand to fit its children's minimums.
+                        maxHeight: Math.min(220, Math.max(64,
+                            window.height - header.height - Theme.s4 - (window.homeMode
+                                ? homeIntro.implicitHeight + homeStarters.implicitHeight
+                                  + Theme.s2 + Theme.s1 + Theme.s3 * 4
+                                : 100) - composer.chromeHeight
+                            - (warningLane.visible ? warningLane.height + Theme.s3 : 0)
+                            - (errorLane.visible ? errorLane.height + Theme.s3 : 0)))
                         onSubmitted: function(text) { if (bridge) bridge.send(text); }
                         onOpenModelManager: models.open()
                     }

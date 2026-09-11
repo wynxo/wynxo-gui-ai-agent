@@ -21,10 +21,17 @@ ListView {
     cacheBuffer: 1200
     reuseItems: true
 
+    // positionViewAtEnd exposes the last item, while atYEnd also includes the
+    // empty bottom margin. Both positions mean the reader has reached the end.
     readonly property bool atBottom: atYEnd || contentHeight + topMargin + bottomMargin <= height
+        || contentY + height >= originY + contentHeight - 1
 
     ScrollBar.vertical: ScrollBar {
         policy: ScrollBar.AsNeeded
+        onPressedChanged: {
+            if (pressed) list.following = false;
+            else list.following = list.atBottom;
+        }
         contentItem: Rectangle {
             implicitWidth: 4; radius: 2
             color: parent.pressed ? Theme.borderStrong : Theme.borderSubtle
@@ -33,10 +40,22 @@ ListView {
 
     onMovementStarted: following = false
     onMovementEnded: following = atBottom
-    onContentHeightChanged: if (following) positionViewAtEnd()
-    onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
+    // ListView estimates heights until its delegates are laid out. Following
+    // synchronously from contentHeightChanged can use that old estimate and
+    // leave the actual last message out of view. Coalesce after layout instead.
+    onContentHeightChanged: scheduleFollow()
+    onCountChanged: scheduleFollow()
+    onHeightChanged: scheduleFollow()
+    onWidthChanged: scheduleFollow()
+    onVisibleChanged: if (visible) scheduleFollow()
 
-    function jumpToEnd() { following = true; positionViewAtEnd(); }
+    function followTail() {
+        if (!following || !visible || height <= 0) return;
+        forceLayout();
+        positionViewAtEnd();
+    }
+    function scheduleFollow() { if (following) Qt.callLater(followTail); }
+    function jumpToEnd() { following = true; scheduleFollow(); }
 
     delegate: Item {
         id: rowItem
@@ -56,6 +75,10 @@ ListView {
 
         width: list.width
         height: loader.implicitHeight
+        ListView.onPooled: {
+            if (loader.item && loader.item.resetTransientState)
+                loader.item.resetTransientState();
+        }
 
         Loader {
             id: loader
